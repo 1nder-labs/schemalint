@@ -45,6 +45,7 @@ Snapshot updates: set `INSTA_UPDATE=always` or review `.snapshots/new` before ac
 - `linkme` distributed slice `RULES` for compile-time rule auto-registration. Add new rules to the slice; `RuleSet::from_profile` generates dynamic Class A / Class B rules from a loaded profile.
 - Error codes: `{code_prefix}-K-*` for keyword rules, `{code_prefix}-K-<keyword>-restricted` for value restrictions, `{code_prefix}-S-*` for structural rules. The `code_prefix` field in the profile TOML drives the prefix (e.g. `OAI` for OpenAI, `ANT` for Anthropic).
 - Exit code: `0` if no errors (warnings are OK), `1` on any error or fatal parse/IO error.
+- Documented solutions in `docs/solutions/` — organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
 
 ## Regression Corpus
 
