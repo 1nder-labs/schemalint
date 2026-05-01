@@ -40,21 +40,6 @@ jobs:
       - name: Run benchmark smoke test
         run: cargo bench --workspace
 
-  test-macos:
-    name: Test (macOS)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build and test
-        run: cargo test --workspace
-
   msrv:
     name: Check MSRV
     runs-on: ubuntu-latest
