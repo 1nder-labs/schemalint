@@ -18,6 +18,7 @@ pub mod emit_human;
 pub mod emit_json;
 pub mod emit_junit;
 pub mod emit_sarif;
+pub mod server;
 
 /// CLI entry point.
 pub fn run() {
@@ -28,8 +29,7 @@ pub fn run() {
             process::exit(exit_code);
         }
         Commands::Server(_args) => {
-            eprintln!("error: server mode is not yet implemented");
-            process::exit(1);
+            server::run_server();
         }
     }
 }
