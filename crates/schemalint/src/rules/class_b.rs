@@ -162,10 +162,7 @@ impl Rule for AllPropertiesRequiredRule {
                 diagnostics.push(Diagnostic {
                     code: "OAI-S-all-properties-required".to_string(),
                     severity: DiagnosticSeverity::Error,
-                    message: format!(
-                        "property '{}' is not listed in required",
-                        key
-                    ),
+                    message: format!("property '{}' is not listed in required", key),
                     pointer: format!("{}/properties/{}", node_ref.json_pointer, key),
                     source: None,
                     profile: self.profile_name.clone(),

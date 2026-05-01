@@ -38,8 +38,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
     // Properties
     if let Some(Value::Object(map)) = &ann.properties {
         for (key, val) in map {
-            let child = parse_node(val.clone())
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child =
+                parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
@@ -50,8 +50,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
 
     // Items (single schema)
     if let Some(val) = &ann.items {
-        let child = parse_node(val.clone())
-            .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+        let child =
+            parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
         let child_id = arena.alloc(child);
         arena[child_id].parent = Some(node_id);
         arena[child_id].depth = depth + 1;
@@ -62,8 +62,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
     // Prefix items
     if let Some(Value::Array(arr)) = &ann.prefix_items {
         for (i, val) in arr.iter().enumerate() {
-            let child = parse_node(val.clone())
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child =
+                parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
@@ -75,8 +75,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
     // Composition keywords
     if let Some(Value::Array(arr)) = &ann.any_of {
         for (i, val) in arr.iter().enumerate() {
-            let child = parse_node(val.clone())
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child =
+                parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
@@ -87,8 +87,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
 
     if let Some(Value::Array(arr)) = &ann.all_of {
         for (i, val) in arr.iter().enumerate() {
-            let child = parse_node(val.clone())
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child =
+                parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
@@ -99,8 +99,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
 
     if let Some(Value::Array(arr)) = &ann.one_of {
         for (i, val) in arr.iter().enumerate() {
-            let child = parse_node(val.clone())
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child =
+                parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
@@ -111,8 +111,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
 
     // Not
     if let Some(val) = &ann.not {
-        let child = parse_node(val.clone())
-            .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+        let child =
+            parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
         let child_id = arena.alloc(child);
         arena[child_id].parent = Some(node_id);
         arena[child_id].depth = depth + 1;
@@ -127,8 +127,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
         (&ann.else_schema, "else"),
     ] {
         if let Some(val) = field {
-            let child = parse_node(val.clone())
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child =
+                parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
@@ -140,8 +140,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
     // Dependent schemas
     if let Some(Value::Object(map)) = &ann.dependent_schemas {
         for (key, val) in map {
-            let child = parse_node(val.clone())
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child =
+                parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
@@ -153,8 +153,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
     // Pattern properties
     if let Some(Value::Object(map)) = &ann.pattern_properties {
         for (key, val) in map {
-            let child = parse_node(val.clone())
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child =
+                parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
@@ -165,8 +165,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
 
     // Property names
     if let Some(val) = &ann.property_names {
-        let child = parse_node(val.clone())
-            .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+        let child =
+            parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
         let child_id = arena.alloc(child);
         arena[child_id].parent = Some(node_id);
         arena[child_id].depth = depth + 1;
@@ -176,8 +176,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
 
     // Contains
     if let Some(val) = &ann.contains {
-        let child = parse_node(val.clone())
-            .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+        let child =
+            parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
         let child_id = arena.alloc(child);
         arena[child_id].parent = Some(node_id);
         arena[child_id].depth = depth + 1;
@@ -188,8 +188,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
     // Additional properties (when it's a schema, not boolean false)
     if let Some(val) = &ann.additional_properties {
         if !val.is_boolean() {
-            let child = parse_node(val.clone())
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child =
+                parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
@@ -201,8 +201,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
     // Unevaluated properties
     if let Some(val) = &ann.unevaluated_properties {
         if !val.is_boolean() {
-            let child = parse_node(val.clone())
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child =
+                parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;

@@ -59,9 +59,7 @@ fn resolve_ref_string(ref_str: &str, defs: &IndexMap<String, NodeId>) -> Option<
         return defs.get(name).copied();
     }
     // External refs — not resolved in Phase 1.
-    if ref_str.starts_with("http://")
-        || ref_str.starts_with("https://")
-        || ref_str.starts_with('/')
+    if ref_str.starts_with("http://") || ref_str.starts_with("https://") || ref_str.starts_with('/')
     {
         return None;
     }
@@ -114,7 +112,13 @@ pub fn tarjan_scc(arena: &mut Arena, edges: &[(NodeId, NodeId)]) {
     for v in 0..n {
         if indices[v].is_none() {
             strongconnect(
-                v, &adj, &mut index, &mut stack, &mut on_stack, &mut indices, &mut lowlinks,
+                v,
+                &adj,
+                &mut index,
+                &mut stack,
+                &mut on_stack,
+                &mut indices,
+                &mut lowlinks,
             );
         }
     }
@@ -182,10 +186,7 @@ fn collect_component(
     visited[v] = true;
     comp.push(v);
     for &w in &adj[v] {
-        if !visited[w]
-            && lowlinks[w] == lowlinks[v]
-            && indices[w].is_some()
-            && indices[v].is_some()
+        if !visited[w] && lowlinks[w] == lowlinks[v] && indices[w].is_some() && indices[v].is_some()
         {
             collect_component(w, adj, lowlinks, indices, visited, comp);
         }

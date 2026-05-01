@@ -18,27 +18,23 @@ fn json_schema_strategy() -> impl Strategy<Value = serde_json::Value> {
     ];
 
     leaf.prop_recursive(
-        3,   // depth
-        64,  // max size
-        4,   // max items per collection
+        3,  // depth
+        64, // max size
+        4,  // max items per collection
         |inner| {
             prop_oneof![
-                prop::collection::hash_map(
-                    "[a-z]{1,5}",
-                    inner.clone(),
-                    1..4usize
-                ).prop_map(|m| serde_json::json!({
-                    "type": "object",
-                    "properties": m,
-                    "additionalProperties": false
-                })),
-                prop::collection::vec(inner, 1..3usize).prop_map(|v| {
-                    serde_json::json!({"type": "array", "items": v[0]})
-                }),
+                prop::collection::hash_map("[a-z]{1,5}", inner.clone(), 1..4usize).prop_map(
+                    |m| serde_json::json!({
+                        "type": "object",
+                        "properties": m,
+                        "additionalProperties": false
+                    })
+                ),
+                prop::collection::vec(inner, 1..3usize)
+                    .prop_map(|v| { serde_json::json!({"type": "array", "items": v[0]}) }),
                 // Enum with string values
-                prop::collection::vec("[a-z]{1,5}", 1..4usize).prop_map(|v| {
-                    serde_json::json!({"type": "string", "enum": v})
-                }),
+                prop::collection::vec("[a-z]{1,5}", 1..4usize)
+                    .prop_map(|v| { serde_json::json!({"type": "string", "enum": v}) }),
             ]
         },
     )

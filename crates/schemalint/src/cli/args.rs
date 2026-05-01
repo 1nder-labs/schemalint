@@ -3,7 +3,9 @@ use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "schemalint")]
-#[command(about = "Static analysis tool for JSON Schema compatibility with LLM structured-output providers")]
+#[command(
+    about = "Static analysis tool for JSON Schema compatibility with LLM structured-output providers"
+)]
 #[command(version)]
 pub struct Cli {
     #[command(subcommand)]

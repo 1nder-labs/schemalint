@@ -106,5 +106,10 @@ fn bench_incremental(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_single_schema, bench_cold_start, bench_incremental);
+criterion_group!(
+    benches,
+    bench_single_schema,
+    bench_cold_start,
+    bench_incremental
+);
 criterion_main!(benches);

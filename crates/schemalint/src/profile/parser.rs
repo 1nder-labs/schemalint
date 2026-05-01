@@ -76,11 +76,12 @@ pub enum ProfileError {
 
 /// Load a profile from raw TOML bytes.
 pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
-    let text = std::str::from_utf8(bytes).map_err(|_| {
-        ProfileError::InvalidSeverity("invalid UTF-8 in profile".to_string())
-    })?;
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| ProfileError::InvalidSeverity("invalid UTF-8 in profile".to_string()))?;
     let doc: toml::Value = text.parse()?;
-    let table = doc.as_table().ok_or(ProfileError::MissingField("root table"))?;
+    let table = doc
+        .as_table()
+        .ok_or(ProfileError::MissingField("root table"))?;
 
     let name = table
         .get("name")
@@ -116,9 +117,13 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
                     .get("allowed")
                     .and_then(|v| v.as_array())
                     .ok_or_else(|| ProfileError::InvalidRestriction(key.clone()))?;
-                let values: Vec<Value> =
-                    allowed.iter().map(|v| toml_to_json(v.clone())).collect();
-                restrictions.insert(leak_str(key), Restriction { allowed_values: values });
+                let values: Vec<Value> = allowed.iter().map(|v| toml_to_json(v.clone())).collect();
+                restrictions.insert(
+                    leak_str(key),
+                    Restriction {
+                        allowed_values: values,
+                    },
+                );
             }
             _ => {}
         }
@@ -127,7 +132,9 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
     // Also process [[restrictions]] array-of-tables if present.
     if let Some(toml::Value::Array(arr)) = table.get("restrictions") {
         for entry in arr {
-            let t = entry.as_table().ok_or(ProfileError::MissingField("restrictions entry"))?;
+            let t = entry
+                .as_table()
+                .ok_or(ProfileError::MissingField("restrictions entry"))?;
             let keyword = t
                 .get("keyword")
                 .and_then(|v| v.as_str())
@@ -136,9 +143,13 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
                 .get("allowed")
                 .and_then(|v| v.as_array())
                 .ok_or_else(|| ProfileError::InvalidRestriction(keyword.to_string()))?;
-            let values: Vec<Value> =
-                allowed.iter().map(|v| toml_to_json(v.clone())).collect();
-            restrictions.insert(leak_str(keyword), Restriction { allowed_values: values });
+            let values: Vec<Value> = allowed.iter().map(|v| toml_to_json(v.clone())).collect();
+            restrictions.insert(
+                leak_str(keyword),
+                Restriction {
+                    allowed_values: values,
+                },
+            );
         }
     }
 
@@ -163,10 +174,16 @@ fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, Profi
     if let Some(v) = t.get("require_object_root").and_then(|v| v.as_bool()) {
         limits.require_object_root = v;
     }
-    if let Some(v) = t.get("require_additional_properties_false").and_then(|v| v.as_bool()) {
+    if let Some(v) = t
+        .get("require_additional_properties_false")
+        .and_then(|v| v.as_bool())
+    {
         limits.require_additional_properties_false = v;
     }
-    if let Some(v) = t.get("require_all_properties_in_required").and_then(|v| v.as_bool()) {
+    if let Some(v) = t
+        .get("require_all_properties_in_required")
+        .and_then(|v| v.as_bool())
+    {
         limits.require_all_properties_in_required = v;
     }
     if let Some(v) = t.get("max_object_depth").and_then(|v| v.as_integer()) {
@@ -178,7 +195,10 @@ fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, Profi
     if let Some(v) = t.get("max_total_enum_values").and_then(|v| v.as_integer()) {
         limits.max_total_enum_values = v as u32;
     }
-    if let Some(v) = t.get("max_string_length_total").and_then(|v| v.as_integer()) {
+    if let Some(v) = t
+        .get("max_string_length_total")
+        .and_then(|v| v.as_integer())
+    {
         limits.max_string_length_total = v as u32;
     }
     if let Some(v) = t.get("external_refs").and_then(|v| v.as_bool()) {
@@ -195,9 +215,7 @@ fn leak_str(s: &str) -> &'static str {
 fn toml_to_json(val: toml::Value) -> Value {
     match val {
         toml::Value::String(s) => Value::String(s),
-        toml::Value::Integer(i) => {
-            Value::Number(serde_json::Number::from(i))
-        }
+        toml::Value::Integer(i) => Value::Number(serde_json::Number::from(i)),
         toml::Value::Float(f) => Value::Number(
             serde_json::Number::from_f64(f).unwrap_or_else(|| serde_json::Number::from(0)),
         ),

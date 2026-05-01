@@ -31,7 +31,8 @@ fn normalize_simple_object_schema() {
 
 #[test]
 fn normalize_schema_with_internal_ref() {
-    let schema: serde_json::Value = serde_json::from_str(r##"{
+    let schema: serde_json::Value = serde_json::from_str(
+        r##"{
         "type": "object",
         "properties": {
             "item": { "$ref": "#/$defs/Item" }
@@ -39,15 +40,20 @@ fn normalize_schema_with_internal_ref() {
         "$defs": {
             "Item": { "type": "string" }
         }
-    }"##).unwrap();
+    }"##,
+    )
+    .unwrap();
 
     let norm = normalize(schema).unwrap();
     let root = &norm.arena[norm.root_id];
 
     // Find the $ref node among children.
-    let ref_node_id = root.children.iter().find(|&&id| {
-        norm.arena[id].annotations.r#ref.is_some()
-    }).copied().expect("$ref child not found");
+    let ref_node_id = root
+        .children
+        .iter()
+        .find(|&&id| norm.arena[id].annotations.r#ref.is_some())
+        .copied()
+        .expect("$ref child not found");
 
     let ref_node = &norm.arena[ref_node_id];
     assert!(ref_node.ref_target.is_some());
@@ -115,9 +121,10 @@ fn normalize_deeply_nested() {
     loop {
         let node = &norm.arena[current];
         max_depth = max_depth.max(node.depth);
-        let next = node.children.iter().find(|&&id| {
-            norm.arena[id].json_pointer.ends_with("/next")
-        });
+        let next = node
+            .children
+            .iter()
+            .find(|&&id| norm.arena[id].json_pointer.ends_with("/next"));
         match next {
             Some(&id) => current = id,
             None => break,
@@ -128,7 +135,8 @@ fn normalize_deeply_nested() {
 
 #[test]
 fn normalize_cyclic_ref() {
-    let schema: serde_json::Value = serde_json::from_str(r##"{
+    let schema: serde_json::Value = serde_json::from_str(
+        r##"{
         "$defs": {
             "A": {
                 "type": "object",
@@ -144,7 +152,9 @@ fn normalize_cyclic_ref() {
             }
         },
         "$ref": "#/$defs/A"
-    }"##).unwrap();
+    }"##,
+    )
+    .unwrap();
 
     let norm = normalize(schema).unwrap();
 
@@ -157,7 +167,8 @@ fn normalize_cyclic_ref() {
 
 #[test]
 fn normalize_self_referential_ref() {
-    let schema: serde_json::Value = serde_json::from_str(r##"{
+    let schema: serde_json::Value = serde_json::from_str(
+        r##"{
         "$defs": {
             "Self": {
                 "type": "object",
@@ -167,11 +178,16 @@ fn normalize_self_referential_ref() {
             }
         },
         "$ref": "#/$defs/Self"
-    }"##).unwrap();
+    }"##,
+    )
+    .unwrap();
 
     let norm = normalize(schema).unwrap();
     let self_id = *norm.defs.get("Self").unwrap();
-    assert!(norm.arena[self_id].is_cyclic, "Self should be marked cyclic");
+    assert!(
+        norm.arena[self_id].is_cyclic,
+        "Self should be marked cyclic"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -180,12 +196,15 @@ fn normalize_self_referential_ref() {
 
 #[test]
 fn normalize_unresolved_internal_ref() {
-    let schema: serde_json::Value = serde_json::from_str(r##"{
+    let schema: serde_json::Value = serde_json::from_str(
+        r##"{
         "type": "object",
         "properties": {
             "item": { "$ref": "#/$defs/Missing" }
         }
-    }"##).unwrap();
+    }"##,
+    )
+    .unwrap();
 
     let err = normalize(schema).unwrap_err();
     assert!(

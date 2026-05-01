@@ -11,7 +11,13 @@ use schemalint::cli::discover;
 
 #[test]
 fn parse_check_command_with_profile_and_files() {
-    let cli = Cli::parse_from(["schemalint", "check", "--profile", "openai.toml", "schema.json"]);
+    let cli = Cli::parse_from([
+        "schemalint",
+        "check",
+        "--profile",
+        "openai.toml",
+        "schema.json",
+    ]);
     match cli.command {
         Commands::Check(args) => {
             assert_eq!(args.profile, PathBuf::from("openai.toml"));

@@ -4,8 +4,8 @@ use serde_json::Value;
 use crate::ir::{parse_node, Arena, NodeId};
 use crate::normalize::dialect::Dialect;
 
-pub mod dialect;
 pub mod desugar;
+pub mod dialect;
 pub mod refs;
 pub mod traverse;
 
@@ -79,8 +79,7 @@ fn build_defs(
     // `$defs` (Draft 2020-12)
     if let Some(Value::Object(map)) = defs_val {
         for (name, val) in map {
-            let child = parse_node(val)
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child = parse_node(val).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].json_pointer = format!("/\u{24}defs/{}", name);
             arena[child_id].parent = Some(root_id);
@@ -96,8 +95,7 @@ fn build_defs(
             if defs.contains_key(&name) {
                 continue;
             }
-            let child = parse_node(val)
-                .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+            let child = parse_node(val).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].json_pointer = format!("/definitions/{}", name);
             arena[child_id].parent = Some(root_id);

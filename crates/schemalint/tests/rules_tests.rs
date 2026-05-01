@@ -20,14 +20,16 @@ fn normalize_schema(value: serde_json::Value) -> schemalint::normalize::Normaliz
 
 #[test]
 fn class_a_forbid_allof() {
-    let profile = load_test_profile(r##"
+    let profile = load_test_profile(
+        r##"
 name = "test"
 version = "1.0"
 allOf = "forbid"
 
 [structural]
 require_object_root = false
-"##);
+"##,
+    );
     let schema = normalize_schema(serde_json::json!({
         "allOf": [{"type": "string"}]
     }));
@@ -42,14 +44,16 @@ require_object_root = false
 
 #[test]
 fn class_a_warn_uniqueitems() {
-    let profile = load_test_profile(r##"
+    let profile = load_test_profile(
+        r##"
 name = "test"
 version = "1.0"
 uniqueItems = "warn"
 
 [structural]
 require_object_root = false
-"##);
+"##,
+    );
     let schema = normalize_schema(serde_json::json!({
         "uniqueItems": true
     }));
@@ -63,14 +67,16 @@ require_object_root = false
 
 #[test]
 fn class_a_allow_type_no_diagnostic() {
-    let profile = load_test_profile(r##"
+    let profile = load_test_profile(
+        r##"
 name = "test"
 version = "1.0"
 type = "allow"
 
 [structural]
 require_object_root = false
-"##);
+"##,
+    );
     let schema = normalize_schema(serde_json::json!({
         "type": "string"
     }));
@@ -82,14 +88,16 @@ require_object_root = false
 
 #[test]
 fn class_a_unknown_no_diagnostic() {
-    let profile = load_test_profile(r##"
+    let profile = load_test_profile(
+        r##"
 name = "test"
 version = "1.0"
 contains = "unknown"
 
 [structural]
 require_object_root = false
-"##);
+"##,
+    );
     let schema = normalize_schema(serde_json::json!({
         "contains": { "type": "string" }
     }));
@@ -105,14 +113,16 @@ require_object_root = false
 
 #[test]
 fn class_a_restriction_allowed_value_passes() {
-    let profile = load_test_profile(r##"
+    let profile = load_test_profile(
+        r##"
 name = "test"
 version = "1.0"
 format = { kind = "restricted", allowed = ["date-time", "email"] }
 
 [structural]
 require_object_root = false
-"##);
+"##,
+    );
     let schema = normalize_schema(serde_json::json!({
         "format": "date-time"
     }));
@@ -124,14 +134,16 @@ require_object_root = false
 
 #[test]
 fn class_a_restriction_disallowed_value_fails() {
-    let profile = load_test_profile(r##"
+    let profile = load_test_profile(
+        r##"
 name = "test"
 version = "1.0"
 format = { kind = "restricted", allowed = ["date-time", "email"] }
 
 [structural]
 require_object_root = false
-"##);
+"##,
+    );
     let schema = normalize_schema(serde_json::json!({
         "format": "credit-card"
     }));
@@ -149,13 +161,15 @@ require_object_root = false
 
 #[test]
 fn unknown_keyword_no_class_a_rule() {
-    let profile = load_test_profile(r##"
+    let profile = load_test_profile(
+        r##"
 name = "test"
 version = "1.0"
 
 [structural]
 require_object_root = false
-"##);
+"##,
+    );
     let schema = normalize_schema(serde_json::json!({
         "x-custom": 42
     }));
@@ -169,14 +183,16 @@ require_object_root = false
 fn multiple_schemas_in_batch() {
     // RuleSet operates on a single arena. Batch aggregation is done by the
     // caller (CLI in U7). Here we just verify rules work per-schema.
-    let profile = load_test_profile(r##"
+    let profile = load_test_profile(
+        r##"
 name = "test"
 version = "1.0"
 allOf = "forbid"
 
 [structural]
 require_object_root = false
-"##);
+"##,
+    );
     let schema = normalize_schema(serde_json::json!({
         "allOf": [{"type": "string"}]
     }));
@@ -194,7 +210,12 @@ require_object_root = false
 struct TestRule;
 
 impl Rule for TestRule {
-    fn check(&self, _node: schemalint::ir::NodeId, _arena: &schemalint::ir::Arena, _profile: &schemalint::profile::Profile) -> Vec<schemalint::rules::Diagnostic> {
+    fn check(
+        &self,
+        _node: schemalint::ir::NodeId,
+        _arena: &schemalint::ir::Arena,
+        _profile: &schemalint::profile::Profile,
+    ) -> Vec<schemalint::rules::Diagnostic> {
         Vec::new()
     }
 }

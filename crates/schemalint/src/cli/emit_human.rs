@@ -1,5 +1,5 @@
-use crate::rules::Diagnostic;
 use crate::rules::registry::DiagnosticSeverity;
+use crate::rules::Diagnostic;
 
 /// Emit diagnostics in rustc-style human-readable format.
 ///

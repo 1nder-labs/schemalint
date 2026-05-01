@@ -34,14 +34,22 @@ fn run_check(args: args::CheckArgs) -> i32 {
     let profile_bytes = match fs::read(&args.profile) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("error: failed to read profile '{}': {}", args.profile.display(), e);
+            eprintln!(
+                "error: failed to read profile '{}': {}",
+                args.profile.display(),
+                e
+            );
             return 1;
         }
     };
     let profile = match load(&profile_bytes) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("error: failed to load profile '{}': {}", args.profile.display(), e);
+            eprintln!(
+                "error: failed to load profile '{}': {}",
+                args.profile.display(),
+                e
+            );
             return 1;
         }
     };
@@ -150,7 +158,12 @@ fn run_check(args: args::CheckArgs) -> i32 {
             emit_human::emit_human(&all_diagnostics, total_errors, total_warnings);
         }
         OutputFormat::Json => {
-            emit_json::emit_json(&all_diagnostics, total_errors, total_warnings, &[profile.name]);
+            emit_json::emit_json(
+                &all_diagnostics,
+                total_errors,
+                total_warnings,
+                &[profile.name],
+            );
         }
     }
 

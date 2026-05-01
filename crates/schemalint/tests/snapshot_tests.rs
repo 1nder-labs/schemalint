@@ -1,5 +1,5 @@
-use std::fs;
 use assert_cmd::Command;
+use std::fs;
 
 fn minimal_profile() -> &'static str {
     r##"

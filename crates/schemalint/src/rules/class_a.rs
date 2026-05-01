@@ -1,6 +1,8 @@
 use crate::ir::{Arena, NodeId};
 use crate::profile::Profile;
-use crate::rules::registry::{keyword_present, keyword_value, Diagnostic, DiagnosticSeverity, Rule};
+use crate::rules::registry::{
+    keyword_present, keyword_value, Diagnostic, DiagnosticSeverity, Rule,
+};
 
 /// Class A auto-generated keyword rule.
 ///

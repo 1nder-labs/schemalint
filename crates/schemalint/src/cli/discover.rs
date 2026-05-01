@@ -35,9 +35,7 @@ fn collect_json_files(dir: &Path, out: &mut Vec<PathBuf>) {
         }
         if path.is_dir() {
             collect_json_files(&path, out);
-        } else if path.is_file()
-            && path.extension().and_then(|s| s.to_str()) == Some("json")
-        {
+        } else if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("json") {
             out.push(path);
         }
     }

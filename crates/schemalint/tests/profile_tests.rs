@@ -24,7 +24,10 @@ max_object_depth = 10
     assert_eq!(profile.keyword_map.len(), 3);
     assert_eq!(profile.keyword_map.get("type"), Some(&Severity::Allow));
     assert_eq!(profile.keyword_map.get("allOf"), Some(&Severity::Forbid));
-    assert_eq!(profile.keyword_map.get("uniqueItems"), Some(&Severity::Warn));
+    assert_eq!(
+        profile.keyword_map.get("uniqueItems"),
+        Some(&Severity::Warn)
+    );
 }
 
 #[test]
@@ -42,7 +45,10 @@ require_object_root = false
 
     let profile = load(toml.as_bytes()).unwrap();
     assert_eq!(profile.keyword_map.get("allOf"), Some(&Severity::Forbid));
-    assert_eq!(profile.keyword_map.get("uniqueItems"), Some(&Severity::Warn));
+    assert_eq!(
+        profile.keyword_map.get("uniqueItems"),
+        Some(&Severity::Warn)
+    );
     assert_eq!(profile.keyword_map.get("type"), Some(&Severity::Allow));
     assert_eq!(profile.keyword_map.get("not_present"), None);
 }
@@ -81,7 +87,10 @@ require_object_root = false
     assert!(profile.restrictions.contains_key("format"));
     let restriction = profile.restrictions.get("format").unwrap();
     assert_eq!(restriction.allowed_values.len(), 2);
-    assert_eq!(restriction.allowed_values[0], serde_json::json!("date-time"));
+    assert_eq!(
+        restriction.allowed_values[0],
+        serde_json::json!("date-time")
+    );
     assert_eq!(restriction.allowed_values[1], serde_json::json!("email"));
 }
 
@@ -122,16 +131,19 @@ max_string_length_total = 60000
 "#;
 
     let profile = load(toml.as_bytes()).unwrap();
-    assert_eq!(profile.structural, StructuralLimits {
-        require_object_root: true,
-        require_additional_properties_false: true,
-        require_all_properties_in_required: true,
-        max_object_depth: 15,
-        max_total_properties: 3000,
-        max_total_enum_values: 500,
-        max_string_length_total: 60000,
-        external_refs: false,
-    });
+    assert_eq!(
+        profile.structural,
+        StructuralLimits {
+            require_object_root: true,
+            require_additional_properties_false: true,
+            require_all_properties_in_required: true,
+            max_object_depth: 15,
+            max_total_properties: 3000,
+            max_total_enum_values: 500,
+            max_string_length_total: 60000,
+            external_refs: false,
+        }
+    );
 }
 
 // ---------------------------------------------------------------------------

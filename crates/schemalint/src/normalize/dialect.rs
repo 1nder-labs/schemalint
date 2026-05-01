@@ -20,7 +20,9 @@ pub fn detect(node: &Node) -> Dialect {
             if uri.contains("2019-09") {
                 return Dialect::Draft2019_09;
             }
-            if uri.contains("draft-07") || uri.contains("draft07") || uri.contains("http://json-schema.org/draft-07")
+            if uri.contains("draft-07")
+                || uri.contains("draft07")
+                || uri.contains("http://json-schema.org/draft-07")
             {
                 return Dialect::Draft07;
             }

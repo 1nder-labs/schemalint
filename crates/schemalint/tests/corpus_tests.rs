@@ -36,8 +36,7 @@ fn corpus_all_schemas_match_expected() {
         .unwrap()
         .join("schemalint-profiles/profiles/openai.so.2026-04-30.toml");
 
-    let bin = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/debug/schemalint");
+    let bin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/schemalint");
 
     let mut schemas: Vec<PathBuf> = fs::read_dir(&corpus_dir)
         .unwrap()
@@ -71,15 +70,16 @@ fn corpus_all_schemas_match_expected() {
 
         let stdout = String::from_utf8(output.stdout).unwrap();
         let stderr = String::from_utf8(output.stderr).unwrap();
-        let result: serde_json::Value = serde_json::from_str(&stdout)
-            .unwrap_or_else(|e| panic!(
+        let result: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+            panic!(
                 "invalid JSON output for {} (exit={}):\nstdout: {}\nstderr: {}\nerror: {}",
                 schema_path.display(),
                 output.status.code().unwrap_or(-1),
                 stdout,
                 stderr,
                 e
-            ));
+            )
+        });
 
         let actual_diagnostics = result["diagnostics"].as_array().unwrap();
         let expected_raw = fs::read_to_string(&expected_path).unwrap();
