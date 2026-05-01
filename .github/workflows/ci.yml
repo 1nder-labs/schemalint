@@ -38,7 +38,7 @@ jobs:
         run: cargo bench --no-run --workspace
 
       - name: Run benchmark smoke test
-        run: cargo bench --workspace -- --sample-size 10
+        run: cargo bench --workspace
 
   test-macos:
     name: Test (macOS)
