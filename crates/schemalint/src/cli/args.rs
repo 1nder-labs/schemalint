@@ -47,4 +47,10 @@ pub enum OutputFormat {
     Human,
     /// Structured JSON output
     Json,
+    /// SARIF v2.1.0 output
+    Sarif,
+    /// GitHub Actions workflow commands
+    Gha,
+    /// JUnit XML output
+    Junit,
 }

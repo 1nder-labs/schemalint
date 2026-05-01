@@ -1,0 +1,12 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: "normalize_temp_paths(&stdout, dir.path())"
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="[TEMP_DIR]/schema.json" tests="1" failures="1" errors="0" time="0">
+    <testcase name="TEST-K-allOf - keyword &apos;allOf&apos; is not supported by test" classname="schemalint" time="0">
+      <failure type="error" message="keyword &apos;allOf&apos; is not supported by test">keyword &apos;allOf&apos; is not supported by test</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

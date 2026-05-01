@@ -1,0 +1,5 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: "normalize_temp_paths(&stdout, dir.path())"
+---
+::error file=[TEMP_DIR]/schema.json,title=TEST-K-allOf::keyword 'allOf' is not supported by test [profile: test]

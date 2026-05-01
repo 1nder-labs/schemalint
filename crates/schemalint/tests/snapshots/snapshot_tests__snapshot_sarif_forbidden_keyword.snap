@@ -1,0 +1,36 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: "normalize_temp_paths(&stdout, dir.path())"
+---
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "[TEMP_DIR]/schema.json"
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "keyword 'allOf' is not supported by test"
+          },
+          "ruleId": "TEST-K-allOf"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://schemalint.dev",
+          "name": "schemalint"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

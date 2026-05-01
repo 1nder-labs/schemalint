@@ -193,3 +193,81 @@ fn snapshot_json_batch_with_errors() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     insta::assert_snapshot!(normalize_temp_paths(&stdout, dir.path()));
 }
+
+// ---------------------------------------------------------------------------
+// Snapshot: SARIF output
+// ---------------------------------------------------------------------------
+
+#[test]
+fn snapshot_sarif_forbidden_keyword() {
+    let dir = tempfile::tempdir().unwrap();
+    let profile = dir.path().join("profile.toml");
+    let schema = dir.path().join("schema.json");
+    fs::write(&profile, profile_with_forbid_allof()).unwrap();
+    fs::write(&schema, r#"{"allOf": [{"type": "string"}]}"#).unwrap();
+
+    let output = cmd()
+        .arg("check")
+        .arg("--profile")
+        .arg(&profile)
+        .arg("--format")
+        .arg("sarif")
+        .arg(&schema)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    insta::assert_snapshot!(normalize_temp_paths(&stdout, dir.path()));
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot: GHA output
+// ---------------------------------------------------------------------------
+
+#[test]
+fn snapshot_gha_forbidden_keyword() {
+    let dir = tempfile::tempdir().unwrap();
+    let profile = dir.path().join("profile.toml");
+    let schema = dir.path().join("schema.json");
+    fs::write(&profile, profile_with_forbid_allof()).unwrap();
+    fs::write(&schema, r#"{"allOf": [{"type": "string"}]}"#).unwrap();
+
+    let output = cmd()
+        .arg("check")
+        .arg("--profile")
+        .arg(&profile)
+        .arg("--format")
+        .arg("gha")
+        .arg(&schema)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    insta::assert_snapshot!(normalize_temp_paths(&stdout, dir.path()));
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot: JUnit output
+// ---------------------------------------------------------------------------
+
+#[test]
+fn snapshot_junit_forbidden_keyword() {
+    let dir = tempfile::tempdir().unwrap();
+    let profile = dir.path().join("profile.toml");
+    let schema = dir.path().join("schema.json");
+    fs::write(&profile, profile_with_forbid_allof()).unwrap();
+    fs::write(&schema, r#"{"allOf": [{"type": "string"}]}"#).unwrap();
+
+    let output = cmd()
+        .arg("check")
+        .arg("--profile")
+        .arg(&profile)
+        .arg("--format")
+        .arg("junit")
+        .arg(&schema)
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    insta::assert_snapshot!(normalize_temp_paths(&stdout, dir.path()));
+}

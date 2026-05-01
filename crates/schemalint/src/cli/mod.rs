@@ -13,8 +13,11 @@ use crate::rules::registry::{DiagnosticSeverity, RuleSet};
 
 pub mod args;
 pub mod discover;
+pub mod emit_gha;
 pub mod emit_human;
 pub mod emit_json;
+pub mod emit_junit;
+pub mod emit_sarif;
 
 /// CLI entry point.
 pub fn run() {
@@ -196,6 +199,27 @@ fn run_check(args: args::CheckArgs) -> i32 {
             duration_ms,
         ),
         OutputFormat::Json => emit_json::emit_json_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Sarif => emit_sarif::emit_sarif_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Gha => emit_gha::emit_gha_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Junit => emit_junit::emit_junit_to_string(
             &all_diagnostics,
             total_errors,
             total_warnings,
