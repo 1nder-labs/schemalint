@@ -28,21 +28,21 @@ fn diagnostics_match(actual: &[serde_json::Value], expected: &[serde_json::Value
     true
 }
 
-#[test]
-fn corpus_all_schemas_match_expected() {
-    let corpus_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus");
-    let profile = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("schemalint-profiles/profiles/openai.so.2026-04-30.toml");
-
-    let bin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/schemalint");
-
-    let mut schemas: Vec<PathBuf> = fs::read_dir(&corpus_dir)
+fn run_corpus(
+    corpus_dir: &PathBuf,
+    bin: &PathBuf,
+    profile: &str,
+    prefix: &str,
+) -> Vec<String> {
+    let mut schemas: Vec<PathBuf> = fs::read_dir(corpus_dir)
         .unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("json"))
+        .filter(|p| {
+            let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            p.extension().and_then(|s| s.to_str()) == Some("json")
+                && name.starts_with(prefix)
+        })
         .collect();
     schemas.sort();
 
@@ -58,10 +58,10 @@ fn corpus_all_schemas_match_expected() {
             continue;
         }
 
-        let output = Command::new(&bin)
+        let output = Command::new(bin)
             .arg("check")
             .arg("--profile")
-            .arg(&profile)
+            .arg(profile)
             .arg("--format")
             .arg("json")
             .arg(&schema_path)
@@ -96,9 +96,35 @@ fn corpus_all_schemas_match_expected() {
         }
     }
 
+    failures
+}
+
+#[test]
+fn corpus_openai_schemas_match_expected() {
+    let corpus_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus");
+    let bin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/schemalint");
+
+    let failures = run_corpus(&corpus_dir, &bin, "openai.so.2026-04-30", "schema_");
+
     if !failures.is_empty() {
         panic!(
-            "{} corpus schema(s) failed:\n\n{}",
+            "{} OpenAI corpus schema(s) failed:\n\n{}",
+            failures.len(),
+            failures.join("\n\n")
+        );
+    }
+}
+
+#[test]
+fn corpus_anthropic_schemas_match_expected() {
+    let corpus_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus");
+    let bin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/schemalint");
+
+    let failures = run_corpus(&corpus_dir, &bin, "anthropic.so.2026-04-30", "ant_schema_");
+
+    if !failures.is_empty() {
+        panic!(
+            "{} Anthropic corpus schema(s) failed:\n\n{}",
             failures.len(),
             failures.join("\n\n")
         );

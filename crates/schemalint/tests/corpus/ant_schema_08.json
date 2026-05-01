@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "x": {
+      "type": "array",
+      "contains": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "x"
+  ],
+  "additionalProperties": false
+}

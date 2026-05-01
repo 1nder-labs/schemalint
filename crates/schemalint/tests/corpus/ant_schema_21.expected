@@ -1,0 +1,46 @@
+[
+  {
+    "code": "ANT-K-else",
+    "severity": "error",
+    "message": "keyword 'else' is not supported by anthropic.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_21.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/ANT-K-else"
+  },
+  {
+    "code": "ANT-K-if",
+    "severity": "error",
+    "message": "keyword 'if' is not supported by anthropic.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_21.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/ANT-K-if"
+  },
+  {
+    "code": "ANT-S-additional-properties-false",
+    "severity": "error",
+    "message": "object must declare additionalProperties: false",
+    "pointer": "/if",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_21.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/ANT-S-additional-properties-false"
+  },
+  {
+    "code": "ANT-S-additional-properties-false",
+    "severity": "error",
+    "message": "object must declare additionalProperties: false",
+    "pointer": "/else",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_21.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/ANT-S-additional-properties-false"
+  }
+]

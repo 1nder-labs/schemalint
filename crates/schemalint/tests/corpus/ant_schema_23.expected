@@ -1,0 +1,13 @@
+[
+  {
+    "code": "ANT-K-dependentRequired",
+    "severity": "error",
+    "message": "keyword 'dependentRequired' is not supported by anthropic.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_23.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/ANT-K-dependentRequired"
+  }
+]

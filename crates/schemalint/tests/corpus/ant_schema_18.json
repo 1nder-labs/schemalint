@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "x": {
+      "type": "string",
+      "pattern": "^(?!foo).*"
+    }
+  },
+  "required": [
+    "x"
+  ],
+  "additionalProperties": false
+}

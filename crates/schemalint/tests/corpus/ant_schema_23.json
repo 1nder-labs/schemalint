@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "x": {},
+    "y": {}
+  },
+  "dependentRequired": {
+    "x": [
+      "y"
+    ]
+  },
+  "required": [
+    "x"
+  ],
+  "additionalProperties": false
+}

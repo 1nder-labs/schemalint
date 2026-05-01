@@ -1,0 +1,13 @@
+[
+  {
+    "code": "ANT-K-minLength",
+    "severity": "error",
+    "message": "keyword 'minLength' is not supported by anthropic.so.2026-04-30",
+    "pointer": "/properties/x",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_04.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/ANT-K-minLength"
+  }
+]

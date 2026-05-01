@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "x": {}
+  },
+  "if": {
+    "properties": {
+      "x": {
+        "type": "string"
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "z": {
+        "type": "boolean"
+      }
+    }
+  },
+  "required": [
+    "x"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "x": {
+      "type": "number",
+      "multipleOf": 2
+    }
+  },
+  "required": [
+    "x"
+  ],
+  "additionalProperties": false
+}

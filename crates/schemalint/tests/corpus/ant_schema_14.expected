@@ -1,0 +1,13 @@
+[
+  {
+    "code": "ANT-S-external-refs",
+    "severity": "error",
+    "message": "external $ref 'https://example.com/schema.json' is not supported",
+    "pointer": "/properties/x",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_14.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/ANT-S-external-refs"
+  }
+]

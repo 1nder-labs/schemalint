@@ -1,0 +1,24 @@
+[
+  {
+    "code": "ANT-K-dependentSchemas",
+    "severity": "error",
+    "message": "keyword 'dependentSchemas' is not supported by anthropic.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_24.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/ANT-K-dependentSchemas"
+  },
+  {
+    "code": "ANT-S-additional-properties-false",
+    "severity": "error",
+    "message": "object must declare additionalProperties: false",
+    "pointer": "/dependentSchemas/x",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_24.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/ANT-S-additional-properties-false"
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "properties": {
+    "x": {
+      "type": "string",
+      "enum": [
+        "a",
+        {
+          "b": 1
+        }
+      ]
+    }
+  },
+  "required": [
+    "x"
+  ],
+  "additionalProperties": false
+}

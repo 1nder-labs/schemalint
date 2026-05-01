@@ -1,0 +1,13 @@
+[
+  {
+    "code": "ANT-S-additional-properties-false",
+    "severity": "error",
+    "message": "object must declare additionalProperties: false",
+    "pointer": "/$defs/Node",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_13.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/ANT-S-additional-properties-false"
+  }
+]

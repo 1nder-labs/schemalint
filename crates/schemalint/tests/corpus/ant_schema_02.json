@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "x": {
+      "type": "number",
+      "maximum": 100
+    }
+  },
+  "required": [
+    "x"
+  ],
+  "additionalProperties": false
+}

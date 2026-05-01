@@ -1,0 +1,17 @@
+{
+  "$defs": {
+    "X": {
+      "type": "string"
+    }
+  },
+  "type": "object",
+  "properties": {
+    "x": {
+      "$ref": "#/$defs/X"
+    }
+  },
+  "required": [
+    "x"
+  ],
+  "additionalProperties": false
+}

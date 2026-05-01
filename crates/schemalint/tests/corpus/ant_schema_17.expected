@@ -1,0 +1,14 @@
+[
+  {
+    "code": "ANT-K-minItems-restricted",
+    "severity": "error",
+    "message": "keyword 'minItems' has a restricted value not accepted by anthropic.so.2026-04-30",
+    "pointer": "/properties/x",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_17.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "hint": "allowed values: [Number(0), Number(1)]",
+    "seeUrl": "https://schemalint.dev/rules/ANT-K-minItems-restricted"
+  }
+]

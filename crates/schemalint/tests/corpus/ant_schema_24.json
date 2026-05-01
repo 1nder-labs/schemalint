@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "properties": {
+    "x": {}
+  },
+  "dependentSchemas": {
+    "x": {
+      "properties": {
+        "y": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "required": [
+    "x"
+  ],
+  "additionalProperties": false
+}

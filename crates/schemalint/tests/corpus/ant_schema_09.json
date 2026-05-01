@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "x": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "required": [
+    "x"
+  ],
+  "additionalProperties": false
+}

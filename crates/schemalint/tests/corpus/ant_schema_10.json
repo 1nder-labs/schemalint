@@ -1,0 +1,14 @@
+{
+  "$defs": {
+    "X": {
+      "type": "string"
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "#/$defs/X"
+    }
+  ],
+  "type": "object",
+  "additionalProperties": false
+}

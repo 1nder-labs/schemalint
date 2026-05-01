@@ -255,3 +255,58 @@ external_refs = true
     assert!(has_class_a, "expected Class A diagnostic");
     assert!(has_structural, "expected structural diagnostic");
 }
+
+// ---------------------------------------------------------------------------
+// Multi-profile structural differences
+// ---------------------------------------------------------------------------
+
+#[test]
+fn structural_openai_requires_object_root_anthropic_does_not() {
+    let openai_profile = load(
+        r##"
+name = "openai.test"
+version = "1.0"
+code_prefix = "OAI"
+
+[structural]
+require_object_root = true
+"##
+        .as_bytes(),
+    )
+    .unwrap();
+
+    let anthropic_profile = load(
+        r##"
+name = "anthropic.test"
+version = "1.0"
+code_prefix = "ANT"
+
+[structural]
+require_object_root = false
+"##
+        .as_bytes(),
+    )
+    .unwrap();
+
+    let schema = serde_json::json!({ "type": "string" });
+
+    let openai_ruleset = RuleSet::from_profile(&openai_profile);
+    let openai_diags = openai_ruleset.check_all(
+        &normalize(schema.clone()).unwrap().arena,
+        &openai_profile,
+    );
+    assert!(
+        openai_diags.iter().any(|d| d.code == "OAI-S-object-root"),
+        "OpenAI profile should require object root"
+    );
+
+    let anthropic_ruleset = RuleSet::from_profile(&anthropic_profile);
+    let anthropic_diags = anthropic_ruleset.check_all(
+        &normalize(schema.clone()).unwrap().arena,
+        &anthropic_profile,
+    );
+    assert!(
+        !anthropic_diags.iter().any(|d| d.code == "ANT-S-object-root"),
+        "Anthropic profile should not require object root"
+    );
+}

@@ -1,0 +1,20 @@
+{
+  "$defs": {
+    "A": {
+      "type": "number"
+    },
+    "B": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "#/$defs/A"
+    },
+    {
+      "$ref": "#/$defs/B"
+    }
+  ],
+  "type": "object",
+  "additionalProperties": false
+}

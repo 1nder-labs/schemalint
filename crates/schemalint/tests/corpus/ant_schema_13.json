@@ -1,0 +1,22 @@
+{
+  "$defs": {
+    "Node": {
+      "type": "object",
+      "properties": {
+        "next": {
+          "$ref": "#/$defs/Node"
+        }
+      }
+    }
+  },
+  "type": "object",
+  "properties": {
+    "root": {
+      "$ref": "#/$defs/Node"
+    }
+  },
+  "required": [
+    "root"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,25 @@
+[
+  {
+    "code": "ANT-S-empty-object",
+    "severity": "warning",
+    "message": "object schema with additionalProperties: false has no properties",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_11.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "hint": "Consider adding properties or relaxing additionalProperties for provider compatibility",
+    "seeUrl": "https://schemalint.dev/rules/ANT-S-empty-object"
+  },
+  {
+    "code": "ANT-S-allof-with-ref",
+    "severity": "error",
+    "message": "Anthropic Structured Outputs does not support allOf combined with $ref",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_11.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/ANT-S-allof-with-ref"
+  }
+]
