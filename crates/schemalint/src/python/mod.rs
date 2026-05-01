@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -70,6 +70,7 @@ pub struct PythonHelper {
     stdin: ChildStdin,
     request_id: u64,
     stdout_rx: mpsc::Receiver<Option<String>>,
+    stderr_lines: Arc<Mutex<Vec<String>>>,
 }
 
 impl PythonHelper {
@@ -104,12 +105,21 @@ impl PythonHelper {
             .ok_or_else(|| PythonError::SpawnFailed("no stdin pipe available".to_string()))?;
 
         // Drain stderr continuously to prevent pipe-buffer deadlock.
+        // Capture lines for inclusion in error messages on failure.
+        let stderr_lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let stderr_capture = Arc::clone(&stderr_lines);
         thread::spawn(move || {
             let reader = BufReader::new(stderr);
-            for _line in reader.lines() {
-                // Stderr content is drained silently during normal operation.
-                // On subprocess failure, the OS guarantees the pipe is flushed
-                // before the child exits, so error context is not lost.
+            for line in reader.lines() {
+                match line {
+                    Ok(l) => {
+                        eprintln!("[schemalint-pydantic] {}", l);
+                        if let Ok(mut lines) = stderr_capture.lock() {
+                            lines.push(l);
+                        }
+                    }
+                    Err(_) => break,
+                }
             }
         });
 
@@ -135,6 +145,7 @@ impl PythonHelper {
             stdin,
             request_id: 1,
             stdout_rx: rx,
+            stderr_lines,
         })
     }
 
@@ -164,39 +175,80 @@ impl PythonHelper {
         {
             Ok(Some(line)) => line,
             Ok(None) => {
-                return Err(PythonError::InvalidResponse(
+                return Err(self.augment_error(PythonError::InvalidResponse(
                     "helper process closed stdout unexpectedly".to_string(),
-                ))
+                )))
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                return Err(PythonError::Timeout(DISCOVER_TIMEOUT_SECS))
+                return Err(self.augment_error(PythonError::Timeout(DISCOVER_TIMEOUT_SECS)))
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(PythonError::InvalidResponse(
+                return Err(self.augment_error(PythonError::InvalidResponse(
                     "stdout reader thread disconnected".to_string(),
-                ))
+                )))
             }
         };
 
-        let response: JsonRpcResponse = serde_json::from_str(&line)
-            .map_err(|e| PythonError::InvalidResponse(format!("response parse error: {}", e)))?;
+        let response: JsonRpcResponse = serde_json::from_str(&line).map_err(|e| {
+            self.augment_error(PythonError::InvalidResponse(format!(
+                "response parse error: {}",
+                e
+            )))
+        })?;
 
         if let Some(error) = response.error {
-            return Err(PythonError::DiscoverFailed(error.message));
+            return Err(self.augment_error(PythonError::DiscoverFailed(error.message)));
         }
 
         if response.jsonrpc.as_deref() != Some("2.0") {
-            return Err(PythonError::InvalidResponse(
+            return Err(self.augment_error(PythonError::InvalidResponse(
                 "response missing or has incorrect jsonrpc version".to_string(),
-            ));
+            )));
         }
 
         let result = response.result.ok_or_else(|| {
-            PythonError::InvalidResponse("response missing result field".to_string())
+            self.augment_error(PythonError::InvalidResponse(
+                "response missing result field".to_string(),
+            ))
         })?;
 
         serde_json::from_value(result)
             .map_err(|e| PythonError::InvalidResponse(format!("result parse error: {}", e)))
+    }
+
+    /// Drain captured stderr lines and append them to the error message.
+    fn augment_error(&self, err: PythonError) -> PythonError {
+        let lines: Vec<String> = {
+            let mut guard = self.stderr_lines.lock().unwrap_or_else(|e| e.into_inner());
+            std::mem::take(&mut *guard)
+        };
+        if lines.is_empty() {
+            return err;
+        }
+        let stderr_tail = if lines.len() > 10 {
+            let tail: Vec<_> = lines.iter().rev().take(10).map(|s| s.as_str()).collect();
+            format!(
+                "\n--- Python stderr (last {} of {} lines) ---\n{}\n--- end stderr ---",
+                10,
+                lines.len(),
+                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+            )
+        } else {
+            format!(
+                "\n--- Python stderr ---\n{}\n--- end stderr ---",
+                lines.join("\n")
+            )
+        };
+        match err {
+            PythonError::DiscoverFailed(msg) => {
+                PythonError::DiscoverFailed(format!("{}{}", msg, stderr_tail))
+            }
+            PythonError::InvalidResponse(msg) => {
+                PythonError::InvalidResponse(format!("{}{}", msg, stderr_tail))
+            }
+            PythonError::Timeout(secs) => PythonError::Timeout(secs),
+            other => other,
+        }
     }
 
     /// Send a `shutdown` request and wait for the child process to exit.

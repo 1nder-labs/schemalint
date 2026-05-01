@@ -398,6 +398,7 @@ fn run_check_python(args: args::CheckPythonArgs) -> i32 {
     };
 
     let mut discovered_models: Vec<crate::python::DiscoveredModel> = Vec::new();
+    let mut discovery_failures = 0usize;
     for package in &packages {
         match helper.discover(package) {
             Ok(resp) => {
@@ -407,6 +408,7 @@ fn run_check_python(args: args::CheckPythonArgs) -> i32 {
             }
             Err(e) => {
                 eprintln!("error: discovery failed for package '{}': {}", package, e);
+                discovery_failures += 1;
             }
         }
     }
@@ -414,6 +416,13 @@ fn run_check_python(args: args::CheckPythonArgs) -> i32 {
     helper.shutdown();
 
     if discovered_models.is_empty() {
+        if discovery_failures > 0 {
+            eprintln!(
+                "error: all {} package(s) failed discovery",
+                discovery_failures
+            );
+            return 1;
+        }
         if format == OutputFormat::Human {
             println!("0 issues found (0 errors, 0 warnings) across 0 schemas");
         } else {
@@ -499,7 +508,7 @@ fn run_check_python(args: args::CheckPythonArgs) -> i32 {
         print!("{}", output_text);
     }
 
-    if total_errors > 0 {
+    if total_errors > 0 || discovery_failures > 0 {
         1
     } else {
         0

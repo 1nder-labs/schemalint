@@ -8,10 +8,10 @@ use serde_json::{json, Value};
 
 use crate::cache::{hash_bytes, DiskCache};
 use crate::cli::args::OutputFormat;
-use crate::cli::{emit_gha, emit_human, emit_json, emit_junit, emit_sarif};
+use crate::cli::{check_rulesets, emit_gha, emit_human, emit_json, emit_junit, emit_sarif};
 use crate::normalize::normalize;
 use crate::profile::load;
-use crate::rules::registry::{DiagnosticSeverity, RuleSet};
+use crate::rules::{Diagnostic, DiagnosticSeverity, RuleSet};
 
 const MAX_PAYLOAD_BYTES: usize = 10_000_000;
 const MAX_CHECK_SECONDS: u64 = 30;
@@ -271,20 +271,17 @@ fn handle_check(
     };
 
     // Check rules
-    let mut all_diagnostics = Vec::new();
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;
 
-    for (profile, ruleset) in &profile_rulesets {
-        let diags = ruleset.check_all(&normalized.arena, profile);
-        for d in &diags {
-            match d.severity {
-                DiagnosticSeverity::Error => total_errors += 1,
-                DiagnosticSeverity::Warning => total_warnings += 1,
-            }
+    let diags = check_rulesets(&normalized.arena, &profile_rulesets);
+    for d in &diags {
+        match d.severity {
+            DiagnosticSeverity::Error => total_errors += 1,
+            DiagnosticSeverity::Warning => total_warnings += 1,
         }
-        all_diagnostics.push((PathBuf::from("<inline>"), diags));
     }
+    let all_diagnostics: Vec<(PathBuf, Vec<Diagnostic>)> = vec![(PathBuf::from("<inline>"), diags)];
 
     if start.elapsed() > Duration::from_secs(MAX_CHECK_SECONDS) {
         return json!({

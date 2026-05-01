@@ -6,12 +6,20 @@ and builds per-field source maps mapping JSON Pointers to source locations.
 
 import importlib
 import inspect
-import os
+import re
 import sys
-import warnings
 from contextlib import contextmanager
-from io import StringIO
 from typing import Any, Dict, List, Optional
+
+try:
+    from pydantic import BaseModel as _V2BaseModel
+except ImportError:
+    _V2BaseModel = None
+
+try:
+    from pydantic.v1 import BaseModel as _V1BaseModel
+except ImportError:
+    _V1BaseModel = None
 
 
 @contextmanager
@@ -72,20 +80,9 @@ def _collect_models(
         members = []
 
     for name, cls in members:
-        # Check for Pydantic v2 BaseModel
-        try:
-            from pydantic import BaseModel as V2BaseModel
-        except ImportError:
-            V2BaseModel = None
-
-        try:
-            from pydantic.v1 import BaseModel as V1BaseModel
-        except ImportError:
-            V1BaseModel = None
-
-        if V2BaseModel is not None and issubclass(cls, V2BaseModel) and cls is not V2BaseModel:
+        if _V2BaseModel is not None and issubclass(cls, _V2BaseModel) and cls is not _V2BaseModel:
             try:
-                entry = _extract_model(cls, name, root_package)
+                entry = _extract_model(cls, name)
                 models.append(entry)
             except Exception as e:
                 warnings_list.append({
@@ -93,9 +90,9 @@ def _collect_models(
                     "model": name,
                     "message": str(e),
                 })
-        elif V1BaseModel is not None and issubclass(cls, V1BaseModel) and cls is not V1BaseModel:
+        elif _V1BaseModel is not None and issubclass(cls, _V1BaseModel) and cls is not _V1BaseModel:
             try:
-                entry = _extract_model_v1(cls, name, root_package)
+                entry = _extract_model_v1(cls, name)
                 models.append(entry)
                 warnings_list.append({
                     "type": "pydantic_v1",
@@ -128,7 +125,7 @@ def pkgutil_iter_modules(path, prefix):
     return pkgutil.iter_modules(path=path, prefix=prefix)
 
 
-def _extract_model(cls, name: str, root_package: str) -> Dict[str, Any]:
+def _extract_model(cls, name: str) -> Dict[str, Any]:
     """Extract schema and source map for a Pydantic v2 model."""
     try:
         schema = cls.model_json_schema()
@@ -146,7 +143,7 @@ def _extract_model(cls, name: str, root_package: str) -> Dict[str, Any]:
     }
 
 
-def _extract_model_v1(cls, name: str, root_package: str) -> Dict[str, Any]:
+def _extract_model_v1(cls, name: str) -> Dict[str, Any]:
     """Extract schema and source map for a Pydantic v1 model."""
     try:
         schema = cls.schema()
@@ -182,7 +179,6 @@ def _build_source_map_v2(cls) -> Dict[str, Any]:
     except (OSError, TypeError):
         return source_map
 
-    source_text = "".join(source_lines)
     model_fields = getattr(cls, "model_fields", None)
     if model_fields is None:
         return source_map
@@ -239,12 +235,11 @@ def _find_field_declaration_line(
         field_name: type
         field_name: type = default
         field_name: Annotated[...
-    Falls back to the class declaration line if the field declaration
-    cannot be matched (e.g., complex generics, inherited fields).
+    The regex ensures a word boundary after the field name to prevent
+    false matches on prefix names (e.g., 'name' matching 'name_prefix').
     """
+    pattern = re.compile(rf"^\s*{re.escape(field_name)}\s*:")
     for i, line in enumerate(source_lines):
-        stripped = line.strip()
-        # Match field_name: or field_name: type
-        if stripped.startswith(field_name) and ":" in stripped:
+        if pattern.match(line):
             return start_line + i
     return None

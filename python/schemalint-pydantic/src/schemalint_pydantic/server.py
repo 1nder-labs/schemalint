@@ -6,7 +6,6 @@ appropriate handler, and writes a single-line JSON response to stdout.
 
 import json
 import sys
-import traceback
 
 from schemalint_pydantic.discover import discover_models
 
@@ -55,8 +54,7 @@ def _handle_discover(request: dict, req_id) -> None:
         result = discover_models(package)
         _send_response(req_id, result)
     except Exception as e:
-        tb = traceback.format_exc()
-        _send_error(req_id, -32603, f"Discovery failed: {e}", data={"traceback": tb})
+        _send_error(req_id, -32603, f"Discovery failed: {e}")
 
 
 def _send_response(req_id, result) -> None:
