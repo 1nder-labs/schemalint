@@ -28,6 +28,10 @@ pub struct CheckArgs {
     #[arg(short, long, value_enum)]
     pub format: Option<OutputFormat>,
 
+    /// Write output to a file instead of stdout
+    #[arg(short, long)]
+    pub output: Option<PathBuf>,
+
     /// Schema files or directories to check
     pub paths: Vec<String>,
 }

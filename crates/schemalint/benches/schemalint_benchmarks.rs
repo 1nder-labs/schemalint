@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
@@ -21,8 +20,6 @@ fn load_profile() -> schemalint::profile::Profile {
     load(&bytes).unwrap()
 }
 
-static COUNTER: AtomicUsize = AtomicUsize::new(0);
-
 fn bench_single_schema(c: &mut Criterion) {
     let profile = load_profile();
     let ruleset = RuleSet::from_profile(&profile);
@@ -33,8 +30,7 @@ fn bench_single_schema(c: &mut Criterion) {
     group.bench_function("parse_normalize_and_lint", |b| {
         b.iter(|| {
             let normalized = normalize(value.clone()).unwrap();
-            let diags = ruleset.check_all(&normalized.arena, &profile);
-            COUNTER.fetch_add(1 + diags.len(), Ordering::Relaxed);
+            let _diags = ruleset.check_all(&normalized.arena, &profile);
         })
     });
     group.finish();
@@ -59,8 +55,7 @@ fn bench_cold_start(c: &mut Criterion) {
             for bytes in &schema_bytes {
                 let value: serde_json::Value = serde_json::from_slice(bytes).unwrap();
                 let normalized = normalize(value).unwrap();
-                let diags = ruleset.check_all(&normalized.arena, &profile);
-                COUNTER.fetch_add(1 + diags.len(), Ordering::Relaxed);
+                let _diags = ruleset.check_all(&normalized.arena, &profile);
             }
         })
     });
@@ -92,14 +87,13 @@ fn bench_incremental(c: &mut Criterion) {
         b.iter(|| {
             for bytes in &schema_bytes {
                 let hash = hash_bytes(bytes);
-                let diags = if let Some(cached) = cache.get(hash) {
+                let _diags = if let Some(cached) = cache.get(hash) {
                     ruleset.check_all(&cached.arena, &profile)
                 } else {
                     let value: serde_json::Value = serde_json::from_slice(bytes).unwrap();
                     let normalized = normalize(value).unwrap();
                     ruleset.check_all(&normalized.arena, &profile)
                 };
-                COUNTER.fetch_add(1 + diags.len(), Ordering::Relaxed);
             }
         })
     });

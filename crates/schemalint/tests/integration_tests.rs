@@ -270,8 +270,8 @@ fn cli_json_output_structure() {
     assert!(json["diagnostics"].as_array().unwrap().len() > 0);
     let diag = &json["diagnostics"][0];
     assert!(diag["code"].as_str().unwrap().starts_with("OAI-K"));
-    assert!(diag["filePath"].as_str().is_some());
-    assert!(diag["schemaPath"].as_str().is_some());
+    assert!(diag["pointer"].as_str().is_some());
+    assert!(diag["source"]["file"].as_str().is_some());
 }
 
 #[test]

@@ -17,6 +17,8 @@ linkme = "0.3"
 clap = { version = "4", features = ["derive"] }
 rayon = "1"
 thiserror = "2"
+rustc-hash = "2"
+percent-encoding = "2"
 
 [dev-dependencies]
 insta = "1"
@@ -25,6 +27,7 @@ assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
 criterion = "0.8"
+regex = "1"
 schemalint-profiles = { path = "../schemalint-profiles" }
 
 [[bench]]

@@ -15,15 +15,18 @@ expression: "normalize_temp_paths(&stdout, dir.path())"
     "total_issues": 1,
     "errors": 1,
     "warnings": 0,
-    "schemas_checked": 1
+    "schemas_checked": 1,
+    "duration_ms": [DURATION]
   },
   "diagnostics": [
     {
       "code": "OAI-K-allOf",
       "severity": "error",
       "message": "keyword 'allOf' is not supported by test",
-      "schemaPath": "",
-      "filePath": "[TEMP_DIR]/schema.json",
+      "pointer": "",
+      "source": {
+        "file": "[TEMP_DIR]/schema.json"
+      },
       "profile": "test",
       "seeUrl": "https://schemalint.dev/rules/OAI-K-allOf"
     }

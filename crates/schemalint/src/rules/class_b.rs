@@ -148,12 +148,12 @@ impl Rule for AllPropertiesRequiredRule {
         let Some(Value::Object(props)) = &node_ref.annotations.properties else {
             return Vec::new();
         };
-        let required: Vec<String> = match &node_ref.annotations.required {
+        let required: std::collections::HashSet<String> = match &node_ref.annotations.required {
             Some(Value::Array(arr)) => arr
                 .iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect(),
-            _ => Vec::new(),
+            _ => std::collections::HashSet::new(),
         };
 
         let mut diagnostics = Vec::new();

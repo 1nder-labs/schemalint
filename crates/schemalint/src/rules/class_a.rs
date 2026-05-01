@@ -1,8 +1,6 @@
 use crate::ir::{Arena, NodeId};
 use crate::profile::Profile;
-use crate::rules::registry::{
-    keyword_present, keyword_value, Diagnostic, DiagnosticSeverity, Rule,
-};
+use crate::rules::registry::{Diagnostic, DiagnosticSeverity, KeywordAccessor, Rule};
 
 /// Class A auto-generated keyword rule.
 ///
@@ -10,6 +8,7 @@ use crate::rules::registry::{
 #[derive(Debug, Clone)]
 pub struct KeywordRule {
     pub keyword: &'static str,
+    pub accessor: KeywordAccessor,
     pub severity: DiagnosticSeverity,
     pub code: String,
     pub profile_name: String,
@@ -18,7 +17,7 @@ pub struct KeywordRule {
 impl Rule for KeywordRule {
     fn check(&self, node: NodeId, arena: &Arena, _profile: &Profile) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
-        if keyword_present(&arena[node], self.keyword) {
+        if (self.accessor)(&arena[node]).is_some() {
             let message = format!(
                 "keyword '{}' is not supported by {}",
                 self.keyword, self.profile_name
@@ -43,6 +42,7 @@ impl Rule for KeywordRule {
 #[derive(Debug, Clone)]
 pub struct RestrictionRule {
     pub keyword: &'static str,
+    pub accessor: KeywordAccessor,
     pub allowed_values: Vec<serde_json::Value>,
     pub code: String,
     pub profile_name: String,
@@ -51,7 +51,7 @@ pub struct RestrictionRule {
 impl Rule for RestrictionRule {
     fn check(&self, node: NodeId, arena: &Arena, _profile: &Profile) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
-        if let Some(value) = keyword_value(&arena[node], self.keyword) {
+        if let Some(value) = (self.accessor)(&arena[node]) {
             if !self.allowed_values.contains(value) {
                 let hint = format!("allowed values: {:?}", self.allowed_values);
                 diagnostics.push(Diagnostic {

@@ -9,4 +9,4 @@ warning[OAI-K-uniqueItems]: keyword 'uniqueItems' is not supported by test
      = schema path: 
      = see: https://schemalint.dev/rules/OAI-K-uniqueItems
 
-1 issue found (0 errors, 1 warning) across 1 schema
+1 issue found (0 errors, 1 warning) across 1 schema in [DURATION]ms

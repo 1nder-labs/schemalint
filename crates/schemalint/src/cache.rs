@@ -1,4 +1,4 @@
-use std::collections::hash_map::DefaultHasher;
+use rustc_hash::FxHasher;
 use std::hash::Hasher;
 
 use crate::normalize::NormalizedSchema;
@@ -32,7 +32,7 @@ impl Cache {
 
 /// Compute a fast hash of raw JSON bytes for cache keys.
 pub fn hash_bytes(bytes: &[u8]) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = FxHasher::default();
     hasher.write(bytes);
     hasher.finish()
 }

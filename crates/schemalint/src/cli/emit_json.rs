@@ -24,6 +24,8 @@ struct Summary {
     errors: usize,
     warnings: usize,
     schemas_checked: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    duration_ms: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -31,10 +33,8 @@ struct JsonDiagnostic {
     code: String,
     severity: String,
     message: String,
-    #[serde(rename = "schemaPath")]
-    schema_path: String,
-    #[serde(rename = "filePath")]
-    file_path: String,
+    pointer: String,
+    source: SourceSpan,
     profile: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     hint: Option<String>,
@@ -42,13 +42,23 @@ struct JsonDiagnostic {
     see_url: String,
 }
 
+#[derive(Serialize)]
+struct SourceSpan {
+    file: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    col: Option<u32>,
+}
+
 /// Emit diagnostics as structured JSON.
-pub fn emit_json(
+pub fn emit_json_to_string(
     diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)],
     total_errors: usize,
     total_warnings: usize,
     profile_names: &[String],
-) {
+    duration_ms: Option<u64>,
+) -> String {
     let mut json_diags = Vec::new();
     for (path, diags) in diagnostics {
         for d in diags {
@@ -59,8 +69,12 @@ pub fn emit_json(
                     DiagnosticSeverity::Warning => "warning".to_string(),
                 },
                 message: d.message.clone(),
-                schema_path: d.pointer.clone(),
-                file_path: path.display().to_string(),
+                pointer: d.pointer.clone(),
+                source: SourceSpan {
+                    file: path.display().to_string(),
+                    line: None,
+                    col: None,
+                },
                 profile: d.profile.clone(),
                 hint: d.hint.clone(),
                 see_url: format!("https://schemalint.dev/rules/{}", d.code),
@@ -80,9 +94,10 @@ pub fn emit_json(
             errors: total_errors,
             warnings: total_warnings,
             schemas_checked: diagnostics.len(),
+            duration_ms,
         },
         diagnostics: json_diags,
     };
 
-    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+    serde_json::to_string_pretty(&output).unwrap()
 }

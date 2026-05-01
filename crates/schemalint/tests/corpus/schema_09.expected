@@ -3,8 +3,10 @@
     "code": "OAI-K-format-restricted",
     "severity": "error",
     "message": "keyword 'format' has a restricted value not accepted by openai.so.2026-04-30",
-    "schemaPath": "/properties/card",
-    "filePath": "crates/schemalint/tests/corpus/schema_09.json",
+    "pointer": "/properties/card",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_09.json"
+    },
     "profile": "openai.so.2026-04-30",
     "hint": "allowed values: [String(\"date-time\"), String(\"time\"), String(\"date\"), String(\"duration\"), String(\"email\"), String(\"hostname\"), String(\"ipv4\"), String(\"ipv6\"), String(\"uuid\")]",
     "seeUrl": "https://schemalint.dev/rules/OAI-K-format-restricted"

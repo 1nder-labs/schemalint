@@ -47,15 +47,18 @@ pub fn resolve_refs(
 }
 
 fn resolve_ref_string(ref_str: &str, defs: &IndexMap<String, NodeId>) -> Option<NodeId> {
+    // Strip the fragment prefix.
+    let pointer = ref_str.strip_prefix('#').unwrap_or(ref_str);
+    // Decode percent-encoded segments (e.g. %24 -> $).
+    let decoded = percent_encoding::percent_decode_str(pointer).decode_utf8_lossy();
+    let decoded = decoded.as_ref();
+
     // Internal refs to $defs.
-    if let Some(name) = ref_str.strip_prefix("#/\u{24}defs/") {
-        return defs.get(name).copied();
-    }
-    if let Some(name) = ref_str.strip_prefix("#/$defs/") {
+    if let Some(name) = decoded.strip_prefix("/$defs/") {
         return defs.get(name).copied();
     }
     // Internal refs to definitions (Draft 7).
-    if let Some(name) = ref_str.strip_prefix("#/definitions/") {
+    if let Some(name) = decoded.strip_prefix("/definitions/") {
         return defs.get(name).copied();
     }
     // External refs — not resolved in Phase 1.

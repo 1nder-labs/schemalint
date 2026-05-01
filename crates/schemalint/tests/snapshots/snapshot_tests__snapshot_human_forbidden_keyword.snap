@@ -9,4 +9,4 @@ error[OAI-K-allOf]: keyword 'allOf' is not supported by test
      = schema path: 
      = see: https://schemalint.dev/rules/OAI-K-allOf
 
-1 issue found (1 error, 0 warnings) across 1 schema
+1 issue found (1 error, 0 warnings) across 1 schema in [DURATION]ms

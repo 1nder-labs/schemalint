@@ -37,6 +37,9 @@ jobs:
       - name: Compile benchmarks
         run: cargo bench --no-run --workspace
 
+      - name: Run benchmark smoke test
+        run: cargo bench --workspace -- --sample-size 10
+
   test-macos:
     name: Test (macOS)
     runs-on: macos-latest

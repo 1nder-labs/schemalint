@@ -3,8 +3,10 @@
     "code": "OAI-K-allOf",
     "severity": "error",
     "message": "keyword 'allOf' is not supported by openai.so.2026-04-30",
-    "schemaPath": "/properties/config",
-    "filePath": "crates/schemalint/tests/corpus/schema_44.json",
+    "pointer": "/properties/config",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_44.json"
+    },
     "profile": "openai.so.2026-04-30",
     "seeUrl": "https://schemalint.dev/rules/OAI-K-allOf"
   },
@@ -12,8 +14,10 @@
     "code": "OAI-S-additional-properties-false",
     "severity": "error",
     "message": "object must declare additionalProperties: false",
-    "schemaPath": "/properties/config/allOf/0",
-    "filePath": "crates/schemalint/tests/corpus/schema_44.json",
+    "pointer": "/properties/config/allOf/0",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_44.json"
+    },
     "profile": "openai.so.2026-04-30",
     "seeUrl": "https://schemalint.dev/rules/OAI-S-additional-properties-false"
   }

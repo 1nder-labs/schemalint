@@ -15,7 +15,10 @@ pub struct Diagnostic {
     pub severity: DiagnosticSeverity,
     pub message: String,
     pub pointer: String,
-    pub source: Option<()>, // placeholder for SourceSpan (Phase 3+)
+    /// TODO: Replace `Option<()>` with a real `SourceSpan` type when source
+    /// spans are available (Phase 3+). The dummy type prevents accidental
+    /// stabilization of the placeholder in the public API.
+    pub source: Option<()>,
     pub profile: String,
     pub hint: Option<String>,
 }
@@ -62,8 +65,11 @@ impl RuleSet {
                 Severity::Warn => DiagnosticSeverity::Warning,
                 _ => continue,
             };
+            let accessor = keyword_accessor(keyword)
+                .unwrap_or_else(|| panic!("profile contains unknown keyword '{}'", keyword));
             dynamic_rules.push(Box::new(super::class_a::KeywordRule {
                 keyword,
+                accessor,
                 severity: diag_severity,
                 code: format!("OAI-K-{}", keyword),
                 profile_name: profile.name.clone(),
@@ -72,8 +78,11 @@ impl RuleSet {
 
         // Class A restriction rules.
         for (&keyword, restriction) in &profile.restrictions {
+            let accessor = keyword_accessor(keyword)
+                .unwrap_or_else(|| panic!("profile contains unknown keyword '{}'", keyword));
             dynamic_rules.push(Box::new(super::class_a::RestrictionRule {
                 keyword,
+                accessor,
                 allowed_values: restriction.allowed_values.clone(),
                 code: format!("OAI-K-{}-restricted", keyword),
                 profile_name: profile.name.clone(),
@@ -115,56 +124,67 @@ impl RuleSet {
 // Helper: check whether a keyword is present in a node's annotations
 // ---------------------------------------------------------------------------
 
+/// Function pointer type for extracting a keyword value from a node.
+pub type KeywordAccessor = fn(&Node) -> Option<&serde_json::Value>;
+
 /// Return `true` if the given keyword appears in `node.annotations`.
 pub fn keyword_present(node: &Node, keyword: &str) -> bool {
     keyword_value(node, keyword).is_some()
 }
 
-/// Return the `Value` associated with a known keyword, if any.
-pub fn keyword_value<'a>(node: &'a Node, keyword: &str) -> Option<&'a serde_json::Value> {
+/// Return a function pointer that extracts the value for a known keyword.
+///
+/// This compiles the 40-arm match into a single function-pointer dispatch,
+/// eliminating string comparison overhead in hot rule loops.
+pub fn keyword_accessor(keyword: &str) -> Option<KeywordAccessor> {
     match keyword {
-        "type" => node.annotations.r#type.as_ref(),
-        "properties" => node.annotations.properties.as_ref(),
-        "required" => node.annotations.required.as_ref(),
-        "additionalProperties" => node.annotations.additional_properties.as_ref(),
-        "items" => node.annotations.items.as_ref(),
-        "prefixItems" => node.annotations.prefix_items.as_ref(),
-        "minItems" => node.annotations.min_items.as_ref(),
-        "maxItems" => node.annotations.max_items.as_ref(),
-        "uniqueItems" => node.annotations.unique_items.as_ref(),
-        "contains" => node.annotations.contains.as_ref(),
-        "minimum" => node.annotations.minimum.as_ref(),
-        "maximum" => node.annotations.maximum.as_ref(),
-        "exclusiveMinimum" => node.annotations.exclusive_minimum.as_ref(),
-        "exclusiveMaximum" => node.annotations.exclusive_maximum.as_ref(),
-        "multipleOf" => node.annotations.multiple_of.as_ref(),
-        "minLength" => node.annotations.min_length.as_ref(),
-        "maxLength" => node.annotations.max_length.as_ref(),
-        "pattern" => node.annotations.pattern.as_ref(),
-        "format" => node.annotations.format.as_ref(),
-        "enum" => node.annotations.enum_values.as_ref(),
-        "const" => node.annotations.const_value.as_ref(),
-        "patternProperties" => node.annotations.pattern_properties.as_ref(),
-        "unevaluatedProperties" => node.annotations.unevaluated_properties.as_ref(),
-        "propertyNames" => node.annotations.property_names.as_ref(),
-        "minProperties" => node.annotations.min_properties.as_ref(),
-        "maxProperties" => node.annotations.max_properties.as_ref(),
-        "description" => node.annotations.description.as_ref(),
-        "title" => node.annotations.title.as_ref(),
-        "default" => node.annotations.default.as_ref(),
-        "discriminator" => node.annotations.discriminator.as_ref(),
-        "$ref" => node.annotations.r#ref.as_ref(),
-        "$defs" => node.annotations.defs.as_ref(),
-        "definitions" => node.annotations.definitions.as_ref(),
-        "anyOf" => node.annotations.any_of.as_ref(),
-        "allOf" => node.annotations.all_of.as_ref(),
-        "oneOf" => node.annotations.one_of.as_ref(),
-        "not" => node.annotations.not.as_ref(),
-        "if" => node.annotations.if_schema.as_ref(),
-        "then" => node.annotations.then_schema.as_ref(),
-        "else" => node.annotations.else_schema.as_ref(),
-        "dependentRequired" => node.annotations.dependent_required.as_ref(),
-        "dependentSchemas" => node.annotations.dependent_schemas.as_ref(),
+        "type" => Some(|n| n.annotations.r#type.as_ref()),
+        "properties" => Some(|n| n.annotations.properties.as_ref()),
+        "required" => Some(|n| n.annotations.required.as_ref()),
+        "additionalProperties" => Some(|n| n.annotations.additional_properties.as_ref()),
+        "items" => Some(|n| n.annotations.items.as_ref()),
+        "prefixItems" => Some(|n| n.annotations.prefix_items.as_ref()),
+        "minItems" => Some(|n| n.annotations.min_items.as_ref()),
+        "maxItems" => Some(|n| n.annotations.max_items.as_ref()),
+        "uniqueItems" => Some(|n| n.annotations.unique_items.as_ref()),
+        "contains" => Some(|n| n.annotations.contains.as_ref()),
+        "minimum" => Some(|n| n.annotations.minimum.as_ref()),
+        "maximum" => Some(|n| n.annotations.maximum.as_ref()),
+        "exclusiveMinimum" => Some(|n| n.annotations.exclusive_minimum.as_ref()),
+        "exclusiveMaximum" => Some(|n| n.annotations.exclusive_maximum.as_ref()),
+        "multipleOf" => Some(|n| n.annotations.multiple_of.as_ref()),
+        "minLength" => Some(|n| n.annotations.min_length.as_ref()),
+        "maxLength" => Some(|n| n.annotations.max_length.as_ref()),
+        "pattern" => Some(|n| n.annotations.pattern.as_ref()),
+        "format" => Some(|n| n.annotations.format.as_ref()),
+        "enum" => Some(|n| n.annotations.enum_values.as_ref()),
+        "const" => Some(|n| n.annotations.const_value.as_ref()),
+        "patternProperties" => Some(|n| n.annotations.pattern_properties.as_ref()),
+        "unevaluatedProperties" => Some(|n| n.annotations.unevaluated_properties.as_ref()),
+        "propertyNames" => Some(|n| n.annotations.property_names.as_ref()),
+        "minProperties" => Some(|n| n.annotations.min_properties.as_ref()),
+        "maxProperties" => Some(|n| n.annotations.max_properties.as_ref()),
+        "description" => Some(|n| n.annotations.description.as_ref()),
+        "title" => Some(|n| n.annotations.title.as_ref()),
+        "default" => Some(|n| n.annotations.default.as_ref()),
+        "discriminator" => Some(|n| n.annotations.discriminator.as_ref()),
+        "$ref" => Some(|n| n.annotations.r#ref.as_ref()),
+        "$defs" => Some(|n| n.annotations.defs.as_ref()),
+        "definitions" => Some(|n| n.annotations.definitions.as_ref()),
+        "anyOf" => Some(|n| n.annotations.any_of.as_ref()),
+        "allOf" => Some(|n| n.annotations.all_of.as_ref()),
+        "oneOf" => Some(|n| n.annotations.one_of.as_ref()),
+        "not" => Some(|n| n.annotations.not.as_ref()),
+        "if" => Some(|n| n.annotations.if_schema.as_ref()),
+        "then" => Some(|n| n.annotations.then_schema.as_ref()),
+        "else" => Some(|n| n.annotations.else_schema.as_ref()),
+        "dependentRequired" => Some(|n| n.annotations.dependent_required.as_ref()),
+        "dependentSchemas" => Some(|n| n.annotations.dependent_schemas.as_ref()),
         _ => None,
     }
+}
+
+/// Return the `Value` associated with a known keyword, if any.
+pub fn keyword_value<'a>(node: &'a Node, keyword: &str) -> Option<&'a serde_json::Value> {
+    keyword_accessor(keyword).and_then(|f| f(node))
 }

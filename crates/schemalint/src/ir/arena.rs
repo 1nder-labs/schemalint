@@ -32,6 +32,8 @@ pub enum NodeKind {
     Boolean,
     Null,
     Any,
+    /// TODO: `Ref` is defined but never assigned by the parser or normalizer.
+    /// Either implement `$ref` kind assignment or remove this variant.
     Ref,
     AnyOf,
     OneOf,

@@ -26,9 +26,16 @@ fn cmd() -> Command {
     Command::cargo_bin("schemalint").unwrap()
 }
 
-/// Replace temp directory paths in output with a stable placeholder.
+/// Replace temp directory paths and non-deterministic durations in output with stable placeholders.
 fn normalize_temp_paths(output: &str, temp_dir: &std::path::Path) -> String {
-    output.replace(&temp_dir.to_string_lossy().to_string(), "[TEMP_DIR]")
+    let mut out = output.replace(&temp_dir.to_string_lossy().to_string(), "[TEMP_DIR]");
+    // Strip human footer duration: " in 0ms" -> " in [DURATION]ms"
+    let re_human = regex::Regex::new(r" in \d+ms").unwrap();
+    out = re_human.replace_all(&out, " in [DURATION]ms").to_string();
+    // Strip JSON duration_ms
+    let re_json = regex::Regex::new("duration_ms\": [0-9]+").unwrap();
+    out = re_json.replace_all(&out, "duration_ms\": [DURATION]").to_string();
+    out
 }
 
 // ---------------------------------------------------------------------------
