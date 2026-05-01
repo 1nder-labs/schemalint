@@ -20,7 +20,7 @@ expression: "normalize_temp_paths(&stdout, dir.path())"
   },
   "diagnostics": [
     {
-      "code": "OAI-K-allOf",
+      "code": "TEST-K-allOf",
       "severity": "error",
       "message": "keyword 'allOf' is not supported by test",
       "pointer": "",
@@ -28,7 +28,7 @@ expression: "normalize_temp_paths(&stdout, dir.path())"
         "file": "[TEMP_DIR]/a.json"
       },
       "profile": "test",
-      "seeUrl": "https://schemalint.dev/rules/OAI-K-allOf"
+      "seeUrl": "https://schemalint.dev/rules/TEST-K-allOf"
     }
   ]
 }

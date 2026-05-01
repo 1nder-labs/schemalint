@@ -37,7 +37,7 @@ require_object_root = false
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].code, "OAI-K-allOf");
+    assert_eq!(diagnostics[0].code, "TEST-K-allOf");
     assert_eq!(diagnostics[0].severity, DiagnosticSeverity::Error);
     assert!(diagnostics[0].message.contains("allOf"));
 }
@@ -61,7 +61,7 @@ require_object_root = false
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].code, "OAI-K-uniqueItems");
+    assert_eq!(diagnostics[0].code, "TEST-K-uniqueItems");
     assert_eq!(diagnostics[0].severity, DiagnosticSeverity::Warning);
 }
 
@@ -151,7 +151,7 @@ require_object_root = false
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].code, "OAI-K-format-restricted");
+    assert_eq!(diagnostics[0].code, "TEST-K-format-restricted");
     assert_eq!(diagnostics[0].severity, DiagnosticSeverity::Error);
 }
 

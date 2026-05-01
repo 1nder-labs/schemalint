@@ -93,13 +93,13 @@ struct ObjectRootRule {
 }
 
 impl Rule for ObjectRootRule {
-    fn check(&self, node: NodeId, arena: &Arena, _profile: &Profile) -> Vec<Diagnostic> {
+    fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         if arena[node].parent.is_some() {
             return Vec::new(); // only check root
         }
         if !schema_is_object(&arena[node]) {
             return vec![Diagnostic {
-                code: "OAI-S-object-root".to_string(),
+                code: format!("{}-S-object-root", profile.code_prefix),
                 severity: DiagnosticSeverity::Error,
                 message: "root schema must be an object".to_string(),
                 pointer: arena[node].json_pointer.clone(),
@@ -118,7 +118,7 @@ struct AdditionalPropertiesFalseRule {
 }
 
 impl Rule for AdditionalPropertiesFalseRule {
-    fn check(&self, node: NodeId, arena: &Arena, _profile: &Profile) -> Vec<Diagnostic> {
+    fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         let node_ref = &arena[node];
         if !schema_is_object(node_ref) {
             return Vec::new();
@@ -126,7 +126,7 @@ impl Rule for AdditionalPropertiesFalseRule {
         match &node_ref.annotations.additional_properties {
             Some(Value::Bool(false)) => Vec::new(),
             _ => vec![Diagnostic {
-                code: "OAI-S-additional-properties-false".to_string(),
+                code: format!("{}-S-additional-properties-false", profile.code_prefix),
                 severity: DiagnosticSeverity::Error,
                 message: "object must declare additionalProperties: false".to_string(),
                 pointer: node_ref.json_pointer.clone(),
@@ -144,7 +144,7 @@ struct AllPropertiesRequiredRule {
 }
 
 impl Rule for AllPropertiesRequiredRule {
-    fn check(&self, node: NodeId, arena: &Arena, _profile: &Profile) -> Vec<Diagnostic> {
+    fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         let node_ref = &arena[node];
         if !schema_is_object(node_ref) {
             return Vec::new();
@@ -164,7 +164,7 @@ impl Rule for AllPropertiesRequiredRule {
         for key in props.keys() {
             if !required.contains(key) {
                 diagnostics.push(Diagnostic {
-                    code: "OAI-S-all-properties-required".to_string(),
+                    code: format!("{}-S-all-properties-required", profile.code_prefix),
                     severity: DiagnosticSeverity::Error,
                     message: format!("property '{}' is not listed in required", key),
                     pointer: format!("{}/properties/{}", node_ref.json_pointer, key),
@@ -185,10 +185,10 @@ struct MaxDepthRule {
 }
 
 impl Rule for MaxDepthRule {
-    fn check(&self, node: NodeId, arena: &Arena, _profile: &Profile) -> Vec<Diagnostic> {
+    fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         if arena[node].depth > self.limit {
             return vec![Diagnostic {
-                code: "OAI-S-max-depth".to_string(),
+                code: format!("{}-S-max-depth", profile.code_prefix),
                 severity: DiagnosticSeverity::Error,
                 message: format!(
                     "object nesting depth {} exceeds limit of {}",
@@ -211,7 +211,7 @@ struct MaxTotalPropertiesRule {
 }
 
 impl Rule for MaxTotalPropertiesRule {
-    fn check(&self, node: NodeId, arena: &Arena, _profile: &Profile) -> Vec<Diagnostic> {
+    fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         // Global rule: only run on root.
         if arena[node].parent.is_some() {
             return Vec::new();
@@ -223,7 +223,7 @@ impl Rule for MaxTotalPropertiesRule {
             .sum();
         if total > self.limit as usize {
             return vec![Diagnostic {
-                code: "OAI-S-max-total-properties".to_string(),
+                code: format!("{}-S-max-total-properties", profile.code_prefix),
                 severity: DiagnosticSeverity::Error,
                 message: format!(
                     "total property count {} exceeds limit of {}",
@@ -246,7 +246,7 @@ struct MaxTotalEnumValuesRule {
 }
 
 impl Rule for MaxTotalEnumValuesRule {
-    fn check(&self, node: NodeId, arena: &Arena, _profile: &Profile) -> Vec<Diagnostic> {
+    fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         if arena[node].parent.is_some() {
             return Vec::new();
         }
@@ -257,7 +257,7 @@ impl Rule for MaxTotalEnumValuesRule {
             .sum();
         if total > self.limit as usize {
             return vec![Diagnostic {
-                code: "OAI-S-max-enum-values".to_string(),
+                code: format!("{}-S-max-enum-values", profile.code_prefix),
                 severity: DiagnosticSeverity::Error,
                 message: format!(
                     "total enum value count {} exceeds limit of {}",
@@ -280,7 +280,7 @@ struct MaxStringLengthRule {
 }
 
 impl Rule for MaxStringLengthRule {
-    fn check(&self, node: NodeId, arena: &Arena, _profile: &Profile) -> Vec<Diagnostic> {
+    fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         if arena[node].parent.is_some() {
             return Vec::new();
         }
@@ -306,7 +306,7 @@ impl Rule for MaxStringLengthRule {
 
         if total > self.limit as usize {
             return vec![Diagnostic {
-                code: "OAI-S-string-length-budget".to_string(),
+                code: format!("{}-S-string-length-budget", profile.code_prefix),
                 severity: DiagnosticSeverity::Error,
                 message: format!(
                     "total string length {} exceeds limit of {}",
@@ -328,7 +328,7 @@ struct ExternalRefsRule {
 }
 
 impl Rule for ExternalRefsRule {
-    fn check(&self, node: NodeId, arena: &Arena, _profile: &Profile) -> Vec<Diagnostic> {
+    fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
         if let Some(Value::String(ref_str)) = &arena[node].annotations.r#ref {
             if ref_str.starts_with("http://")
@@ -336,7 +336,7 @@ impl Rule for ExternalRefsRule {
                 || ref_str.starts_with('/')
             {
                 diagnostics.push(Diagnostic {
-                    code: "OAI-S-external-refs".to_string(),
+                    code: format!("{}-S-external-refs", profile.code_prefix),
                     severity: DiagnosticSeverity::Error,
                     message: format!("external $ref '{}' is not supported", ref_str),
                     pointer: arena[node].json_pointer.clone(),

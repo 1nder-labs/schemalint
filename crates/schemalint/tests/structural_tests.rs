@@ -65,7 +65,7 @@ fn structural_root_not_object() {
     let schema = serde_json::json!({ "type": "string" });
     let diagnostics = lint(schema, &profile);
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].code, "OAI-S-object-root");
+    assert_eq!(diagnostics[0].code, "TEST-S-object-root");
     assert_eq!(diagnostics[0].severity, DiagnosticSeverity::Error);
 }
 
@@ -78,7 +78,7 @@ fn structural_additional_properties_true() {
     });
     let diagnostics = lint(schema, &profile);
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].code, "OAI-S-additional-properties-false");
+    assert_eq!(diagnostics[0].code, "TEST-S-additional-properties-false");
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn structural_missing_required_property() {
     });
     let diagnostics = lint(schema, &profile);
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].code, "OAI-S-all-properties-required");
+    assert_eq!(diagnostics[0].code, "TEST-S-all-properties-required");
     assert!(diagnostics[0].message.contains("b"));
 }
 
@@ -114,7 +114,7 @@ fn structural_max_depth_exceeded() {
     let diagnostics = lint(schema, &profile);
     let depth_errors: Vec<_> = diagnostics
         .iter()
-        .filter(|d| d.code == "OAI-S-max-depth")
+        .filter(|d| d.code == "TEST-S-max-depth")
         .collect();
     assert!(
         !depth_errors.is_empty(),
@@ -131,7 +131,7 @@ fn structural_external_ref() {
     });
     let diagnostics = lint(schema, &profile);
     assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].code, "OAI-S-external-refs");
+    assert_eq!(diagnostics[0].code, "TEST-S-external-refs");
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@ fn structural_max_total_properties_exceeded() {
     let diagnostics = lint(schema, &profile);
     let errors: Vec<_> = diagnostics
         .iter()
-        .filter(|d| d.code == "OAI-S-max-total-properties")
+        .filter(|d| d.code == "TEST-S-max-total-properties")
         .collect();
     assert_eq!(
         errors.len(),
@@ -179,7 +179,7 @@ fn structural_max_enum_values_exceeded() {
     let diagnostics = lint(schema, &profile);
     let errors: Vec<_> = diagnostics
         .iter()
-        .filter(|d| d.code == "OAI-S-max-enum-values")
+        .filter(|d| d.code == "TEST-S-max-enum-values")
         .collect();
     assert_eq!(
         errors.len(),
@@ -205,7 +205,7 @@ fn structural_string_length_exceeded() {
     let diagnostics = lint(schema, &profile);
     let errors: Vec<_> = diagnostics
         .iter()
-        .filter(|d| d.code == "OAI-S-string-length-budget")
+        .filter(|d| d.code == "TEST-S-string-length-budget")
         .collect();
     assert_eq!(
         errors.len(),
@@ -248,10 +248,10 @@ external_refs = true
     });
     let diagnostics = lint(schema, &profile);
 
-    let has_class_a = diagnostics.iter().any(|d| d.code == "OAI-K-allOf");
+    let has_class_a = diagnostics.iter().any(|d| d.code == "TEST-K-allOf");
     let has_structural = diagnostics
         .iter()
-        .any(|d| d.code == "OAI-S-additional-properties-false");
+        .any(|d| d.code == "TEST-S-additional-properties-false");
     assert!(has_class_a, "expected Class A diagnostic");
     assert!(has_structural, "expected structural diagnostic");
 }

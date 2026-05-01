@@ -71,7 +71,7 @@ impl RuleSet {
                 keyword,
                 accessor,
                 severity: diag_severity,
-                code: format!("OAI-K-{}", keyword),
+                code: format!("{}-K-{}", profile.code_prefix, keyword),
                 profile_name: profile.name.clone(),
             }));
         }
@@ -84,7 +84,7 @@ impl RuleSet {
                 keyword,
                 accessor,
                 allowed_values: restriction.allowed_values.clone(),
-                code: format!("OAI-K-{}-restricted", keyword),
+                code: format!("{}-K-{}-restricted", profile.code_prefix, keyword),
                 profile_name: profile.name.clone(),
             }));
         }

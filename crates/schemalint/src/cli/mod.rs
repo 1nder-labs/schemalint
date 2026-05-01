@@ -72,7 +72,10 @@ fn run_check(args: args::CheckArgs) -> i32 {
         profiles.push(profile);
     }
 
-    let profile = &profiles[0];
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> =
+        profiles.iter().map(|p| (p, RuleSet::from_profile(p))).collect();
+
+    let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
 
     // -----------------------------------------------------------------------
     // Determine output format
@@ -99,13 +102,7 @@ fn run_check(args: args::CheckArgs) -> i32 {
         } else {
             print!(
                 "{}",
-                emit_json::emit_json_to_string(
-                    &[],
-                    0,
-                    0,
-                    std::slice::from_ref(&profile.name),
-                    Some(0)
-                )
+                emit_json::emit_json_to_string(&[], 0, 0, &profile_names, Some(0))
             );
         }
         return 0;
@@ -115,7 +112,6 @@ fn run_check(args: args::CheckArgs) -> i32 {
     // Process schemas (parallel)
     // -----------------------------------------------------------------------
     let cache = std::sync::Mutex::new(Cache::new());
-    let ruleset = RuleSet::from_profile(&profile);
 
     let results: Vec<(PathBuf, Result<Vec<crate::rules::Diagnostic>, String>)> = files
         .into_par_iter()
@@ -129,7 +125,10 @@ fn run_check(args: args::CheckArgs) -> i32 {
             {
                 let cache_guard = cache.lock().unwrap();
                 if let Some(cached) = cache_guard.get(hash) {
-                    let diags = ruleset.check_all(&cached.arena, &profile);
+                    let mut diags = Vec::new();
+                    for (profile, ruleset) in &profile_rulesets {
+                        diags.extend(ruleset.check_all(&cached.arena, profile));
+                    }
                     return (path, Ok(diags));
                 }
             }
@@ -144,7 +143,10 @@ fn run_check(args: args::CheckArgs) -> i32 {
                 Err(e) => return (path, Err(format!("normalization failed: {}", e))),
             };
 
-            let diags = ruleset.check_all(&normalized.arena, &profile);
+            let mut diags = Vec::new();
+            for (profile, ruleset) in &profile_rulesets {
+                diags.extend(ruleset.check_all(&normalized.arena, profile));
+            }
             cache.lock().unwrap().insert(hash, normalized);
             (path, Ok(diags))
         })
@@ -176,8 +178,11 @@ fn run_check(args: args::CheckArgs) -> i32 {
         }
     }
 
-    // Sort by path for deterministic output
+    // Sort by path, then by profile name for deterministic output
     all_diagnostics.sort_by(|a, b| a.0.cmp(&b.0));
+    for (_, diags) in &mut all_diagnostics {
+        diags.sort_by(|a, b| a.profile.cmp(&b.profile));
+    }
 
     // -----------------------------------------------------------------------
     // Emit output
@@ -194,7 +199,7 @@ fn run_check(args: args::CheckArgs) -> i32 {
             &all_diagnostics,
             total_errors,
             total_warnings,
-            &[profile.name.clone()],
+            &profile_names,
             duration_ms,
         ),
     };
