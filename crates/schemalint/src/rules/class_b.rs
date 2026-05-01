@@ -369,9 +369,22 @@ impl Rule for AllOfWithRefRule {
         let Some(Value::Array(branches)) = &node_ref.annotations.all_of else {
             return Vec::new();
         };
+
+        fn contains_ref(val: &Value) -> bool {
+            match val {
+                Value::Object(map) => {
+                    if map.contains_key("$ref") {
+                        return true;
+                    }
+                    map.values().any(contains_ref)
+                }
+                Value::Array(arr) => arr.iter().any(contains_ref),
+                _ => false,
+            }
+        }
+
         for branch in branches {
-            let Value::Object(map) = branch else { continue };
-            if map.contains_key("$ref") {
+            if contains_ref(branch) {
                 return vec![Diagnostic {
                     code: format!("{}-S-allof-with-ref", profile.code_prefix),
                     severity: DiagnosticSeverity::Error,

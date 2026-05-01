@@ -57,6 +57,29 @@ pub fn resolve_profile(path_or_id: &str) -> Result<Vec<u8>, String> {
     }
 }
 
+/// Resolve a profile ID to raw TOML bytes, rejecting filesystem paths.
+///
+/// Only matches built-in profile IDs. Any input that looks like a path
+/// (contains `/` or `\`) is rejected. This prevents path traversal issues
+/// in server mode where profile selection comes from untrusted input.
+pub fn resolve_builtin_profile(path_or_id: &str) -> Result<Vec<u8>, String> {
+    if path_or_id.contains('/') || path_or_id.contains('\\') {
+        return Err(format!(
+            "profile ID '{}' must be a built-in name, not a filesystem path",
+            path_or_id
+        ));
+    }
+    match path_or_id {
+        "openai.so.2026-04-30" => Ok(schemalint_profiles::OPENAI_SO_2026_04_30
+            .as_bytes()
+            .to_vec()),
+        "anthropic.so.2026-04-30" => Ok(schemalint_profiles::ANTHROPIC_SO_2026_04_30
+            .as_bytes()
+            .to_vec()),
+        other => Err(format!("unknown built-in profile '{other}'")),
+    }
+}
+
 fn run_check(args: args::CheckArgs) -> i32 {
     let start = std::time::Instant::now();
     // -----------------------------------------------------------------------
@@ -81,6 +104,10 @@ fn run_check(args: args::CheckArgs) -> i32 {
         };
         profiles.push(profile);
     }
+
+    // Deduplicate by name (first occurrence wins after sort)
+    profiles.sort_by(|a, b| a.name.cmp(&b.name));
+    profiles.dedup_by_key(|p| p.name.clone());
 
     let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = profiles
         .iter()

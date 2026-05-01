@@ -43,7 +43,9 @@ pub fn run_server() {
                 },
                 "id": null
             });
-            let _ = writeln!(stdout_lock, "{}", error_response);
+            if writeln!(stdout_lock, "{}", error_response).is_err() {
+                break;
+            }
             continue;
         }
 
@@ -58,7 +60,9 @@ pub fn run_server() {
                     },
                     "id": null
                 });
-                let _ = writeln!(stdout_lock, "{}", error_response);
+                if writeln!(stdout_lock, "{}", error_response).is_err() {
+                    break;
+                }
                 continue;
             }
         };
@@ -73,7 +77,9 @@ pub fn run_server() {
                 },
                 "id": id
             });
-            let _ = writeln!(stdout_lock, "{}", error_response);
+            if writeln!(stdout_lock, "{}", error_response).is_err() {
+                break;
+            }
             continue;
         }
 
@@ -89,7 +95,9 @@ pub fn run_server() {
                     "result": result,
                     "id": id
                 });
-                let _ = writeln!(stdout_lock, "{}", response);
+                if writeln!(stdout_lock, "{}", response).is_err() {
+                    break;
+                }
             }
             "shutdown" => {
                 let response = json!({
@@ -97,7 +105,9 @@ pub fn run_server() {
                     "result": null,
                     "id": id
                 });
-                let _ = writeln!(stdout_lock, "{}", response);
+                if writeln!(stdout_lock, "{}", response).is_err() {
+                    break;
+                }
                 break;
             }
             "" => {
@@ -109,7 +119,9 @@ pub fn run_server() {
                     },
                     "id": id
                 });
-                let _ = writeln!(stdout_lock, "{}", error_response);
+                if writeln!(stdout_lock, "{}", error_response).is_err() {
+                    break;
+                }
             }
             _ => {
                 let error_response = json!({
@@ -120,7 +132,9 @@ pub fn run_server() {
                     },
                     "id": id
                 });
-                let _ = writeln!(stdout_lock, "{}", error_response);
+                if writeln!(stdout_lock, "{}", error_response).is_err() {
+                    break;
+                }
             }
         }
     }
@@ -177,7 +191,7 @@ fn handle_check(
             let profile = if let Some(cached) = cache_guard.get(profile_id) {
                 cached.clone()
             } else {
-                let bytes = match crate::cli::resolve_profile(profile_id) {
+                let bytes = match crate::cli::resolve_builtin_profile(profile_id) {
                     Ok(b) => b,
                     Err(e) => {
                         return json!({
@@ -202,12 +216,36 @@ fn handle_check(
         }
     }
 
+    // Deduplicate loaded profiles by name
+    loaded_profiles.sort_by(|a, b| a.name.cmp(&b.name));
+    loaded_profiles.dedup_by_key(|p| p.name.clone());
+
     let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = loaded_profiles
         .iter()
         .map(|p| (p, RuleSet::from_profile(p)))
         .collect();
 
     let profile_names: Vec<String> = loaded_profiles.iter().map(|p| p.name.clone()).collect();
+
+    // OOM guard: count nodes in the raw schema before normalizing.
+    // Reject schemas exceeding a reasonable size to prevent server OOM.
+    fn count_nodes(value: &Value) -> usize {
+        match value {
+            Value::Array(arr) => 1 + arr.iter().map(count_nodes).sum::<usize>(),
+            Value::Object(map) => 1 + map.values().map(count_nodes).sum::<usize>(),
+            _ => 1,
+        }
+    }
+    const MAX_SCHEMA_NODES: usize = 100_000;
+    if count_nodes(&schema) > MAX_SCHEMA_NODES {
+        return json!({
+            "success": false,
+            "error": format!(
+                "Schema exceeds {} node limit; rejected to prevent OOM",
+                MAX_SCHEMA_NODES
+            )
+        });
+    }
 
     let start = Instant::now();
 

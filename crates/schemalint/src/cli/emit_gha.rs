@@ -10,6 +10,7 @@ fn encode_gha_value(s: &str) -> String {
         .replace('\r', "%0D")
         .replace('\n', "%0A")
         .replace(':', "%3A")
+        .replace(',', "%2C")
 }
 
 /// Emit diagnostics as GitHub Actions workflow commands.

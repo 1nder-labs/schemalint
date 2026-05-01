@@ -57,7 +57,8 @@ impl Default for DiskCache {
 
 impl DiskCache {
     pub fn new() -> Self {
-        let cache_dir = dirs::cache_dir().map(|d| d.join("schemalint"));
+        let cache_dir =
+            dirs::cache_dir().map(|d| d.join(format!("schemalint-{}", std::process::id())));
         if let Some(ref dir) = cache_dir {
             if let Err(e) = fs::create_dir_all(dir) {
                 eprintln!(
