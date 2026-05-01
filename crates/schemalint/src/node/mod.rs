@@ -6,24 +6,23 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-// Re-export shared ingestion types for backward compat.
-pub use crate::ingest::{DiscoverResponse, DiscoveredModel};
+use crate::ingest::DiscoverResponse;
 
 const DISCOVER_TIMEOUT_SECS: u64 = 60;
 const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 
-/// Errors produced by Python helper operations.
+/// Errors produced by Node helper operations.
 #[derive(Debug, thiserror::Error)]
-pub enum PythonError {
-    #[error("python interpreter not found: tried {0}")]
+pub enum NodeError {
+    #[error("npx not found; tried {0}")]
     NotInstalled(String),
-    #[error("failed to spawn python helper: {0}")]
+    #[error("failed to spawn node helper: {0}")]
     SpawnFailed(String),
-    #[error("failed to communicate with python helper: {0}")]
+    #[error("failed to communicate with node helper: {0}")]
     RequestFailed(String),
     #[error("discover request timed out after {0}s")]
     Timeout(u64),
-    #[error("invalid response from python helper: {0}")]
+    #[error("invalid response from node helper: {0}")]
     InvalidResponse(String),
     #[error("discovery failed: {0}")]
     DiscoverFailed(String),
@@ -46,11 +45,11 @@ struct JsonRpcError {
     message: String,
 }
 
-/// Manages a Python subprocess running the `schemalint-pydantic` JSON-RPC server.
+/// Manages a Node subprocess running the `schemalint-zod` JSON-RPC server.
 ///
 /// The helper is intentionally not `Sync` — it owns a `Child` with piped I/O
 /// and should be used sequentially before any parallel processing phase.
-pub struct PythonHelper {
+pub struct NodeHelper {
     child: Child,
     stdin: ChildStdin,
     request_id: u64,
@@ -58,39 +57,53 @@ pub struct PythonHelper {
     stderr_lines: Arc<Mutex<Vec<String>>>,
 }
 
-impl PythonHelper {
-    /// Spawn the Python helper subprocess.
+impl NodeHelper {
+    /// Spawn the Node helper subprocess.
     ///
-    /// Resolves the Python interpreter via `python3` → `python` fallback unless
-    /// `python_path` provides an explicit executable.
-    pub fn spawn(python_path: Option<&str>) -> Result<Self, PythonError> {
-        let python = resolve_python(python_path)?;
+    /// Resolves `tsx` as the TypeScript runner, then resolves the helper bin
+    /// path relative to the workspace. Uses `npx tsx` fallback if `tsx` is not
+    /// on PATH. If `node_path` provides an explicit executable, it is used as
+    /// the runner with the bin path as the only argument.
+    pub fn spawn(node_path: Option<&str>) -> Result<Self, NodeError> {
+        let (runner, args): (String, Vec<String>) = if let Some(path) = node_path {
+            (path.to_string(), vec![])
+        } else {
+            let bin = resolve_helper_path().to_string_lossy().to_string();
+            let (runner_name, extra_args) = resolve_tsx_cmd()?;
+            let mut all_args = extra_args;
+            all_args.push(bin);
+            (runner_name, all_args)
+        };
 
-        let mut child = Command::new(&python)
-            .args(["-m", "schemalint_pydantic"])
+        let mut cmd = Command::new(&runner);
+        cmd.args(&args);
+        let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| {
-                PythonError::SpawnFailed(format!("failed to start '{}': {}", python, e))
+                let args_display = args.join(" ");
+                NodeError::SpawnFailed(format!(
+                    "failed to start '{} {}': {}",
+                    runner, args_display, e
+                ))
             })?;
 
         let stdout = child
             .stdout
             .take()
-            .ok_or_else(|| PythonError::SpawnFailed("no stdout pipe available".to_string()))?;
+            .ok_or_else(|| NodeError::SpawnFailed("no stdout pipe available".to_string()))?;
         let stderr = child
             .stderr
             .take()
-            .ok_or_else(|| PythonError::SpawnFailed("no stderr pipe available".to_string()))?;
+            .ok_or_else(|| NodeError::SpawnFailed("no stderr pipe available".to_string()))?;
         let stdin = child
             .stdin
             .take()
-            .ok_or_else(|| PythonError::SpawnFailed("no stdin pipe available".to_string()))?;
+            .ok_or_else(|| NodeError::SpawnFailed("no stdin pipe available".to_string()))?;
 
         // Drain stderr continuously to prevent pipe-buffer deadlock.
-        // Capture lines for inclusion in error messages on failure.
         let stderr_lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let stderr_capture = Arc::clone(&stderr_lines);
         thread::spawn(move || {
@@ -98,7 +111,7 @@ impl PythonHelper {
             for line in reader.lines() {
                 match line {
                     Ok(l) => {
-                        eprintln!("[schemalint-pydantic] {}", l);
+                        eprintln!("[schemalint-zod] {}", l);
                         if let Ok(mut lines) = stderr_capture.lock() {
                             lines.push(l);
                         }
@@ -125,7 +138,7 @@ impl PythonHelper {
             let _ = tx.send(None);
         });
 
-        Ok(PythonHelper {
+        Ok(NodeHelper {
             child,
             stdin,
             request_id: 1,
@@ -134,25 +147,25 @@ impl PythonHelper {
         })
     }
 
-    /// Send a `discover` request for the given package and return discovered models.
-    pub fn discover(&mut self, package: &str) -> Result<DiscoverResponse, PythonError> {
+    /// Send a `discover` request for the given source glob and return discovered models.
+    pub fn discover(&mut self, source: &str) -> Result<DiscoverResponse, NodeError> {
         let id = self.request_id;
         self.request_id += 1;
 
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "discover",
-            "params": { "package": package },
+            "params": { "source": source },
             "id": id,
         });
         let request_str = serde_json::to_string(&request)
-            .map_err(|e| PythonError::RequestFailed(format!("serialize error: {}", e)))?;
+            .map_err(|e| NodeError::RequestFailed(format!("serialize error: {}", e)))?;
 
         writeln!(self.stdin, "{}", request_str)
-            .map_err(|e| PythonError::RequestFailed(format!("write error: {}", e)))?;
+            .map_err(|e| NodeError::RequestFailed(format!("write error: {}", e)))?;
         self.stdin
             .flush()
-            .map_err(|e| PythonError::RequestFailed(format!("flush error: {}", e)))?;
+            .map_err(|e| NodeError::RequestFailed(format!("flush error: {}", e)))?;
 
         let line = match self
             .stdout_rx
@@ -160,49 +173,49 @@ impl PythonHelper {
         {
             Ok(Some(line)) => line,
             Ok(None) => {
-                return Err(self.augment_error(PythonError::InvalidResponse(
+                return Err(self.augment_error(NodeError::InvalidResponse(
                     "helper process closed stdout unexpectedly".to_string(),
                 )))
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                return Err(self.augment_error(PythonError::Timeout(DISCOVER_TIMEOUT_SECS)))
+                return Err(self.augment_error(NodeError::Timeout(DISCOVER_TIMEOUT_SECS)))
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(self.augment_error(PythonError::InvalidResponse(
+                return Err(self.augment_error(NodeError::InvalidResponse(
                     "stdout reader thread disconnected".to_string(),
                 )))
             }
         };
 
         let response: JsonRpcResponse = serde_json::from_str(&line).map_err(|e| {
-            self.augment_error(PythonError::InvalidResponse(format!(
+            self.augment_error(NodeError::InvalidResponse(format!(
                 "response parse error: {}",
                 e
             )))
         })?;
 
         if let Some(error) = response.error {
-            return Err(self.augment_error(PythonError::DiscoverFailed(error.message)));
+            return Err(self.augment_error(NodeError::DiscoverFailed(error.message)));
         }
 
         if response.jsonrpc.as_deref() != Some("2.0") {
-            return Err(self.augment_error(PythonError::InvalidResponse(
+            return Err(self.augment_error(NodeError::InvalidResponse(
                 "response missing or has incorrect jsonrpc version".to_string(),
             )));
         }
 
         let result = response.result.ok_or_else(|| {
-            self.augment_error(PythonError::InvalidResponse(
+            self.augment_error(NodeError::InvalidResponse(
                 "response missing result field".to_string(),
             ))
         })?;
 
         serde_json::from_value(result)
-            .map_err(|e| PythonError::InvalidResponse(format!("result parse error: {}", e)))
+            .map_err(|e| NodeError::InvalidResponse(format!("result parse error: {}", e)))
     }
 
     /// Drain captured stderr lines and append them to the error message.
-    fn augment_error(&self, err: PythonError) -> PythonError {
+    fn augment_error(&self, err: NodeError) -> NodeError {
         let lines: Vec<String> = {
             let mut guard = self.stderr_lines.lock().unwrap_or_else(|e| e.into_inner());
             std::mem::take(&mut *guard)
@@ -213,25 +226,25 @@ impl PythonHelper {
         let stderr_tail = if lines.len() > 10 {
             let tail: Vec<_> = lines.iter().rev().take(10).map(|s| s.as_str()).collect();
             format!(
-                "\n--- Python stderr (last {} of {} lines) ---\n{}\n--- end stderr ---",
+                "\n--- Node stderr (last {} of {} lines) ---\n{}\n--- end stderr ---",
                 10,
                 lines.len(),
                 tail.into_iter().rev().collect::<Vec<_>>().join("\n")
             )
         } else {
             format!(
-                "\n--- Python stderr ---\n{}\n--- end stderr ---",
+                "\n--- Node stderr ---\n{}\n--- end stderr ---",
                 lines.join("\n")
             )
         };
         match err {
-            PythonError::DiscoverFailed(msg) => {
-                PythonError::DiscoverFailed(format!("{}{}", msg, stderr_tail))
+            NodeError::DiscoverFailed(msg) => {
+                NodeError::DiscoverFailed(format!("{}{}", msg, stderr_tail))
             }
-            PythonError::InvalidResponse(msg) => {
-                PythonError::InvalidResponse(format!("{}{}", msg, stderr_tail))
+            NodeError::InvalidResponse(msg) => {
+                NodeError::InvalidResponse(format!("{}{}", msg, stderr_tail))
             }
-            PythonError::Timeout(secs) => PythonError::Timeout(secs),
+            NodeError::Timeout(secs) => NodeError::Timeout(secs),
             other => other,
         }
     }
@@ -270,12 +283,12 @@ impl PythonHelper {
     }
 }
 
-impl Drop for PythonHelper {
+impl Drop for NodeHelper {
     fn drop(&mut self) {
         match self.child.try_wait() {
             Ok(Some(_)) => {}
             Ok(None) => {
-                eprintln!("warning: python helper still running, attempting shutdown");
+                eprintln!("warning: node helper still running, attempting shutdown");
                 let request = serde_json::json!({
                     "jsonrpc": "2.0",
                     "method": "shutdown",
@@ -313,26 +326,47 @@ impl Drop for PythonHelper {
     }
 }
 
-fn resolve_python(python_path: Option<&str>) -> Result<String, PythonError> {
-    if let Some(path) = python_path {
-        return Ok(path.to_string());
+/// Resolve the `tsx` runner command.
+///
+/// Returns `(executable, extra_args)` where extra_args are passed before the
+/// bin path. Tries `tsx` directly first; falls back to `npx tsx`.
+fn resolve_tsx_cmd() -> Result<(String, Vec<String>), NodeError> {
+    // Try standalone tsx
+    if Command::new("tsx")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+    {
+        return Ok(("tsx".to_string(), vec![]));
     }
-    let candidates = ["python3", "python"];
-    let mut tried = String::new();
-    for candidate in &candidates {
-        if !tried.is_empty() {
-            tried.push_str(", ");
-        }
-        tried.push_str(candidate);
-        if Command::new(candidate)
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok()
-        {
-            return Ok(candidate.to_string());
-        }
+    // Fall back to npx tsx
+    if Command::new("npx")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+    {
+        return Ok(("npx".to_string(), vec!["tsx".to_string()]));
     }
-    Err(PythonError::NotInstalled(tried))
+    Err(NodeError::NotInstalled(
+        "tsx or npx not found — install tsx via: npm install -g tsx".to_string(),
+    ))
+}
+
+/// Resolve the path to the `schemalint-zod` helper bin entry.
+///
+/// Returns the absolute path to `typescript/schemalint-zod/bin/schemalint-zod.js`
+/// relative to the workspace root.
+fn resolve_helper_path() -> std::path::PathBuf {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    // CARGO_MANIFEST_DIR = <workspace>/crates/schemalint
+    // Workspace root = ../../ from the manifest dir
+    let ws_root = manifest_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .unwrap_or(std::path::Path::new("."));
+    ws_root.join("typescript/schemalint-zod/bin/schemalint-zod.js")
 }

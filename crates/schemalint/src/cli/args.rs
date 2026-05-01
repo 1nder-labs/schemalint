@@ -18,6 +18,8 @@ pub enum Commands {
     Check(CheckArgs),
     /// Check Pydantic models via Python subprocess
     CheckPython(CheckPythonArgs),
+    /// Check Zod schemas via Node.js subprocess
+    CheckNode(CheckNodeArgs),
     /// Start JSON-RPC server mode
     Server(ServerArgs),
 }
@@ -60,6 +62,33 @@ pub struct CheckPythonArgs {
     /// Path to Python executable (default: python3)
     #[arg(long = "python-path")]
     pub python_path: Option<String>,
+
+    /// Output format
+    #[arg(short, long, value_enum)]
+    pub format: Option<OutputFormat>,
+
+    /// Write output to a file instead of stdout
+    #[arg(short, long)]
+    pub output: Option<PathBuf>,
+}
+
+#[derive(Parser)]
+pub struct CheckNodeArgs {
+    /// TypeScript source globs to discover Zod schemas from (repeatable)
+    #[arg(short = 'S', long = "source")]
+    pub sources: Vec<String>,
+
+    /// Path to TOML capability profile (repeatable; overrides package.json)
+    #[arg(short, long = "profile")]
+    pub profiles: Vec<PathBuf>,
+
+    /// Path to package.json (default: ./package.json)
+    #[arg(long = "config")]
+    pub config: Option<PathBuf>,
+
+    /// Path to Node/tsx executable (default: auto-detect tsx)
+    #[arg(long = "node-path")]
+    pub node_path: Option<String>,
 
     /// Output format
     #[arg(short, long, value_enum)]

@@ -18,6 +18,7 @@ pub mod emit_human;
 pub mod emit_json;
 pub mod emit_junit;
 pub mod emit_sarif;
+pub mod node_config;
 pub mod pyproject;
 pub mod server;
 
@@ -31,6 +32,10 @@ pub fn run() {
         }
         Commands::CheckPython(args) => {
             let exit_code = run_check_python(args);
+            process::exit(exit_code);
+        }
+        Commands::CheckNode(args) => {
+            let exit_code = run_check_node(args);
             process::exit(exit_code);
         }
         Commands::Server(_args) => {
@@ -397,7 +402,7 @@ fn run_check_python(args: args::CheckPythonArgs) -> i32 {
         }
     };
 
-    let mut discovered_models: Vec<crate::python::DiscoveredModel> = Vec::new();
+    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
     let mut discovery_failures = 0usize;
     for package in &packages {
         match helper.discover(package) {
@@ -515,21 +520,286 @@ fn run_check_python(args: args::CheckPythonArgs) -> i32 {
     }
 }
 
+fn run_check_node(args: args::CheckNodeArgs) -> i32 {
+    let start = std::time::Instant::now();
+
+    // -------------------------------------------------------------------
+    // 1. Load package.json configuration
+    // -------------------------------------------------------------------
+    let config_path = args
+        .config
+        .as_deref()
+        .unwrap_or_else(|| Path::new("package.json"));
+    let node_config = match node_config::load_node_config(config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return 1;
+        }
+    };
+
+    // -------------------------------------------------------------------
+    // 2. Merge CLI flags on top of config
+    // -------------------------------------------------------------------
+    let sources = if args.sources.is_empty() {
+        node_config
+            .as_ref()
+            .map(|c| c.include.clone())
+            .unwrap_or_default()
+    } else {
+        args.sources.clone()
+    };
+
+    let profile_args: Vec<String> = if args.profiles.is_empty() {
+        node_config
+            .as_ref()
+            .map(|c| c.profiles.clone())
+            .unwrap_or_default()
+    } else {
+        args.profiles
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect()
+    };
+
+    let exclude_globs: Vec<String> = node_config
+        .as_ref()
+        .map(|c| c.exclude.clone())
+        .unwrap_or_default();
+
+    if sources.is_empty() {
+        eprintln!(
+            "error: no sources specified. Use --source or configure \"schemalint\" in package.json"
+        );
+        return 1;
+    }
+
+    if profile_args.is_empty() {
+        eprintln!(
+            "error: no profiles specified. Use --profile or configure \"schemalint\" in package.json"
+        );
+        return 1;
+    }
+
+    // -------------------------------------------------------------------
+    // 3. Load profiles
+    // -------------------------------------------------------------------
+    let mut profiles = Vec::new();
+    for id in &profile_args {
+        let profile_bytes = match resolve_profile(id) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("error: failed to read profile '{}': {}", id, e);
+                return 1;
+            }
+        };
+        let profile = match load(&profile_bytes) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("error: failed to load profile '{}': {}", id, e);
+                return 1;
+            }
+        };
+        profiles.push(profile);
+    }
+
+    profiles.sort_by(|a, b| a.name.cmp(&b.name));
+    profiles.dedup_by_key(|p| p.name.clone());
+
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = profiles
+        .iter()
+        .map(|p| (p, RuleSet::from_profile(p)))
+        .collect();
+
+    let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
+
+    // -------------------------------------------------------------------
+    // 4. Determine output format
+    // -------------------------------------------------------------------
+    let format = args.format.unwrap_or_else(|| {
+        if std::io::stdout().is_terminal() {
+            OutputFormat::Human
+        } else {
+            OutputFormat::Json
+        }
+    });
+
+    // -------------------------------------------------------------------
+    // 5. Spawn Node helper and discover schemas
+    // -------------------------------------------------------------------
+    let mut helper = match crate::node::NodeHelper::spawn(args.node_path.as_deref()) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return 1;
+        }
+    };
+
+    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
+    let mut discovery_failures = 0usize;
+    for source in &sources {
+        match helper.discover(source) {
+            Ok(resp) => {
+                for model in resp.models {
+                    discovered_models.push(model);
+                }
+                // Log discovery warnings
+                for warning in &resp.warnings {
+                    eprintln!(
+                        "warning: discovery warning for '{}' in source '{}': {}",
+                        warning.model, source, warning.message
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("error: discovery failed for source '{}': {}", source, e);
+                discovery_failures += 1;
+            }
+        }
+    }
+
+    // Apply exclude patterns: filter discovered models by module_path
+    if !exclude_globs.is_empty() {
+        discovered_models.retain(|m| {
+            let kept = !exclude_globs.iter().any(|g| {
+                // Simple glob matching: check if module_path contains the glob pattern
+                // (stripping any leading ** or * wildcards for basic matching)
+                let pattern = g.trim_start_matches("**/");
+                m.module_path.contains(pattern)
+            });
+            kept
+        });
+    }
+
+    helper.shutdown();
+
+    if discovered_models.is_empty() {
+        if discovery_failures > 0 {
+            eprintln!(
+                "error: all {} source(s) failed discovery",
+                discovery_failures
+            );
+            return 1;
+        }
+        if format == OutputFormat::Human {
+            println!("0 issues found (0 errors, 0 warnings) across 0 schemas");
+        } else {
+            print!(
+                "{}",
+                emit_json::emit_json_to_string(&[], 0, 0, &profile_names, Some(0))
+            );
+        }
+        return 0;
+    }
+
+    // -------------------------------------------------------------------
+    // 6. Normalize and check schemas
+    // -------------------------------------------------------------------
+    let schema_entries: Vec<(PathBuf, serde_json::Value)> = discovered_models
+        .iter()
+        .map(|m| (PathBuf::from(&m.module_path), m.schema.clone()))
+        .collect();
+
+    let results = process_schemas(schema_entries, &profile_rulesets);
+
+    // -------------------------------------------------------------------
+    // 7. Attach source spans from discovery
+    // -------------------------------------------------------------------
+    let all_diagnostics = attach_source_spans(results, &discovered_models);
+
+    // -------------------------------------------------------------------
+    // 8. Aggregate results
+    // -------------------------------------------------------------------
+    let (all_diagnostics, total_errors, total_warnings) = aggregate_results(all_diagnostics);
+
+    // -------------------------------------------------------------------
+    // 9. Emit output
+    // -------------------------------------------------------------------
+    let duration_ms = Some(start.elapsed().as_millis() as u64);
+    let output_text = match format {
+        OutputFormat::Human => emit_human::emit_human_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            duration_ms,
+        ),
+        OutputFormat::Json => emit_json::emit_json_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Sarif => emit_sarif::emit_sarif_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Gha => emit_gha::emit_gha_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Junit => emit_junit::emit_junit_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+    };
+
+    if let Some(out_path) = &args.output {
+        if let Err(e) = fs::write(out_path, &output_text) {
+            eprintln!(
+                "error: failed to write output to '{}': {}",
+                out_path.display(),
+                e
+            );
+            return 2;
+        }
+    } else {
+        print!("{}", output_text);
+    }
+
+    if total_errors > 0 || discovery_failures > 0 {
+        1
+    } else {
+        0
+    }
+}
+
+/// Attach source spans from discovered models to diagnostics.
+///
+/// When multiple schemas share the same `module_path` (e.g., `UserSchema` and
+/// `AddressSchema` in `schemas/models.ts`), their source maps are merged so
+/// diagnostics on any schema in the file resolve to the correct span.
 fn attach_source_spans(
     results: Vec<(PathBuf, Result<Vec<crate::rules::Diagnostic>, String>)>,
-    models: &[crate::python::DiscoveredModel],
+    models: &[crate::ingest::DiscoveredModel],
 ) -> Vec<(PathBuf, Result<Vec<crate::rules::Diagnostic>, String>)> {
+    // Build merged source maps keyed by module_path.
+    use std::collections::HashMap;
+    let mut merged_maps: HashMap<String, HashMap<String, crate::rules::registry::SourceSpan>> =
+        HashMap::new();
+    for model in models {
+        let entry = merged_maps.entry(model.module_path.clone()).or_default();
+        for (pointer, span) in &model.source_map {
+            entry.entry(pointer.clone()).or_insert_with(|| span.clone());
+        }
+    }
+
     results
         .into_iter()
         .map(|(key, result)| match result {
             Ok(mut diags) => {
-                // Find the matching model's source map by module_path key
-                if let Some(model) = models
-                    .iter()
-                    .find(|m| m.module_path == key.to_string_lossy())
-                {
+                if let Some(merged_map) = merged_maps.get(&key.to_string_lossy().to_string()) {
                     for d in &mut diags {
-                        if let Some(span) = model.source_map.get(&d.pointer) {
+                        if let Some(span) = merged_map.get(&d.pointer) {
                             d.source = Some(span.clone());
                         }
                     }

@@ -26,6 +26,7 @@ fn parse_check_command_with_profile_and_files() {
         }
         Commands::Server(_) => unreachable!(),
         Commands::CheckPython(_) => unreachable!(),
+        Commands::CheckNode(_) => unreachable!(),
     }
 }
 
@@ -46,6 +47,7 @@ fn parse_check_command_with_format_flag() {
         }
         Commands::Server(_) => unreachable!(),
         Commands::CheckPython(_) => unreachable!(),
+        Commands::CheckNode(_) => unreachable!(),
     }
 }
 
@@ -66,6 +68,7 @@ fn parse_check_command_with_multiple_paths() {
         }
         Commands::Server(_) => unreachable!(),
         Commands::CheckPython(_) => unreachable!(),
+        Commands::CheckNode(_) => unreachable!(),
     }
 }
 
@@ -92,6 +95,7 @@ fn parse_check_command_with_multiple_profiles() {
         }
         Commands::Server(_) => unreachable!(),
         Commands::CheckPython(_) => unreachable!(),
+        Commands::CheckNode(_) => unreachable!(),
     }
 }
 
