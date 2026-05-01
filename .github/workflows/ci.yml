@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
 
 jobs:
   test:
@@ -24,11 +25,8 @@ jobs:
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Build
-        run: cargo build --workspace --verbose
-
-      - name: Run tests
-        run: cargo test --workspace --verbose
+      - name: Build and test
+        run: cargo test --workspace
 
       - name: Run clippy
         run: cargo clippy --workspace -- -D warnings
@@ -51,10 +49,7 @@ jobs:
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Build
-        run: cargo build --workspace
-
-      - name: Run tests
+      - name: Build and test
         run: cargo test --workspace
 
   msrv:
