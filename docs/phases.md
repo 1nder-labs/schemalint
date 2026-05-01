@@ -30,10 +30,21 @@ Build the minimal end-to-end pipeline: parse a schema, load a profile, detect mi
 - **Internal Representation (IR).** Arena-allocated schema graph with `NodeId(u32)` indexing, stable JSON Pointers, parent links, source spans, and reference-aware `$ref` edges.
 - **Schema normalizer.** Dialect detection, `$ref` graph resolution (no inline expansion), Tarjan SCC cycle detection, type-array desugaring, parent/depth/JSON Pointer computation, stable content-hash for caching.
 - **Profile loader.** TOML parser for the five-state severity model (`allow`, `warn`, `strip`, `forbid`, `unknown`). Profiles compile to `HashMap<&'static str, Severity>` once per process.
-- **Auto-registered rule registry.** Class A rules (profile-derived keyword rules) auto-generate from the loaded profile. Class B rule infrastructure is in place using `inventory` or `linkme` distributed slices — no hand-written Class B rules yet, but the registry is ready for them.
+- **Auto-registered rule registry.** Class A rules (profile-derived keyword rules) auto-generate from the loaded profile. Class B rule infrastructure is in place using `linkme` distributed slices — no hand-written Class B rules yet, but the registry is ready for them.
 - **Schema-to-profile diff tool.** A minimal CLI command that reads a JSON Schema and a profile, then emits raw structural mismatches (e.g., "schema uses `minimum` at `/properties/x`; profile marks `minimum` as `forbid`"). No severity overrides, hints, SARIF, or configuration — just typed inventory of keyword-profile mismatches.
 - **CLI with human and JSON output only.** Batch mode only.
 - **OpenAI Structured Outputs profile.** Complete TOML profile covering all keywords emitted by Pydantic v2 and `zod-to-json-schema`. Grounded in live OpenAI docs (`developers.openai.com/api/docs/guides/structured-outputs`) as of 2026-04-30. Less common keywords may remain `unknown` with explicit scope notes.
+
+### What is explicitly deferred
+
+- **Hand-written Class B semantic rules.** Infrastructure only; data-driven structural rules from the `[structural]` TOML section are included, but semantic rules (cycle depth bounds, empty-object detection, discriminator hints for `anyOf` over objects) are deferred to Phase 2.
+- **Multi-profile composition.** The CLI accepts exactly one `--profile <path>` argument. Running against multiple profiles simultaneously is deferred to Phase 2.
+- **Built-in profile resolution by ID.** Phase 1 requires an explicit file path. Resolving `openai.so.2026-04-30` without a path is deferred to Phase 2.
+- **Disk-based incremental cache.** Only an in-memory content-hash cache within a single CLI invocation exists. Persistent disk cache and cache invalidation are deferred to Phase 2 (`--watch` server mode).
+- **SARIF, GitHub Actions annotations, and JUnit XML output.** Only human (rustc-style) and structured JSON output exist. Additional CI formats are deferred to Phase 2.
+- **Source spans for raw `.json` files.** `serde_json` does not provide byte offsets, so line:col attribution is omitted for raw JSON. Source spans are available only via Pydantic/Zod ingestion helpers (Phase 3+).
+- **Pydantic and Zod ingestion helpers.** Direct JSON Schema files only; language-specific model discovery is deferred to Phases 3 and 4.
+- **Auto-fix and schema rewriting.** Out of scope for v1 per SOW §3.2.
 
 ### Completion criteria
 
@@ -49,14 +60,17 @@ Add hand-written semantic rules, the second provider profile, multi-profile comp
 
 ### What gets built
 
+All items deferred from Phase 1 are picked up here.
+
 - **Class B semantic rules.** Hand-written rules for checks that are not single-keyword presence tests: cycle depth bounds, total enum cardinality, "all properties in required," empty-object detection, `additionalProperties: {}` detection, discriminator hints for `anyOf` over objects.
 - **Anthropic Structured Outputs profile.** Complete TOML profile with the same coverage standards as the OpenAI profile.
 - **Multi-profile composition.** The engine can run with multiple active profiles (`--profile openai --profile anthropic`) and emits the union of forbid/strip/warn rules. Each diagnostic identifies which profile produced it. The canonical use case — "write one schema that works on both providers" — is the primary framing for all examples and documentation.
+- **Built-in profile resolution by ID.** Resolving `openai.so.2026-04-30` without an explicit file path, using bundled profiles from the `schemalint-profiles` crate.
 - **SARIF v2.1.0 output.** Required for GitHub code scanning, Azure DevOps Advanced Security, and enterprise CI dashboards.
 - **GitHub Actions annotation output.** Native `::error` and `::warning` workflow commands.
 - **JUnit XML output.** For CI systems that surface JUnit results in PR checks (GitLab, Jenkins, CircleCI).
 - **Anthropic-specific regression corpus.** 25 additional schemas covering Anthropic-specific failure modes (SDK stripping, optional parameter budgets, union budgets, strict tool budgets).
-- **Server mode (`--watch`).** Streaming JSON-RPC server over stdin/stdout. Reuses the same engine, normalizer, and rule registry as the batch CLI; only the emitter changes.
+- **Server mode (`--watch`).** Streaming JSON-RPC server over stdin/stdout. Reuses the same engine, normalizer, and rule registry as the batch CLI; only the emitter changes. Includes a persistent disk-based incremental cache with cache invalidation.
 
 ### Completion criteria
 
@@ -72,6 +86,8 @@ Add hand-written semantic rules, the second provider profile, multi-profile comp
 Add first-class Pydantic model discovery with source-span mapping and Python configuration support.
 
 ### What gets built
+
+Source spans (line:col attribution) for raw `.json` files are not available in Phase 1 because `serde_json` does not provide byte offsets. This phase delivers source spans by going directly to the source language.
 
 - **`schemalint-pydantic` helper.** A pip-installable Python package that runs as a long-lived JSON-RPC server over stdin/stdout. The Rust CLI maintains a process pool and sends discovery requests.
 - **Model discovery.** Imports the target Python package, walks for `pydantic.BaseModel` subclasses, calls `Model.model_json_schema()` (v2) or `Model.schema()` (v1), resolves source locations via `inspect`, and returns JSONL records via JSON-RPC.
@@ -91,6 +107,8 @@ Add first-class Pydantic model discovery with source-span mapping and Python con
 Add first-class Zod schema discovery with TypeScript source mapping and Node configuration support.
 
 ### What gets built
+
+Mirrors Phase 3 for the TypeScript/Zod ecosystem, completing source-span coverage for the two primary schema-authoring languages.
 
 - **`schemalint-zod` helper.** An npm-installable TypeScript package that runs as a long-lived JSON-RPC server over stdin/stdout. The Rust CLI maintains a process pool.
 - **Schema discovery.** Loads the TypeScript project, locates `z.object(...)` call expressions, evaluates each schema in a sandboxed context, converts via `zod-to-json-schema`, captures the original `CallExpression` location, and returns JSONL records via JSON-RPC.
