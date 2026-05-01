@@ -16,13 +16,15 @@ pub struct Cli {
 pub enum Commands {
     /// Check JSON Schemas against a capability profile
     Check(CheckArgs),
+    /// Start JSON-RPC server mode
+    Server(ServerArgs),
 }
 
 #[derive(Parser)]
 pub struct CheckArgs {
-    /// Path to the TOML capability profile
-    #[arg(short, long)]
-    pub profile: PathBuf,
+    /// Path to the TOML capability profile (may be given multiple times)
+    #[arg(short, long = "profile", required = true)]
+    pub profiles: Vec<PathBuf>,
 
     /// Output format
     #[arg(short, long, value_enum)]
@@ -35,6 +37,9 @@ pub struct CheckArgs {
     /// Schema files or directories to check
     pub paths: Vec<String>,
 }
+
+#[derive(Parser)]
+pub struct ServerArgs {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {

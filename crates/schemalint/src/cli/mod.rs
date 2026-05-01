@@ -24,36 +24,55 @@ pub fn run() {
             let exit_code = run_check(check_args);
             process::exit(exit_code);
         }
+        Commands::Server(_args) => {
+            eprintln!("error: server mode is not yet implemented");
+            process::exit(1);
+        }
+    }
+}
+
+/// Resolve a profile identifier to raw TOML bytes.
+///
+/// If the input contains a path separator it is treated as a filesystem path.
+/// Otherwise it is matched against built-in profile IDs.
+pub fn resolve_profile(path_or_id: &str) -> Result<Vec<u8>, String> {
+    if path_or_id.contains('/') || path_or_id.contains('\\') {
+        fs::read(path_or_id).map_err(|e| format!("{e}"))
+    } else {
+        match path_or_id {
+            "openai.so.2026-04-30" => Ok(schemalint_profiles::OPENAI_SO_2026_04_30.as_bytes().to_vec()),
+            "anthropic.so.2026-04-30" => Ok(schemalint_profiles::ANTHROPIC_SO_2026_04_30.as_bytes().to_vec()),
+            other => Err(format!("unknown built-in profile '{other}'")),
+        }
     }
 }
 
 fn run_check(args: args::CheckArgs) -> i32 {
     let start = std::time::Instant::now();
     // -----------------------------------------------------------------------
-    // Load profile
+    // Load profiles
     // -----------------------------------------------------------------------
-    let profile_bytes = match fs::read(&args.profile) {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!(
-                "error: failed to read profile '{}': {}",
-                args.profile.display(),
-                e
-            );
-            return 1;
-        }
-    };
-    let profile = match load(&profile_bytes) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!(
-                "error: failed to load profile '{}': {}",
-                args.profile.display(),
-                e
-            );
-            return 1;
-        }
-    };
+    let mut profiles = Vec::new();
+    for path_or_id in &args.profiles {
+        let path_or_id_str = path_or_id.to_string_lossy();
+        let profile_bytes = match resolve_profile(&path_or_id_str) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("error: failed to read profile '{path_or_id_str}': {e}");
+                return 1;
+            }
+        };
+        let profile = match load(&profile_bytes) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("error: failed to load profile '{path_or_id_str}': {e}");
+                return 1;
+            }
+        };
+        profiles.push(profile);
+    }
+
+    let profile = &profiles[0];
 
     // -----------------------------------------------------------------------
     // Determine output format
@@ -175,7 +194,7 @@ fn run_check(args: args::CheckArgs) -> i32 {
             &all_diagnostics,
             total_errors,
             total_warnings,
-            &[profile.name],
+            &[profile.name.clone()],
             duration_ms,
         ),
     };
