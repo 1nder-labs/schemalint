@@ -34,7 +34,9 @@ fn normalize_temp_paths(output: &str, temp_dir: &std::path::Path) -> String {
     out = re_human.replace_all(&out, " in [DURATION]ms").to_string();
     // Strip JSON duration_ms
     let re_json = regex::Regex::new("duration_ms\": [0-9]+").unwrap();
-    out = re_json.replace_all(&out, "duration_ms\": [DURATION]").to_string();
+    out = re_json
+        .replace_all(&out, "duration_ms\": [DURATION]")
+        .to_string();
     out
 }
 

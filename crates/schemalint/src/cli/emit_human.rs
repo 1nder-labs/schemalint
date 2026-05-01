@@ -36,7 +36,10 @@ pub fn emit_human_to_string(
             if let Some(hint) = &d.hint {
                 out.push_str(&format!("     = hint: {}\n", hint));
             }
-            out.push_str(&format!("     = see: https://schemalint.dev/rules/{}\n", d.code));
+            out.push_str(&format!(
+                "     = see: https://schemalint.dev/rules/{}\n",
+                d.code
+            ));
             out.push('\n');
         }
     }

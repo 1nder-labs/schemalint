@@ -78,7 +78,16 @@ fn run_check(args: args::CheckArgs) -> i32 {
         if format == OutputFormat::Human {
             println!("0 issues found (0 errors, 0 warnings) across 0 schemas");
         } else {
-            print!("{}", emit_json::emit_json_to_string(&[], 0, 0, std::slice::from_ref(&profile.name), Some(0)));
+            print!(
+                "{}",
+                emit_json::emit_json_to_string(
+                    &[],
+                    0,
+                    0,
+                    std::slice::from_ref(&profile.name),
+                    Some(0)
+                )
+            );
         }
         return 0;
     }
@@ -156,23 +165,28 @@ fn run_check(args: args::CheckArgs) -> i32 {
     // -----------------------------------------------------------------------
     let duration_ms = Some(start.elapsed().as_millis() as u64);
     let output_text = match format {
-        OutputFormat::Human => {
-            emit_human::emit_human_to_string(&all_diagnostics, total_errors, total_warnings, duration_ms)
-        }
-        OutputFormat::Json => {
-            emit_json::emit_json_to_string(
-                &all_diagnostics,
-                total_errors,
-                total_warnings,
-                &[profile.name],
-                duration_ms,
-            )
-        }
+        OutputFormat::Human => emit_human::emit_human_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            duration_ms,
+        ),
+        OutputFormat::Json => emit_json::emit_json_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &[profile.name],
+            duration_ms,
+        ),
     };
 
     if let Some(out_path) = &args.output {
         if let Err(e) = fs::write(out_path, &output_text) {
-            eprintln!("error: failed to write output to '{}': {}", out_path.display(), e);
+            eprintln!(
+                "error: failed to write output to '{}': {}",
+                out_path.display(),
+                e
+            );
             return 1;
         }
     } else {

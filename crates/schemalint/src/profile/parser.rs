@@ -99,14 +99,48 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
     let mut restrictions = HashMap::new();
 
     const KNOWN_KEYWORDS: &[&str] = &[
-        "type", "properties", "required", "additionalProperties", "items",
-        "prefixItems", "minItems", "maxItems", "uniqueItems", "contains",
-        "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
-        "minLength", "maxLength", "pattern", "format", "enum", "const",
-        "patternProperties", "unevaluatedProperties", "propertyNames",
-        "minProperties", "maxProperties", "description", "title", "default",
-        "discriminator", "$ref", "$defs", "definitions", "anyOf", "allOf",
-        "oneOf", "not", "if", "then", "else", "dependentRequired", "dependentSchemas",
+        "type",
+        "properties",
+        "required",
+        "additionalProperties",
+        "items",
+        "prefixItems",
+        "minItems",
+        "maxItems",
+        "uniqueItems",
+        "contains",
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "minLength",
+        "maxLength",
+        "pattern",
+        "format",
+        "enum",
+        "const",
+        "patternProperties",
+        "unevaluatedProperties",
+        "propertyNames",
+        "minProperties",
+        "maxProperties",
+        "description",
+        "title",
+        "default",
+        "discriminator",
+        "$ref",
+        "$defs",
+        "definitions",
+        "anyOf",
+        "allOf",
+        "oneOf",
+        "not",
+        "if",
+        "then",
+        "else",
+        "dependentRequired",
+        "dependentSchemas",
     ];
 
     // Walk top-level entries for keywords and restrictions.
@@ -216,23 +250,27 @@ fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, Profi
         limits.require_all_properties_in_required = v;
     }
     if let Some(v) = t.get("max_object_depth").and_then(|v| v.as_integer()) {
-        limits.max_object_depth = u32::try_from(v)
-            .map_err(|_| ProfileError::InvalidSeverity(format!("max_object_depth out of u32 range: {v}")))?;
+        limits.max_object_depth = u32::try_from(v).map_err(|_| {
+            ProfileError::InvalidSeverity(format!("max_object_depth out of u32 range: {v}"))
+        })?;
     }
     if let Some(v) = t.get("max_total_properties").and_then(|v| v.as_integer()) {
-        limits.max_total_properties = u32::try_from(v)
-            .map_err(|_| ProfileError::InvalidSeverity(format!("max_total_properties out of u32 range: {v}")))?;
+        limits.max_total_properties = u32::try_from(v).map_err(|_| {
+            ProfileError::InvalidSeverity(format!("max_total_properties out of u32 range: {v}"))
+        })?;
     }
     if let Some(v) = t.get("max_total_enum_values").and_then(|v| v.as_integer()) {
-        limits.max_total_enum_values = u32::try_from(v)
-            .map_err(|_| ProfileError::InvalidSeverity(format!("max_total_enum_values out of u32 range: {v}")))?;
+        limits.max_total_enum_values = u32::try_from(v).map_err(|_| {
+            ProfileError::InvalidSeverity(format!("max_total_enum_values out of u32 range: {v}"))
+        })?;
     }
     if let Some(v) = t
         .get("max_string_length_total")
         .and_then(|v| v.as_integer())
     {
-        limits.max_string_length_total = u32::try_from(v)
-            .map_err(|_| ProfileError::InvalidSeverity(format!("max_string_length_total out of u32 range: {v}")))?;
+        limits.max_string_length_total = u32::try_from(v).map_err(|_| {
+            ProfileError::InvalidSeverity(format!("max_string_length_total out of u32 range: {v}"))
+        })?;
     }
     if let Some(v) = t.get("external_refs").and_then(|v| v.as_bool()) {
         limits.external_refs = v;
@@ -250,8 +288,9 @@ fn toml_to_json(val: toml::Value) -> Result<Value, ProfileError> {
         toml::Value::String(s) => Ok(Value::String(s)),
         toml::Value::Integer(i) => Ok(Value::Number(serde_json::Number::from(i))),
         toml::Value::Float(f) => {
-            let num = serde_json::Number::from_f64(f)
-                .ok_or_else(|| ProfileError::InvalidSeverity(format!("invalid float value: {f}")))?;
+            let num = serde_json::Number::from_f64(f).ok_or_else(|| {
+                ProfileError::InvalidSeverity(format!("invalid float value: {f}"))
+            })?;
             Ok(Value::Number(num))
         }
         toml::Value::Boolean(b) => Ok(Value::Bool(b)),
