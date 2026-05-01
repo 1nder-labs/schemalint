@@ -10,6 +10,10 @@ fn schema_is_object(node: &Node) -> bool {
         Some(Value::String(s)) => s == "object",
         Some(Value::Array(arr)) => arr.iter().any(|v| v.as_str() == Some("object")),
         None => {
+            // Infer object type from object-specific keywords when no explicit
+            // type is present. This is safe because the None arm only fires
+            // when type is absent; an explicit non-object type (e.g. "array")
+            // is handled by the String/Array arms above.
             node.annotations.properties.is_some()
                 || node.annotations.additional_properties.is_some()
         }

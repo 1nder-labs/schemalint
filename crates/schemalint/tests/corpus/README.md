@@ -1,11 +1,12 @@
 # Regression Corpus
 
-50 curated JSON Schemas with expected diagnostic sets.
+50 curated synthetic JSON Schemas with expected diagnostic sets.
 
 ## Sourcing Methodology
 
-Schemas are sourced from public bug reports, OpenAI Community forum posts,
-Pydantic AI issues, and SDK forums.
+Schemas are synthetically generated to exercise the full surface area of the
+OpenAI Structured Outputs profile: allowed keywords, forbidden keywords,
+restricted values, structural limits, `$ref` patterns, and edge cases.
 
 ## Curation Process
 

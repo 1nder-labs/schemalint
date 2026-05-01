@@ -187,7 +187,7 @@ fn run_check(args: args::CheckArgs) -> i32 {
                 out_path.display(),
                 e
             );
-            return 1;
+            return 2;
         }
     } else {
         print!("{}", output_text);
@@ -196,7 +196,9 @@ fn run_check(args: args::CheckArgs) -> i32 {
     // -----------------------------------------------------------------------
     // Exit code
     // -----------------------------------------------------------------------
-    // 0 if no errors (warnings alone are OK), 1 if any error or fatal parse error.
+    // 0 = no lint errors (warnings alone are OK)
+    // 1 = lint errors or fatal parse/normalization error
+    // 2 = I/O error (e.g. --output file write failure)
     if total_errors > 0 || fatal_errors > 0 {
         1
     } else {

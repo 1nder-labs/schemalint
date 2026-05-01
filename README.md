@@ -1,5 +1,7 @@
 # schemalint
 
+![schemalint demo](assets/Schemalint.gif)
+
 Static analysis tool for JSON Schema compatibility with LLM structured-output providers.
 
 ## What it does

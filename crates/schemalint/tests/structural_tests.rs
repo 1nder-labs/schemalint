@@ -242,6 +242,7 @@ external_refs = true
     .unwrap();
 
     let schema = serde_json::json!({
+        "type": "object",
         "allOf": [{"type": "string"}],
         "additionalProperties": true
     });

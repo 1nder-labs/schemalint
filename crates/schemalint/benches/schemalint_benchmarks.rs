@@ -28,10 +28,14 @@ fn bench_single_schema(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("single_schema");
     group.bench_function("parse_normalize_and_lint", |b| {
-        b.iter(|| {
-            let normalized = normalize(value.clone()).unwrap();
-            let _diags = ruleset.check_all(&normalized.arena, &profile);
-        })
+        b.iter_batched(
+            || value.clone(),
+            |v| {
+                let normalized = normalize(v).unwrap();
+                let _diags = ruleset.check_all(&normalized.arena, &profile);
+            },
+            criterion::BatchSize::SmallInput,
+        )
     });
     group.finish();
 }

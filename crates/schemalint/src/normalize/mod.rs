@@ -49,7 +49,7 @@ pub fn normalize(value: Value) -> Result<NormalizedSchema, NormalizeError> {
     traverse::expand_and_dfs(&mut arena, root_id)?;
 
     let _ref_edges = refs::resolve_refs(&mut arena, &defs)?;
-    let transitive_edges = refs::transitive_ref_edges(&arena);
+    let transitive_edges = refs::transitive_ref_edges(&arena, &defs);
     refs::tarjan_scc(&mut arena, &transitive_edges);
 
     // Desugar type arrays for all nodes.

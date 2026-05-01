@@ -99,5 +99,5 @@ pub fn emit_json_to_string(
         diagnostics: json_diags,
     };
 
-    serde_json::to_string_pretty(&output).unwrap()
+    serde_json::to_string_pretty(&output).unwrap() + "\n"
 }

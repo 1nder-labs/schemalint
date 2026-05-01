@@ -1,16 +1,5 @@
 [
   {
-    "code": "OAI-K-if",
-    "severity": "error",
-    "message": "keyword 'if' is not supported by openai.so.2026-04-30",
-    "pointer": "",
-    "source": {
-      "file": "crates/schemalint/tests/corpus/schema_29.json"
-    },
-    "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/OAI-K-if"
-  },
-  {
     "code": "OAI-K-else",
     "severity": "error",
     "message": "keyword 'else' is not supported by openai.so.2026-04-30",
@@ -31,6 +20,17 @@
     },
     "profile": "openai.so.2026-04-30",
     "seeUrl": "https://schemalint.dev/rules/OAI-K-then"
+  },
+  {
+    "code": "OAI-K-if",
+    "severity": "error",
+    "message": "keyword 'if' is not supported by openai.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_29.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-if"
   },
   {
     "code": "OAI-S-additional-properties-false",
