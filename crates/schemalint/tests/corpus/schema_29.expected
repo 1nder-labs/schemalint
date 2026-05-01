@@ -1,5 +1,16 @@
 [
   {
+    "code": "OAI-S-empty-object",
+    "severity": "warning",
+    "message": "object schema with additionalProperties: false has no properties",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_29.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-empty-object"
+  },
+  {
     "code": "OAI-K-else",
     "severity": "error",
     "message": "keyword 'else' is not supported by openai.so.2026-04-30",

@@ -5,7 +5,7 @@ use crate::profile::Profile;
 use crate::rules::registry::{Diagnostic, DiagnosticSeverity, Rule};
 
 /// Return `true` if the node's schema describes an object type.
-fn schema_is_object(node: &Node) -> bool {
+pub(crate) fn schema_is_object(node: &Node) -> bool {
     match &node.annotations.r#type {
         Some(Value::String(s)) => s == "object",
         Some(Value::Array(arr)) => arr.iter().any(|v| v.as_str() == Some("object")),
@@ -79,6 +79,12 @@ pub fn generate_class_b_rules(profile: &Profile) -> Vec<Box<dyn Rule>> {
     rules.push(Box::new(ExternalRefsRule {
         profile_name: profile.name.clone(),
     }));
+
+    if profile.code_prefix == "ANT" {
+        rules.push(Box::new(AllOfWithRefRule {
+            profile_name: profile.name.clone(),
+        }));
+    }
 
     rules
 }
@@ -347,5 +353,35 @@ impl Rule for ExternalRefsRule {
             }
         }
         diagnostics
+    }
+}
+
+#[derive(Debug, Clone)]
+struct AllOfWithRefRule {
+    profile_name: String,
+}
+
+impl Rule for AllOfWithRefRule {
+    fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
+        let node_ref = &arena[node];
+        let Some(Value::Array(branches)) = &node_ref.annotations.all_of else {
+            return Vec::new();
+        };
+        for branch in branches {
+            let Value::Object(map) = branch else { continue };
+            if map.contains_key("$ref") {
+                return vec![Diagnostic {
+                    code: format!("{}-S-allof-with-ref", profile.code_prefix),
+                    severity: DiagnosticSeverity::Error,
+                    message: "Anthropic Structured Outputs does not support allOf combined with $ref"
+                        .to_string(),
+                    pointer: node_ref.json_pointer.clone(),
+                    source: None,
+                    profile: self.profile_name.clone(),
+                    hint: None,
+                }];
+            }
+        }
+        Vec::new()
     }
 }

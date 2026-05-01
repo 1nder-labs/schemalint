@@ -340,9 +340,10 @@ fn cli_multi_profile_union_openai_error_only() {
     let dir = tempfile::tempdir().unwrap();
     let schema = dir.path().join("schema.json");
     // allOf is forbidden in OpenAI, allowed in Anthropic.
+    // Include a property so EmptyObjectRule does not fire.
     fs::write(
         &schema,
-        r#"{"type": "object", "additionalProperties": false, "allOf": [{"type": "string"}]}"#,
+        r#"{"type": "object", "properties": {"x": {}}, "required": ["x"], "additionalProperties": false, "allOf": [{"type": "string"}]}"#,
     )
     .unwrap();
 

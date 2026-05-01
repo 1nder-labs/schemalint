@@ -1,1 +1,13 @@
-[]
+[
+  {
+    "code": "OAI-S-empty-object",
+    "severity": "warning",
+    "message": "object schema with additionalProperties: false has no properties",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_25.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-empty-object"
+  }
+]
