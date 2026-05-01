@@ -1,14 +1,21 @@
 use crate::ir::{Arena, NodeId};
 use crate::profile::Profile;
 
+/// Severity of a diagnostic emitted by the rule engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticSeverity {
+    Error,
+    Warning,
+}
+
 /// A lint diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
     pub code: String,
-    pub severity: crate::profile::Severity,
+    pub severity: DiagnosticSeverity,
     pub message: String,
     pub pointer: String,
-    pub source: Option<()>, // placeholder for SourceSpan
+    pub source: Option<()>, // placeholder for SourceSpan (Phase 3+)
     pub profile: String,
     pub hint: Option<String>,
 }
