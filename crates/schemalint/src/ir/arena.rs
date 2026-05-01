@@ -4,7 +4,9 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 /// Unique identifier for a node in the arena.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct NodeId(pub u32);
 
 /// A node in the normalized IR.

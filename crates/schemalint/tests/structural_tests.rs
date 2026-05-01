@@ -291,10 +291,8 @@ require_object_root = false
     let schema = serde_json::json!({ "type": "string" });
 
     let openai_ruleset = RuleSet::from_profile(&openai_profile);
-    let openai_diags = openai_ruleset.check_all(
-        &normalize(schema.clone()).unwrap().arena,
-        &openai_profile,
-    );
+    let openai_diags =
+        openai_ruleset.check_all(&normalize(schema.clone()).unwrap().arena, &openai_profile);
     assert!(
         openai_diags.iter().any(|d| d.code == "OAI-S-object-root"),
         "OpenAI profile should require object root"
@@ -306,7 +304,9 @@ require_object_root = false
         &anthropic_profile,
     );
     assert!(
-        !anthropic_diags.iter().any(|d| d.code == "ANT-S-object-root"),
+        !anthropic_diags
+            .iter()
+            .any(|d| d.code == "ANT-S-object-root"),
         "Anthropic profile should not require object root"
     );
 }

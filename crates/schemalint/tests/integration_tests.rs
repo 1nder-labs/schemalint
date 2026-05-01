@@ -322,7 +322,11 @@ fn cli_no_paths_provided() {
 fn cli_builtin_profile_resolution() {
     let dir = tempfile::tempdir().unwrap();
     let schema = dir.path().join("schema.json");
-    fs::write(&schema, r#"{"type": "object", "properties": {}, "additionalProperties": false}"#).unwrap();
+    fs::write(
+        &schema,
+        r#"{"type": "object", "properties": {}, "additionalProperties": false}"#,
+    )
+    .unwrap();
 
     cmd()
         .arg("check")

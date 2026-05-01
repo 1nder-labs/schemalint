@@ -72,7 +72,9 @@ impl Rule for AdditionalPropertiesObjectRule {
                 pointer: node_ref.json_pointer.clone(),
                 source: None,
                 profile: profile.name.clone(),
-                hint: Some("Set additionalProperties to false for provider compatibility".to_string()),
+                hint: Some(
+                    "Set additionalProperties to false for provider compatibility".to_string(),
+                ),
             }],
             _ => Vec::new(),
         }

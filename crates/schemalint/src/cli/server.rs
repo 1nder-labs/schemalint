@@ -1,13 +1,14 @@
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
 use crate::cache::{hash_bytes, DiskCache};
 use crate::cli::args::OutputFormat;
-use crate::cli::{emit_gha, emit_human, emit_junit, emit_json, emit_sarif};
+use crate::cli::{emit_gha, emit_human, emit_json, emit_junit, emit_sarif};
 use crate::normalize::normalize;
 use crate::profile::load;
 use crate::rules::registry::{DiagnosticSeverity, RuleSet};
@@ -21,6 +22,8 @@ const MAX_CHECK_SECONDS: u64 = 30;
 /// handler, and writes the response back as a single line.
 pub fn run_server() {
     let cache = Arc::new(DiskCache::new());
+    let profile_cache: Arc<Mutex<HashMap<String, crate::profile::Profile>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut stdout_lock = stdout.lock();
@@ -80,7 +83,7 @@ pub fn run_server() {
         match method {
             "check" => {
                 let params = request.get("params").cloned().unwrap_or(json!({}));
-                let result = handle_check(params, &cache);
+                let result = handle_check(params, &cache, &profile_cache);
                 let response = json!({
                     "jsonrpc": "2.0",
                     "result": result,
@@ -123,7 +126,11 @@ pub fn run_server() {
     }
 }
 
-fn handle_check(params: Value, cache: &Arc<DiskCache>) -> Value {
+fn handle_check(
+    params: Value,
+    cache: &Arc<DiskCache>,
+    profile_cache: &Arc<Mutex<HashMap<String, crate::profile::Profile>>>,
+) -> Value {
     let schema = match params.get("schema") {
         Some(v) => v.clone(),
         None => {
@@ -144,42 +151,61 @@ fn handle_check(params: Value, cache: &Arc<DiskCache>) -> Value {
         }
     };
 
-    let format_str = params.get("format").and_then(|v| v.as_str()).unwrap_or("json");
+    let format_str = params
+        .get("format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("json");
     let format = match format_str {
         "human" => OutputFormat::Human,
         "json" => OutputFormat::Json,
         "sarif" => OutputFormat::Sarif,
         "gha" => OutputFormat::Gha,
         "junit" => OutputFormat::Junit,
-        _ => OutputFormat::Json,
+        other => {
+            return json!({
+                "success": false,
+                "error": format!("Unknown format '{}'; expected one of: human, json, sarif, gha, junit", other)
+            });
+        }
     };
 
-    // Load profiles
+    // Load profiles (cached across requests)
     let mut loaded_profiles = Vec::new();
-    for &profile_id in &profiles {
-        let bytes = match crate::cli::resolve_profile(profile_id) {
-            Ok(b) => b,
-            Err(e) => {
-                return json!({
-                    "success": false,
-                    "error": format!("Failed to resolve profile '{profile_id}': {e}")
-                });
-            }
-        };
-        let profile = match load(&bytes) {
-            Ok(p) => p,
-            Err(e) => {
-                return json!({
-                    "success": false,
-                    "error": format!("Failed to load profile '{profile_id}': {e}")
-                });
-            }
-        };
-        loaded_profiles.push(profile);
+    {
+        let mut cache_guard = profile_cache.lock().unwrap();
+        for &profile_id in &profiles {
+            let profile = if let Some(cached) = cache_guard.get(profile_id) {
+                cached.clone()
+            } else {
+                let bytes = match crate::cli::resolve_profile(profile_id) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        return json!({
+                            "success": false,
+                            "error": format!("Failed to resolve profile '{profile_id}': {e}")
+                        });
+                    }
+                };
+                let profile = match load(&bytes) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return json!({
+                            "success": false,
+                            "error": format!("Failed to load profile '{profile_id}': {e}")
+                        });
+                    }
+                };
+                cache_guard.insert(profile_id.to_string(), profile.clone());
+                profile
+            };
+            loaded_profiles.push(profile);
+        }
     }
 
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> =
-        loaded_profiles.iter().map(|p| (p, RuleSet::from_profile(p))).collect();
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = loaded_profiles
+        .iter()
+        .map(|p| (p, RuleSet::from_profile(p)))
+        .collect();
 
     let profile_names: Vec<String> = loaded_profiles.iter().map(|p| p.name.clone()).collect();
 
@@ -232,21 +258,40 @@ fn handle_check(params: Value, cache: &Arc<DiskCache>) -> Value {
     let duration_ms = Some(start.elapsed().as_millis() as u64);
 
     let output_text = match format {
-        OutputFormat::Human => {
-            emit_human::emit_human_to_string(&all_diagnostics, total_errors, total_warnings, duration_ms)
-        }
-        OutputFormat::Json => {
-            emit_json::emit_json_to_string(&all_diagnostics, total_errors, total_warnings, &profile_names, duration_ms)
-        }
-        OutputFormat::Sarif => {
-            emit_sarif::emit_sarif_to_string(&all_diagnostics, total_errors, total_warnings, &profile_names, duration_ms)
-        }
-        OutputFormat::Gha => {
-            emit_gha::emit_gha_to_string(&all_diagnostics, total_errors, total_warnings, &profile_names, duration_ms)
-        }
-        OutputFormat::Junit => {
-            emit_junit::emit_junit_to_string(&all_diagnostics, total_errors, total_warnings, &profile_names, duration_ms)
-        }
+        OutputFormat::Human => emit_human::emit_human_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            duration_ms,
+        ),
+        OutputFormat::Json => emit_json::emit_json_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Sarif => emit_sarif::emit_sarif_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Gha => emit_gha::emit_gha_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Junit => emit_junit::emit_junit_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
     };
 
     json!({

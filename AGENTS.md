@@ -4,7 +4,7 @@
 
 Two-crate workspace:
 - `crates/schemalint` — core engine, CLI, and all tests
-- `crates/schemalint-profiles` — built-in TOML profiles (no dependencies); consumed as a dev-dependency by the main crate
+- `crates/schemalint-profiles` — built-in TOML profiles (no dependencies); consumed as a regular dependency by the main crate
 
 Entrypoints:
 - CLI binary: `crates/schemalint/src/main.rs` → `schemalint::cli::run()`
@@ -43,7 +43,7 @@ Snapshot updates: set `INSTA_UPDATE=always` or review `.snapshots/new` before ac
 - Arena-allocated IR via `Vec<Node>` indexed by `NodeId(u32)`.
 - `IndexMap` for keyword order preservation.
 - `linkme` distributed slice `RULES` for compile-time rule auto-registration. Add new rules to the slice; `RuleSet::from_profile` generates dynamic Class A / Class B rules from a loaded profile.
-- Error codes: `OAI-K-*` for keyword rules, `OAI-K-<keyword>-restricted` for value restrictions, `OAI-S-*` for structural rules.
+- Error codes: `{code_prefix}-K-*` for keyword rules, `{code_prefix}-K-<keyword>-restricted` for value restrictions, `{code_prefix}-S-*` for structural rules. The `code_prefix` field in the profile TOML drives the prefix (e.g. `OAI` for OpenAI, `ANT` for Anthropic).
 - Exit code: `0` if no errors (warnings are OK), `1` on any error or fatal parse/IO error.
 
 ## Regression Corpus

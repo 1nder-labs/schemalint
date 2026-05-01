@@ -20,12 +20,17 @@ pub fn emit_junit_to_string(
             .iter()
             .filter(|d| d.severity == DiagnosticSeverity::Error)
             .count();
+        let skipped = diags
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Warning)
+            .count();
 
         out.push_str(&format!(
-            "  <testsuite name=\"{}\" tests=\"{}\" failures=\"{}\" errors=\"0\" time=\"0\">\n",
+            "  <testsuite name=\"{}\" tests=\"{}\" failures=\"{}\" skipped=\"{}\" errors=\"0\" time=\"0\">\n",
             escape_xml(&file_name),
             tests,
-            failures
+            failures,
+            skipped
         ));
 
         if diags.is_empty() {
@@ -50,7 +55,7 @@ pub fn emit_junit_to_string(
                     }
                     DiagnosticSeverity::Warning => {
                         out.push_str(&format!(
-                            "      <failure type=\"warning\" message=\"{}\">{}</failure>\n",
+                            "      <skipped message=\"{}\">{}</skipped>\n",
                             escape_xml(&d.message),
                             escape_xml(&d.message)
                         ));

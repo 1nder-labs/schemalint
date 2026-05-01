@@ -357,8 +357,14 @@ fn anthropic_profile_restrictions_present() {
 
     let min_items_restriction = profile.restrictions.get("minItems").unwrap();
     assert_eq!(min_items_restriction.allowed_values.len(), 2);
-    assert_eq!(min_items_restriction.allowed_values[0], serde_json::json!(0));
-    assert_eq!(min_items_restriction.allowed_values[1], serde_json::json!(1));
+    assert_eq!(
+        min_items_restriction.allowed_values[0],
+        serde_json::json!(0)
+    );
+    assert_eq!(
+        min_items_restriction.allowed_values[1],
+        serde_json::json!(1)
+    );
 }
 
 #[test]

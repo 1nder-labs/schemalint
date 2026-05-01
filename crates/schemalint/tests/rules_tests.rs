@@ -245,7 +245,12 @@ fn empty_object_rule_fires() {
         .iter()
         .filter(|d| d.code == "TEST-S-empty-object")
         .collect();
-    assert_eq!(hits.len(), 1, "expected empty-object warning, got {:?}", diagnostics);
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected empty-object warning, got {:?}",
+        diagnostics
+    );
     assert_eq!(hits[0].severity, DiagnosticSeverity::Warning);
 }
 
@@ -263,7 +268,12 @@ fn empty_object_rule_fires_with_empty_properties() {
         .iter()
         .filter(|d| d.code == "TEST-S-empty-object")
         .collect();
-    assert_eq!(hits.len(), 1, "expected empty-object warning, got {:?}", diagnostics);
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected empty-object warning, got {:?}",
+        diagnostics
+    );
 }
 
 #[test]
@@ -280,7 +290,11 @@ fn empty_object_rule_negative_with_properties() {
         .iter()
         .filter(|d| d.code == "TEST-S-empty-object")
         .collect();
-    assert!(hits.is_empty(), "expected no empty-object warning, got {:?}", diagnostics);
+    assert!(
+        hits.is_empty(),
+        "expected no empty-object warning, got {:?}",
+        diagnostics
+    );
 }
 
 #[test]
@@ -295,7 +309,11 @@ fn empty_object_rule_negative_no_ap_false() {
         .iter()
         .filter(|d| d.code == "TEST-S-empty-object")
         .collect();
-    assert!(hits.is_empty(), "expected no empty-object warning, got {:?}", diagnostics);
+    assert!(
+        hits.is_empty(),
+        "expected no empty-object warning, got {:?}",
+        diagnostics
+    );
 }
 
 #[test]
@@ -311,7 +329,12 @@ fn additional_properties_object_rule_fires() {
         .iter()
         .filter(|d| d.code == "TEST-S-additional-properties-object")
         .collect();
-    assert_eq!(hits.len(), 1, "expected additional-properties-object error, got {:?}", diagnostics);
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected additional-properties-object error, got {:?}",
+        diagnostics
+    );
     assert_eq!(hits[0].severity, DiagnosticSeverity::Error);
 }
 
@@ -328,7 +351,11 @@ fn additional_properties_object_rule_negative_bool() {
         .iter()
         .filter(|d| d.code == "TEST-S-additional-properties-object")
         .collect();
-    assert!(hits.is_empty(), "expected no additional-properties-object error, got {:?}", diagnostics);
+    assert!(
+        hits.is_empty(),
+        "expected no additional-properties-object error, got {:?}",
+        diagnostics
+    );
 }
 
 #[test]
@@ -344,7 +371,11 @@ fn additional_properties_object_rule_negative_true() {
         .iter()
         .filter(|d| d.code == "TEST-S-additional-properties-object")
         .collect();
-    assert!(hits.is_empty(), "expected no additional-properties-object error, got {:?}", diagnostics);
+    assert!(
+        hits.is_empty(),
+        "expected no additional-properties-object error, got {:?}",
+        diagnostics
+    );
 }
 
 #[test]
@@ -359,7 +390,12 @@ fn anyof_objects_hint_fires() {
         .iter()
         .filter(|d| d.code == "TEST-S-anyof-objects")
         .collect();
-    assert_eq!(hits.len(), 1, "expected anyof-objects hint, got {:?}", diagnostics);
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected anyof-objects hint, got {:?}",
+        diagnostics
+    );
     assert_eq!(hits[0].severity, DiagnosticSeverity::Warning);
 }
 
@@ -375,7 +411,11 @@ fn anyof_objects_hint_negative_mixed() {
         .iter()
         .filter(|d| d.code == "TEST-S-anyof-objects")
         .collect();
-    assert!(hits.is_empty(), "expected no anyof-objects hint, got {:?}", diagnostics);
+    assert!(
+        hits.is_empty(),
+        "expected no anyof-objects hint, got {:?}",
+        diagnostics
+    );
 }
 
 #[test]
@@ -390,7 +430,11 @@ fn anyof_objects_hint_negative_empty() {
         .iter()
         .filter(|d| d.code == "TEST-S-anyof-objects")
         .collect();
-    assert!(hits.is_empty(), "expected no anyof-objects hint, got {:?}", diagnostics);
+    assert!(
+        hits.is_empty(),
+        "expected no anyof-objects hint, got {:?}",
+        diagnostics
+    );
 }
 
 #[test]
@@ -406,7 +450,12 @@ fn allof_with_ref_rule_fires_anthropic() {
         .iter()
         .filter(|d| d.code == "ANT-S-allof-with-ref")
         .collect();
-    assert_eq!(hits.len(), 1, "expected allof-with-ref error, got {:?}", diagnostics);
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected allof-with-ref error, got {:?}",
+        diagnostics
+    );
     assert_eq!(hits[0].severity, DiagnosticSeverity::Error);
 }
 
@@ -423,7 +472,11 @@ fn allof_with_ref_rule_negative_openai() {
         .iter()
         .filter(|d| d.code == "TEST-S-allof-with-ref")
         .collect();
-    assert!(hits.is_empty(), "expected no allof-with-ref error for non-ANT profile, got {:?}", diagnostics);
+    assert!(
+        hits.is_empty(),
+        "expected no allof-with-ref error for non-ANT profile, got {:?}",
+        diagnostics
+    );
 }
 
 #[test]
@@ -438,7 +491,11 @@ fn allof_with_ref_rule_negative_no_ref() {
         .iter()
         .filter(|d| d.code == "ANT-S-allof-with-ref")
         .collect();
-    assert!(hits.is_empty(), "expected no allof-with-ref error without $ref, got {:?}", diagnostics);
+    assert!(
+        hits.is_empty(),
+        "expected no allof-with-ref error without $ref, got {:?}",
+        diagnostics
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -49,11 +49,23 @@ pub struct DiskCache {
     cache_dir: Option<PathBuf>,
 }
 
+impl Default for DiskCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DiskCache {
     pub fn new() -> Self {
         let cache_dir = dirs::cache_dir().map(|d| d.join("schemalint"));
         if let Some(ref dir) = cache_dir {
-            let _ = fs::create_dir_all(dir);
+            if let Err(e) = fs::create_dir_all(dir) {
+                eprintln!(
+                    "warning: failed to create cache directory '{}': {}",
+                    dir.display(),
+                    e
+                );
+            }
         }
         Self {
             memory: RwLock::new(Cache::new()),
@@ -105,16 +117,37 @@ impl DiskCache {
             let path = dir.join(format!("{:016x}.bin", hash));
             let mut buf = Vec::new();
             buf.extend_from_slice(&CACHE_VERSION.to_le_bytes());
-            if let Ok(serialized) = serde_json::to_vec(&schema) {
-                buf.extend_from_slice(&serialized);
-                let _ = fs::write(&path, &buf);
+            match serde_json::to_vec(&schema) {
+                Ok(serialized) => {
+                    buf.extend_from_slice(&serialized);
+                    if let Err(e) = fs::write(&path, &buf) {
+                        eprintln!(
+                            "warning: failed to write cache file '{}': {}",
+                            path.display(),
+                            e
+                        );
+                    }
+                }
+                Err(e) => {
+                    eprintln!("warning: failed to serialize schema for cache: {}", e);
+                }
             }
             self.evict_if_needed(dir);
         }
     }
 
     fn evict_if_needed(&self, dir: &PathBuf) {
-        let Ok(entries) = fs::read_dir(dir) else { return };
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!(
+                    "warning: failed to read cache directory '{}': {}",
+                    dir.display(),
+                    e
+                );
+                return;
+            }
+        };
         let mut files: Vec<(fs::DirEntry, std::time::SystemTime)> = Vec::new();
         for entry in entries.filter_map(|e| e.ok()) {
             let Ok(meta) = entry.metadata() else { continue };
@@ -125,7 +158,9 @@ impl DiskCache {
             files.sort_by(|a, b| a.1.cmp(&b.1));
             let to_remove = files.len() - 1000;
             for (entry, _) in files.into_iter().take(to_remove) {
-                let _ = fs::remove_file(entry.path());
+                if let Err(e) = fs::remove_file(entry.path()) {
+                    eprintln!("warning: failed to remove stale cache file: {}", e);
+                }
             }
         }
     }

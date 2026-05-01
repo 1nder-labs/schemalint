@@ -1,6 +1,17 @@
 use crate::rules::registry::DiagnosticSeverity;
 use crate::rules::Diagnostic;
 
+/// Percent-encode characters that would break GitHub Actions workflow commands.
+///
+/// GHA uses `::` as delimiters and interprets `%` as an escape prefix.
+/// We encode `%`, `\r`, `\n`, and `:` to prevent injection.
+fn encode_gha_value(s: &str) -> String {
+    s.replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+        .replace(':', "%3A")
+}
+
 /// Emit diagnostics as GitHub Actions workflow commands.
 pub fn emit_gha_to_string(
     diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)],
@@ -16,14 +27,11 @@ pub fn emit_gha_to_string(
                 DiagnosticSeverity::Error => "error",
                 DiagnosticSeverity::Warning => "warning",
             };
-            let file = path.display();
+            let file = encode_gha_value(&path.display().to_string());
+            let code = encode_gha_value(&d.code);
+            let message = encode_gha_value(&format!("{} [profile: {}]", d.message, d.profile));
             // GitHub Actions commands: ::error file=...,title=...::message
-            out.push_str(&format!(
-                "::{cmd} file={file},title={code}::{message} [profile: {profile}]\n",
-                code = d.code,
-                message = d.message,
-                profile = d.profile
-            ));
+            out.push_str(&format!("::{cmd} file={file},title={code}::{message}\n"));
         }
     }
     out

@@ -27,7 +27,13 @@ expression: "normalize_temp_paths(&stdout, dir.path())"
       "tool": {
         "driver": {
           "informationUri": "https://schemalint.dev",
-          "name": "schemalint"
+          "name": "schemalint",
+          "rules": [
+            {
+              "helpUri": "https://schemalint.dev/rules/TEST-K-allOf",
+              "id": "TEST-K-allOf"
+            }
+          ]
         }
       }
     }

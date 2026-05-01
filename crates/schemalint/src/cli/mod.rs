@@ -37,14 +37,21 @@ pub fn run() {
 /// Resolve a profile identifier to raw TOML bytes.
 ///
 /// If the input contains a path separator it is treated as a filesystem path.
+/// This is intentional: users explicitly pass a path, and the CLI tool must read
+/// files they specify, consistent with standard CLI behavior (e.g. `cat file.txt`).
+///
 /// Otherwise it is matched against built-in profile IDs.
 pub fn resolve_profile(path_or_id: &str) -> Result<Vec<u8>, String> {
     if path_or_id.contains('/') || path_or_id.contains('\\') {
         fs::read(path_or_id).map_err(|e| format!("{e}"))
     } else {
         match path_or_id {
-            "openai.so.2026-04-30" => Ok(schemalint_profiles::OPENAI_SO_2026_04_30.as_bytes().to_vec()),
-            "anthropic.so.2026-04-30" => Ok(schemalint_profiles::ANTHROPIC_SO_2026_04_30.as_bytes().to_vec()),
+            "openai.so.2026-04-30" => Ok(schemalint_profiles::OPENAI_SO_2026_04_30
+                .as_bytes()
+                .to_vec()),
+            "anthropic.so.2026-04-30" => Ok(schemalint_profiles::ANTHROPIC_SO_2026_04_30
+                .as_bytes()
+                .to_vec()),
             other => Err(format!("unknown built-in profile '{other}'")),
         }
     }
@@ -75,8 +82,10 @@ fn run_check(args: args::CheckArgs) -> i32 {
         profiles.push(profile);
     }
 
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> =
-        profiles.iter().map(|p| (p, RuleSet::from_profile(p))).collect();
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = profiles
+        .iter()
+        .map(|p| (p, RuleSet::from_profile(p)))
+        .collect();
 
     let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
 
@@ -125,15 +134,16 @@ fn run_check(args: args::CheckArgs) -> i32 {
             };
 
             let hash = hash_bytes(&bytes);
-            {
+            let cached_schema = {
                 let cache_guard = cache.lock().unwrap();
-                if let Some(cached) = cache_guard.get(hash) {
-                    let mut diags = Vec::new();
-                    for (profile, ruleset) in &profile_rulesets {
-                        diags.extend(ruleset.check_all(&cached.arena, profile));
-                    }
-                    return (path, Ok(diags));
+                cache_guard.get(hash).cloned()
+            };
+            if let Some(cached) = cached_schema {
+                let mut diags = Vec::new();
+                for (profile, ruleset) in &profile_rulesets {
+                    diags.extend(ruleset.check_all(&cached.arena, profile));
                 }
+                return (path, Ok(diags));
             }
 
             let value = match serde_json::from_slice::<serde_json::Value>(&bytes) {

@@ -5,7 +5,7 @@ use std::process::Command;
 fn diag_key(v: &serde_json::Value) -> (String, String) {
     (
         v["code"].as_str().unwrap_or("").to_string(),
-        v["schemaPath"].as_str().unwrap_or("").to_string(),
+        v["pointer"].as_str().unwrap_or("").to_string(),
     )
 }
 
@@ -19,7 +19,7 @@ fn diagnostics_match(actual: &[serde_json::Value], expected: &[serde_json::Value
     a_sorted.sort_by(|a, b| diag_key(a).cmp(&diag_key(b)));
     e_sorted.sort_by(|a, b| diag_key(a).cmp(&diag_key(b)));
     for (a, e) in a_sorted.iter().zip(e_sorted.iter()) {
-        for field in ["code", "severity", "message", "schemaPath", "profile"] {
+        for field in ["code", "severity", "message", "pointer", "profile"] {
             if a.get(field) != e.get(field) {
                 return false;
             }
@@ -28,20 +28,14 @@ fn diagnostics_match(actual: &[serde_json::Value], expected: &[serde_json::Value
     true
 }
 
-fn run_corpus(
-    corpus_dir: &PathBuf,
-    bin: &PathBuf,
-    profile: &str,
-    prefix: &str,
-) -> Vec<String> {
+fn run_corpus(corpus_dir: &PathBuf, bin: &PathBuf, profile: &str, prefix: &str) -> Vec<String> {
     let mut schemas: Vec<PathBuf> = fs::read_dir(corpus_dir)
         .unwrap()
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| {
             let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-            p.extension().and_then(|s| s.to_str()) == Some("json")
-                && name.starts_with(prefix)
+            p.extension().and_then(|s| s.to_str()) == Some("json") && name.starts_with(prefix)
         })
         .collect();
     schemas.sort();

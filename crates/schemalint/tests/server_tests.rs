@@ -21,7 +21,9 @@ fn send_request(child: &mut std::process::Child, request: &str) -> serde_json::V
     let stdout = child.stdout.as_mut().expect("stdout should be open");
     let mut reader = std::io::BufReader::new(stdout);
     let mut line = String::new();
-    reader.read_line(&mut line).expect("should read line from stdout");
+    reader
+        .read_line(&mut line)
+        .expect("should read line from stdout");
     serde_json::from_str(&line).expect("should parse JSON response")
 }
 
@@ -165,7 +167,10 @@ fn server_check_unknown_profile() {
 
     let response = send_request(&mut child, &request.to_string());
     assert!(response["result"]["success"].as_bool() == Some(false));
-    assert!(response["result"]["error"].as_str().unwrap().contains("unknown built-in profile"));
+    assert!(response["result"]["error"]
+        .as_str()
+        .unwrap()
+        .contains("unknown built-in profile"));
 
     let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 2});
     let _response = send_request(&mut child, &shutdown.to_string());

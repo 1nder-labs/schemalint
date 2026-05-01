@@ -1,4 +1,5 @@
 use serde_json::json;
+use std::collections::HashSet;
 
 use crate::rules::registry::DiagnosticSeverity;
 use crate::rules::Diagnostic;
@@ -12,11 +13,20 @@ pub fn emit_sarif_to_string(
     _duration_ms: Option<u64>,
 ) -> String {
     let mut results = Vec::new();
+    let mut rule_ids = HashSet::new();
 
     for (path, diags) in diagnostics {
         for d in diags {
-            let mut result = json!({
+            rule_ids.insert(d.code.clone());
+
+            let level = match d.severity {
+                DiagnosticSeverity::Error => "error",
+                DiagnosticSeverity::Warning => "warning",
+            };
+
+            let result = json!({
                 "ruleId": d.code,
+                "level": level,
                 "message": {
                     "text": d.message
                 },
@@ -31,20 +41,19 @@ pub fn emit_sarif_to_string(
                 ]
             });
 
-            // Source spans not yet available (Phase 3+), so we omit region.
-            let _ = &result["locations"][0]["physicalLocation"];
-
-            let level = match d.severity {
-                DiagnosticSeverity::Error => "error",
-                DiagnosticSeverity::Warning => "warning",
-            };
-            if let Some(obj) = result.as_object_mut() {
-                obj.insert("level".to_string(), json!(level));
-            }
-
             results.push(result);
         }
     }
+
+    let rules: Vec<_> = rule_ids
+        .into_iter()
+        .map(|id| {
+            json!({
+                "id": id,
+                "helpUri": format!("https://schemalint.dev/rules/{}", id)
+            })
+        })
+        .collect();
 
     let output = json!({
         "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -54,7 +63,8 @@ pub fn emit_sarif_to_string(
                 "tool": {
                     "driver": {
                         "name": "schemalint",
-                        "informationUri": "https://schemalint.dev"
+                        "informationUri": "https://schemalint.dev",
+                        "rules": rules
                     }
                 },
                 "results": results

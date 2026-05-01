@@ -76,9 +76,11 @@ pub fn generate_class_b_rules(profile: &Profile) -> Vec<Box<dyn Rule>> {
         }));
     }
 
-    rules.push(Box::new(ExternalRefsRule {
-        profile_name: profile.name.clone(),
-    }));
+    if s.external_refs {
+        rules.push(Box::new(ExternalRefsRule {
+            profile_name: profile.name.clone(),
+        }));
+    }
 
     if profile.code_prefix == "ANT" {
         rules.push(Box::new(AllOfWithRefRule {
@@ -373,8 +375,9 @@ impl Rule for AllOfWithRefRule {
                 return vec![Diagnostic {
                     code: format!("{}-S-allof-with-ref", profile.code_prefix),
                     severity: DiagnosticSeverity::Error,
-                    message: "Anthropic Structured Outputs does not support allOf combined with $ref"
-                        .to_string(),
+                    message:
+                        "Anthropic Structured Outputs does not support allOf combined with $ref"
+                            .to_string(),
                     pointer: node_ref.json_pointer.clone(),
                     source: None,
                     profile: self.profile_name.clone(),
