@@ -156,7 +156,7 @@ impl DiskCache {
             files.push((entry, mtime));
         }
         if files.len() > 1000 {
-            files.sort_by(|a, b| a.1.cmp(&b.1));
+            files.sort_by_key(|a| a.1);
             let to_remove = files.len() - 1000;
             for (entry, _) in files.into_iter().take(to_remove) {
                 if let Err(e) = fs::remove_file(entry.path()) {
