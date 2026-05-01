@@ -1,0 +1,31 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: "normalize_temp_paths(&stdout, dir.path())"
+---
+{
+  "schema_version": "1.0",
+  "tool": {
+    "name": "schemalint",
+    "version": "0.1.0"
+  },
+  "profiles": [
+    "test"
+  ],
+  "summary": {
+    "total_issues": 1,
+    "errors": 1,
+    "warnings": 0,
+    "schemas_checked": 2
+  },
+  "diagnostics": [
+    {
+      "code": "OAI-K-allOf",
+      "severity": "error",
+      "message": "keyword 'allOf' is not supported by test",
+      "schemaPath": "",
+      "filePath": "[TEMP_DIR]/a.json",
+      "profile": "test",
+      "seeUrl": "https://schemalint.dev/rules/OAI-K-allOf"
+    }
+  ]
+}
