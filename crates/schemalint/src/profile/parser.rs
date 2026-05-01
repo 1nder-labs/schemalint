@@ -109,16 +109,16 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
                 let sev = Severity::parse(s)?;
                 keyword_map.insert(leak_str(key), sev);
             }
-            toml::Value::Table(t) => {
-                if t.get("kind").and_then(|v| v.as_str()) == Some("restricted") {
-                    let allowed = t
-                        .get("allowed")
-                        .and_then(|v| v.as_array())
-                        .ok_or_else(|| ProfileError::InvalidRestriction(key.clone()))?;
-                    let values: Vec<Value> =
-                        allowed.iter().map(|v| toml_to_json(v.clone())).collect();
-                    restrictions.insert(leak_str(key), Restriction { allowed_values: values });
-                }
+            toml::Value::Table(t)
+                if t.get("kind").and_then(|v| v.as_str()) == Some("restricted") =>
+            {
+                let allowed = t
+                    .get("allowed")
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| ProfileError::InvalidRestriction(key.clone()))?;
+                let values: Vec<Value> =
+                    allowed.iter().map(|v| toml_to_json(v.clone())).collect();
+                restrictions.insert(leak_str(key), Restriction { allowed_values: values });
             }
             _ => {}
         }
