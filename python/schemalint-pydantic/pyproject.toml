@@ -1,0 +1,16 @@
+[project]
+name = "schemalint-pydantic"
+version = "0.1.0"
+description = "Pydantic model discovery for schemalint"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+schemalint-pydantic = "schemalint_pydantic.__main__:main"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

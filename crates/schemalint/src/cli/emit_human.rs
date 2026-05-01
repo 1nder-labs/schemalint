@@ -1,4 +1,5 @@
 use crate::rules::registry::DiagnosticSeverity;
+use crate::rules::registry::SourceSpan;
 use crate::rules::Diagnostic;
 
 /// Emit diagnostics in rustc-style human-readable format.
@@ -9,7 +10,7 @@ use crate::rules::Diagnostic;
 /// Format per diagnostic:
 /// ```text
 /// error[OAI-K-allOf]: keyword 'allOf' is not supported by OpenAI Structured Outputs
-///    --> schema.json
+///    --> schema.json:42:8
 ///      |
 ///      = profile: openai.so.2026-04-30
 ///      = schema path: /properties/items
@@ -29,7 +30,10 @@ pub fn emit_human_to_string(
                 DiagnosticSeverity::Warning => "warning",
             };
             out.push_str(&format!("{}[{}]: {}\n", severity_label, d.code, d.message));
-            out.push_str(&format!("   --> {}\n", path.display()));
+            out.push_str(&format!(
+                "   --> {}\n",
+                format_source_location(path, &d.source)
+            ));
             out.push_str("     |\n");
             out.push_str(&format!("     = profile: {}\n", d.profile));
             out.push_str(&format!("     = schema path: {}\n", d.pointer));
@@ -60,4 +64,16 @@ pub fn emit_human_to_string(
         duration_part
     ));
     out
+}
+
+fn format_source_location(path: &std::path::Path, source: &Option<SourceSpan>) -> String {
+    if let Some(span) = source {
+        match (span.line, span.col) {
+            (Some(line), Some(col)) => format!("{}:{}:{}", span.file, line, col),
+            (Some(line), None) => format!("{}:{}", span.file, line),
+            (None, _) => span.file.clone(),
+        }
+    } else {
+        path.display().to_string()
+    }
 }

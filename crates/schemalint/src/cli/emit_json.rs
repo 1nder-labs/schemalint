@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::rules::registry::DiagnosticSeverity;
+use crate::rules::registry::{DiagnosticSeverity, SourceSpan};
 use crate::rules::Diagnostic;
 
 #[derive(Serialize)]
@@ -34,21 +34,12 @@ struct JsonDiagnostic {
     severity: String,
     message: String,
     pointer: String,
-    source: SourceSpan,
+    source: Option<SourceSpan>,
     profile: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     hint: Option<String>,
     #[serde(rename = "seeUrl")]
     see_url: String,
-}
-
-#[derive(Serialize)]
-struct SourceSpan {
-    file: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    line: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    col: Option<u32>,
 }
 
 /// Emit diagnostics as structured JSON.
@@ -62,6 +53,10 @@ pub fn emit_json_to_string(
     let mut json_diags = Vec::new();
     for (path, diags) in diagnostics {
         for d in diags {
+            let source = d.source.clone().map(|mut s| {
+                s.file = s.file.replace('\\', "/");
+                s
+            });
             json_diags.push(JsonDiagnostic {
                 code: d.code.clone(),
                 severity: match d.severity {
@@ -70,11 +65,13 @@ pub fn emit_json_to_string(
                 },
                 message: d.message.clone(),
                 pointer: d.pointer.clone(),
-                source: SourceSpan {
-                    file: path.display().to_string(),
-                    line: None,
-                    col: None,
-                },
+                source: source.or_else(|| {
+                    Some(SourceSpan {
+                        file: path.display().to_string().replace('\\', "/"),
+                        line: None,
+                        col: None,
+                    })
+                }),
                 profile: d.profile.clone(),
                 hint: d.hint.clone(),
                 see_url: format!("https://schemalint.dev/rules/{}", d.code),

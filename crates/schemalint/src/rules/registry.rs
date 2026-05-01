@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::ir::{Arena, Node, NodeId};
 use crate::profile::{Profile, Severity};
 
@@ -8,6 +10,16 @@ pub enum DiagnosticSeverity {
     Warning,
 }
 
+/// Location in a source file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceSpan {
+    pub file: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub col: Option<u32>,
+}
+
 /// A lint diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
@@ -15,10 +27,7 @@ pub struct Diagnostic {
     pub severity: DiagnosticSeverity,
     pub message: String,
     pub pointer: String,
-    /// TODO: Replace `Option<()>` with a real `SourceSpan` type when source
-    /// spans are available (Phase 3+). The dummy type prevents accidental
-    /// stabilization of the placeholder in the public API.
-    pub source: Option<()>,
+    pub source: Option<SourceSpan>,
     pub profile: String,
     pub hint: Option<String>,
 }

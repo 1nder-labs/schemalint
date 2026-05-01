@@ -1,4 +1,4 @@
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::HashSet;
 
 use crate::rules::registry::DiagnosticSeverity;
@@ -24,6 +24,31 @@ pub fn emit_sarif_to_string(
                 DiagnosticSeverity::Warning => "warning",
             };
 
+            let file = d
+                .source
+                .as_ref()
+                .map(|s| s.file.clone())
+                .unwrap_or_else(|| path.display().to_string());
+
+            let mut physical_location = json!({
+                "artifactLocation": {
+                    "uri": file
+                }
+            });
+
+            if let Some(source) = &d.source {
+                if source.line.is_some() || source.col.is_some() {
+                    let mut region = serde_json::Map::new();
+                    if let Some(line) = source.line {
+                        region.insert("startLine".to_string(), json!(line));
+                    }
+                    if let Some(col) = source.col {
+                        region.insert("startColumn".to_string(), json!(col));
+                    }
+                    physical_location["region"] = Value::Object(region);
+                }
+            }
+
             let result = json!({
                 "ruleId": d.code,
                 "level": level,
@@ -32,11 +57,7 @@ pub fn emit_sarif_to_string(
                 },
                 "locations": [
                     {
-                        "physicalLocation": {
-                            "artifactLocation": {
-                                "uri": path.display().to_string()
-                            }
-                        }
+                        "physicalLocation": physical_location
                     }
                 ]
             });

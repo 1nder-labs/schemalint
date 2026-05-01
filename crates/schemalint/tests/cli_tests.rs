@@ -25,6 +25,7 @@ fn parse_check_command_with_profile_and_files() {
             assert!(args.format.is_none());
         }
         Commands::Server(_) => unreachable!(),
+        Commands::CheckPython(_) => unreachable!(),
     }
 }
 
@@ -44,6 +45,7 @@ fn parse_check_command_with_format_flag() {
             assert_eq!(args.format, Some(OutputFormat::Json));
         }
         Commands::Server(_) => unreachable!(),
+        Commands::CheckPython(_) => unreachable!(),
     }
 }
 
@@ -63,6 +65,7 @@ fn parse_check_command_with_multiple_paths() {
             assert_eq!(args.paths, vec!["schema1.json", "schema2.json", "dir/"]);
         }
         Commands::Server(_) => unreachable!(),
+        Commands::CheckPython(_) => unreachable!(),
     }
 }
 
@@ -88,6 +91,7 @@ fn parse_check_command_with_multiple_profiles() {
             );
         }
         Commands::Server(_) => unreachable!(),
+        Commands::CheckPython(_) => unreachable!(),
     }
 }
 

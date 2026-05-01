@@ -14,7 +14,11 @@ pub fn emit_junit_to_string(
     out.push_str("<testsuites>\n");
 
     for (path, diags) in diagnostics {
-        let file_name = path.display().to_string();
+        let suite_file = diags
+            .first()
+            .and_then(|d| d.source.as_ref())
+            .map(|s| s.file.clone())
+            .unwrap_or_else(|| path.display().to_string());
         let tests = if diags.is_empty() { 1 } else { diags.len() };
         let failures = diags
             .iter()
@@ -27,7 +31,7 @@ pub fn emit_junit_to_string(
 
         out.push_str(&format!(
             "  <testsuite name=\"{}\" tests=\"{}\" failures=\"{}\" skipped=\"{}\" errors=\"0\" time=\"0\">\n",
-            escape_xml(&file_name),
+            escape_xml(&suite_file),
             tests,
             failures,
             skipped
@@ -36,14 +40,24 @@ pub fn emit_junit_to_string(
         if diags.is_empty() {
             out.push_str(&format!(
                 "    <testcase name=\"{}\" classname=\"schemalint\" time=\"0\"/>\n",
-                escape_xml(&file_name)
+                escape_xml(&suite_file)
             ));
         } else {
             for d in diags {
                 let test_name = format!("{} - {}", d.code, d.message);
+                let source_attrs = if let Some(span) = &d.source {
+                    let file_attr = format!(" file=\"{}\"", escape_xml(&span.file));
+                    let line_attr = span
+                        .line
+                        .map_or(String::new(), |l| format!(" line=\"{}\"", l));
+                    format!("{}{}", file_attr, line_attr)
+                } else {
+                    String::new()
+                };
                 out.push_str(&format!(
-                    "    <testcase name=\"{}\" classname=\"schemalint\" time=\"0\">\n",
-                    escape_xml(&test_name)
+                    "    <testcase name=\"{}\" classname=\"schemalint\" time=\"0\"{}>\n",
+                    escape_xml(&test_name),
+                    source_attrs
                 ));
                 match d.severity {
                     DiagnosticSeverity::Error => {

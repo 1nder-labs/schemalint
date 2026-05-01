@@ -5,6 +5,7 @@ pub mod cli;
 pub mod ir;
 pub mod normalize;
 pub mod profile;
+pub mod python;
 pub mod rules;
 
 pub use cache::Cache;

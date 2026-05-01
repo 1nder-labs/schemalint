@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use rayon::prelude::*;
@@ -18,6 +18,7 @@ pub mod emit_human;
 pub mod emit_json;
 pub mod emit_junit;
 pub mod emit_sarif;
+pub mod pyproject;
 pub mod server;
 
 /// CLI entry point.
@@ -26,6 +27,10 @@ pub fn run() {
     match cli.command {
         Commands::Check(check_args) => {
             let exit_code = run_check(check_args);
+            process::exit(exit_code);
+        }
+        Commands::CheckPython(args) => {
+            let exit_code = run_check_python(args);
             process::exit(exit_code);
         }
         Commands::Server(_args) => {
@@ -166,10 +171,7 @@ fn run_check(args: args::CheckArgs) -> i32 {
                 cache_guard.get(hash).cloned()
             };
             if let Some(cached) = cached_schema {
-                let mut diags = Vec::new();
-                for (profile, ruleset) in &profile_rulesets {
-                    diags.extend(ruleset.check_all(&cached.arena, profile));
-                }
+                let diags = check_rulesets(&cached.arena, &profile_rulesets);
                 return (path, Ok(diags));
             }
 
@@ -183,10 +185,7 @@ fn run_check(args: args::CheckArgs) -> i32 {
                 Err(e) => return (path, Err(format!("normalization failed: {}", e))),
             };
 
-            let mut diags = Vec::new();
-            for (profile, ruleset) in &profile_rulesets {
-                diags.extend(ruleset.check_all(&normalized.arena, profile));
-            }
+            let diags = check_rulesets(&normalized.arena, &profile_rulesets);
             cache.lock().unwrap().insert(hash, normalized);
             (path, Ok(diags))
         })
@@ -281,12 +280,324 @@ fn run_check(args: args::CheckArgs) -> i32 {
     // -----------------------------------------------------------------------
     // Exit code
     // -----------------------------------------------------------------------
-    // 0 = no lint errors (warnings alone are OK)
-    // 1 = lint errors or fatal parse/normalization error
-    // 2 = I/O error (e.g. --output file write failure)
     if total_errors > 0 || fatal_errors > 0 {
         1
     } else {
         0
     }
+}
+
+fn run_check_python(args: args::CheckPythonArgs) -> i32 {
+    let start = std::time::Instant::now();
+
+    // -------------------------------------------------------------------
+    // 1. Load pyproject.toml configuration
+    // -------------------------------------------------------------------
+    let config_path = args
+        .config
+        .as_deref()
+        .unwrap_or_else(|| Path::new("pyproject.toml"));
+    let pyproject_config = match pyproject::load_pyproject_config(config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return 1;
+        }
+    };
+
+    // -------------------------------------------------------------------
+    // 2. Merge CLI flags on top of config
+    // -------------------------------------------------------------------
+    let packages = if args.packages.is_empty() {
+        pyproject_config
+            .as_ref()
+            .map(|c| c.packages.clone())
+            .unwrap_or_default()
+    } else {
+        args.packages.clone()
+    };
+
+    let profile_args: Vec<String> = if args.profiles.is_empty() {
+        pyproject_config
+            .as_ref()
+            .map(|c| c.profiles.clone())
+            .unwrap_or_default()
+    } else {
+        args.profiles
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect()
+    };
+
+    if packages.is_empty() {
+        eprintln!(
+            "error: no packages specified. Use --package or configure [tool.schemalint] in pyproject.toml"
+        );
+        return 1;
+    }
+
+    if profile_args.is_empty() {
+        eprintln!(
+            "error: no profiles specified. Use --profile or configure [tool.schemalint] in pyproject.toml"
+        );
+        return 1;
+    }
+
+    // -------------------------------------------------------------------
+    // 3. Load profiles
+    // -------------------------------------------------------------------
+    let mut profiles = Vec::new();
+    for id in &profile_args {
+        let profile_bytes = match resolve_profile(id) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("error: failed to read profile '{}': {}", id, e);
+                return 1;
+            }
+        };
+        let profile = match load(&profile_bytes) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("error: failed to load profile '{}': {}", id, e);
+                return 1;
+            }
+        };
+        profiles.push(profile);
+    }
+
+    profiles.sort_by(|a, b| a.name.cmp(&b.name));
+    profiles.dedup_by_key(|p| p.name.clone());
+
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = profiles
+        .iter()
+        .map(|p| (p, RuleSet::from_profile(p)))
+        .collect();
+
+    let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
+
+    // -------------------------------------------------------------------
+    // 4. Determine output format
+    // -------------------------------------------------------------------
+    let format = args.format.unwrap_or_else(|| {
+        if std::io::stdout().is_terminal() {
+            OutputFormat::Human
+        } else {
+            OutputFormat::Json
+        }
+    });
+
+    // -------------------------------------------------------------------
+    // 5. Spawn Python helper and discover models
+    // -------------------------------------------------------------------
+    let mut helper = match crate::python::PythonHelper::spawn(args.python_path.as_deref()) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return 1;
+        }
+    };
+
+    let mut discovered_models: Vec<crate::python::DiscoveredModel> = Vec::new();
+    for package in &packages {
+        match helper.discover(package) {
+            Ok(resp) => {
+                for model in resp.models {
+                    discovered_models.push(model);
+                }
+            }
+            Err(e) => {
+                eprintln!("error: discovery failed for package '{}': {}", package, e);
+            }
+        }
+    }
+
+    helper.shutdown();
+
+    if discovered_models.is_empty() {
+        if format == OutputFormat::Human {
+            println!("0 issues found (0 errors, 0 warnings) across 0 schemas");
+        } else {
+            print!(
+                "{}",
+                emit_json::emit_json_to_string(&[], 0, 0, &profile_names, Some(0))
+            );
+        }
+        return 0;
+    }
+
+    // -------------------------------------------------------------------
+    // 6. Normalize and check schemas
+    // -------------------------------------------------------------------
+    let schema_entries: Vec<(PathBuf, serde_json::Value)> = discovered_models
+        .iter()
+        .map(|m| (PathBuf::from(&m.module_path), m.schema.clone()))
+        .collect();
+
+    let results = process_schemas(schema_entries, &profile_rulesets);
+
+    // -------------------------------------------------------------------
+    // 7. Attach source spans from discovery
+    // -------------------------------------------------------------------
+    let all_diagnostics = attach_source_spans(results, &discovered_models);
+
+    // -------------------------------------------------------------------
+    // 8. Aggregate results
+    // -------------------------------------------------------------------
+    let (all_diagnostics, total_errors, total_warnings) = aggregate_results(all_diagnostics);
+
+    // -------------------------------------------------------------------
+    // 9. Emit output
+    // -------------------------------------------------------------------
+    let duration_ms = Some(start.elapsed().as_millis() as u64);
+    let output_text = match format {
+        OutputFormat::Human => emit_human::emit_human_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            duration_ms,
+        ),
+        OutputFormat::Json => emit_json::emit_json_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Sarif => emit_sarif::emit_sarif_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Gha => emit_gha::emit_gha_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Junit => emit_junit::emit_junit_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+    };
+
+    if let Some(out_path) = &args.output {
+        if let Err(e) = fs::write(out_path, &output_text) {
+            eprintln!(
+                "error: failed to write output to '{}': {}",
+                out_path.display(),
+                e
+            );
+            return 2;
+        }
+    } else {
+        print!("{}", output_text);
+    }
+
+    if total_errors > 0 {
+        1
+    } else {
+        0
+    }
+}
+
+fn attach_source_spans(
+    results: Vec<(PathBuf, Result<Vec<crate::rules::Diagnostic>, String>)>,
+    models: &[crate::python::DiscoveredModel],
+) -> Vec<(PathBuf, Result<Vec<crate::rules::Diagnostic>, String>)> {
+    results
+        .into_iter()
+        .map(|(key, result)| match result {
+            Ok(mut diags) => {
+                // Find the matching model's source map by module_path key
+                if let Some(model) = models
+                    .iter()
+                    .find(|m| m.module_path == key.to_string_lossy())
+                {
+                    for d in &mut diags {
+                        if let Some(span) = model.source_map.get(&d.pointer) {
+                            d.source = Some(span.clone());
+                        }
+                    }
+                }
+                (key, Ok(diags))
+            }
+            Err(e) => (key, Err(e)),
+        })
+        .collect()
+}
+
+fn aggregate_results(
+    results: Vec<(PathBuf, Result<Vec<crate::rules::Diagnostic>, String>)>,
+) -> (Vec<(PathBuf, Vec<crate::rules::Diagnostic>)>, usize, usize) {
+    let mut all_diagnostics: Vec<(PathBuf, Vec<crate::rules::Diagnostic>)> = Vec::new();
+    let mut total_errors = 0usize;
+    let mut total_warnings = 0usize;
+
+    for (path, result) in results {
+        match result {
+            Ok(diags) => {
+                for d in &diags {
+                    match d.severity {
+                        DiagnosticSeverity::Error => total_errors += 1,
+                        DiagnosticSeverity::Warning => total_warnings += 1,
+                    }
+                }
+                all_diagnostics.push((path, diags));
+            }
+            Err(msg) => {
+                eprintln!("error: {}: {}", path.display(), msg);
+            }
+        }
+    }
+
+    all_diagnostics.sort_by(|a, b| a.0.cmp(&b.0));
+    for (_, diags) in &mut all_diagnostics {
+        diags.sort_by(|a, b| a.profile.cmp(&b.profile));
+    }
+
+    (all_diagnostics, total_errors, total_warnings)
+}
+
+// ---------------------------------------------------------------------------
+// Shared pipeline helpers — reused by run_check, handle_check, and run_check_python
+// ---------------------------------------------------------------------------
+
+/// Run all profile rulesets against a normalized arena and collect diagnostics.
+pub(crate) fn check_rulesets(
+    arena: &crate::ir::Arena,
+    profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
+) -> Vec<crate::rules::Diagnostic> {
+    let mut diags = Vec::new();
+    for (profile, ruleset) in profile_rulesets {
+        diags.extend(ruleset.check_all(arena, profile));
+    }
+    diags
+}
+
+/// Process schemas through the normalize → check pipeline.
+///
+/// Takes pre-parsed JSON values with their source keys and returns diagnostics
+/// grouped by source key. Used by the Python check pipeline (and available for
+/// any batch processing of raw JSON schemas).
+pub(crate) fn process_schemas(
+    schemas: Vec<(PathBuf, serde_json::Value)>,
+    profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
+) -> Vec<(PathBuf, Result<Vec<crate::rules::Diagnostic>, String>)> {
+    schemas
+        .into_iter()
+        .map(|(key, value)| {
+            let normalized = match normalize(value) {
+                Ok(n) => n,
+                Err(e) => return (key, Err(format!("normalization failed: {}", e))),
+            };
+            let diags = check_rulesets(&normalized.arena, profile_rulesets);
+            (key, Ok(diags))
+        })
+        .collect()
 }

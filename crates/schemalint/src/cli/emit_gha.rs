@@ -28,11 +28,23 @@ pub fn emit_gha_to_string(
                 DiagnosticSeverity::Error => "error",
                 DiagnosticSeverity::Warning => "warning",
             };
-            let file = encode_gha_value(&path.display().to_string());
+            let file = match &d.source {
+                Some(span) => encode_gha_value(&span.file),
+                None => encode_gha_value(&path.display().to_string()),
+            };
             let code = encode_gha_value(&d.code);
             let message = encode_gha_value(&format!("{} [profile: {}]", d.message, d.profile));
-            // GitHub Actions commands: ::error file=...,title=...::message
-            out.push_str(&format!("::{cmd} file={file},title={code}::{message}\n"));
+
+            let mut params = format!("file={file},title={code}");
+            if let Some(span) = &d.source {
+                if let Some(line) = span.line {
+                    params.push_str(&format!(",line={line}"));
+                }
+                if let Some(col) = span.col {
+                    params.push_str(&format!(",col={col}"));
+                }
+            }
+            out.push_str(&format!("::{cmd} {params}::{message}\n"));
         }
     }
     out
