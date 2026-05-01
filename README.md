@@ -1,45 +1,144 @@
-# schemalint
+<p align="center">
+  <br>
+  <h1 align="center">schemalint</h1>
+  <p align="center">Static analysis for JSON Schema compatibility with LLM structured-output providers.</p>
+  <p align="center">
+    <a href="https://github.com/1nder-labs/schemalint/actions/workflows/ci.yml"><img src="https://github.com/1nder-labs/schemalint/actions/workflows/ci.yml/badge.svg?event=push&branch=main" alt="CI"></a>
+    <a href="https://crates.io/crates/schemalint"><img src="https://img.shields.io/crates/v/schemalint" alt="Crates.io"></a>
+    <a href="https://docs.rs/schemalint"><img src="https://img.shields.io/docsrs/schemalint" alt="Docs.rs"></a>
+    <a href="https://github.com/1nder-labs/schemalint/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" alt="License"></a>
+    <img src="https://img.shields.io/badge/MSRV-1.80-red" alt="MSRV 1.80">
+  </p>
+</p>
+
+---
 
 ![schemalint demo](assets/Schemalint.gif)
 
-Static analysis tool for JSON Schema compatibility with LLM structured-output providers.
+Lint your JSON Schemas against provider capability profiles **before** you send them to the LLM API. Catches unsupported keywords, structural violations, and restricted values at build time instead of at runtime.
 
-## What it does
+```bash
+schemalint check --profile openai.so.2026-04-30 schema.json
+```
 
-`schemalint` checks JSON Schemas against provider capability profiles and tells you which keywords, types, or structural patterns the provider does not support. This catches schema incompatibilities **before** you send them to the LLM API.
+## Supported Providers
 
-Supported providers (Phase 1):
-- **OpenAI Structured Outputs** — via the built-in `openai.so.2026-04-30.toml` profile
+| Provider | Profile ID |
+|----------|-----------|
+| OpenAI Structured Outputs | `openai.so.2026-04-30` |
+| Anthropic Structured Outputs | `anthropic.so.2026-04-30` |
 
-## Installation
+Check multiple profiles simultaneously — each produces its own tagged diagnostics:
+
+```bash
+schemalint check \
+  --profile openai.so.2026-04-30 \
+  --profile anthropic.so.2026-04-30 \
+  schema.json
+```
+
+## Install
 
 ```bash
 cargo install schemalint
+# or build from source
+cargo build --workspace --release
 ```
 
-## Quick start
+## Features
+
+### Rule engine
+
+- **Class A keyword rules** — auto-generated from the provider profile TOML. Forbid, warn, or allow any JSON Schema keyword per provider.
+- **Class B structural rules** — configurable limits on nesting depth, total properties, enum cardinality, string-length budgets, root type requirements, `additionalProperties: false`, and required-field completeness.
+- **Semantic rules** — provider-aware heuristics that catch structural anti-patterns:
+  - Empty objects with `additionalProperties: false`
+  - `additionalProperties` specified as an object schema instead of `false`
+  - `anyOf` over object-typed branches
+  - `allOf` combined with `$ref` (Anthropic-specific)
+- **Value restrictions** — restrict keyword values to provider-approved sets (e.g., `format` limited to `date-time`, `email`, `uuid`).
+
+### Multi-profile orchestration
+
+- Run N profiles in a single invocation with `--profile` repeated.
+- Each diagnostic is tagged with its originating profile.
+- Profiles are deduplicated by name.
+- Built-in profile IDs resolve without filesystem paths.
+
+### Output formats
+
+| Format | Flag | Use case |
+|--------|------|----------|
+| Human-readable | `--format human` (default in TTY) | Terminal inspection |
+| JSON | `--format json` | Scripting, programmatic consumers |
+| SARIF v2.1.0 | `--format sarif` | GitHub Code Scanning, Azure DevOps |
+| GitHub Actions | `--format gha` | CI workflow annotations (`::error` / `::warning`) |
+| JUnit XML | `--format junit` | GitLab, Jenkins, CircleCI test reports |
+
+### JSON-RPC server
+
+Long-running server mode over stdin/stdout with line-delimited JSON-RPC 2.0:
 
 ```bash
-# Lint a single schema against the OpenAI profile
-schemalint check \
-  --profile crates/schemalint-profiles/profiles/openai.so.2026-04-30.toml \
-  schema.json
-
-# Lint all schemas in a directory
-schemalint check \
-  --profile openai.so.2026-04-30.toml \
-  ./schemas/
-
-# Output structured JSON instead of human-readable diagnostics
-schemalint check \
-  --profile openai.so.2026-04-30.toml \
-  --format json \
-  schema.json
+schemalint server
 ```
 
-## Human output format
+```json
+{"jsonrpc":"2.0","method":"check","params":{"schema":{...},"profiles":["openai.so.2026-04-30"],"format":"json"},"id":1}
+{"jsonrpc":"2.0","method":"shutdown","id":2}
+```
 
-```text
+- **Persistent disk cache** — normalized schemas survive process restarts via `~/.cache/schemalint-<pid>/`.
+- **Hardened** — 10 MB payload limit, 100k node limit, path traversal protection, broken pipe detection.
+
+### Performance
+
+Measured on Apple M3:
+
+| Scenario | Time |
+|----------|------|
+| Single 200-property schema | < 1 ms |
+| 500 schemas, cold start | < 50 ms |
+| Incremental (cache hit) | < 5 ms |
+
+- **Content-hash caching** — identical schemas across files are normalized once.
+- **Rayon parallelism** — file processing scales across all cores.
+- **Arena-allocated IR** — `NodeId(u32)` indexing with zero pointer indirection.
+
+## Usage
+
+```bash
+# Check a single schema
+schemalint check --profile openai.so.2026-04-30 schema.json
+
+# Check all .json files in a directory
+schemalint check --profile openai.so.2026-04-30 ./schemas/
+
+# Output structured JSON
+schemalint check --profile openai.so.2026-04-30 --format json schema.json
+
+# CI-friendly output
+schemalint check --profile openai.so.2026-04-30 --format gha schema.json
+
+# Multi-profile check
+schemalint check \
+  --profile openai.so.2026-04-30 \
+  --profile anthropic.so.2026-04-30 \
+  --format sarif \
+  ./schemas/
+
+# Write output to file
+schemalint check --profile openai.so.2026-04-30 --output results.json schema.json
+
+# Start JSON-RPC server
+schemalint server
+```
+
+## Output
+
+### Human
+
+```
 error[OAI-K-allOf]: keyword 'allOf' is not supported by openai.so.2026-04-30
    --> schema.json
      |
@@ -50,34 +149,39 @@ error[OAI-K-allOf]: keyword 'allOf' is not supported by openai.so.2026-04-30
 1 issue found (1 error, 0 warnings) across 1 schema
 ```
 
-## JSON output format
+### SARIF
 
 ```json
 {
-  "schema_version": "1.0",
-  "tool": {
-    "name": "schemalint",
-    "version": "0.1.0"
-  },
-  "profiles": ["openai.so.2026-04-30"],
-  "summary": {
-    "total_issues": 1,
-    "errors": 1,
-    "warnings": 0,
-    "schemas_checked": 1
-  },
-  "diagnostics": [
-    {
-      "code": "OAI-K-allOf",
-      "severity": "error",
-      "message": "keyword 'allOf' is not supported by openai.so.2026-04-30",
-      "schemaPath": "/",
-      "filePath": "schema.json",
-      "profile": "openai.so.2026-04-30",
-      "seeUrl": "https://schemalint.dev/rules/OAI-K-allOf"
-    }
-  ]
+  "version": "2.1.0",
+  "runs": [{
+    "tool": { "driver": { "name": "schemalint", "rules": [...] } },
+    "results": [{
+      "ruleId": "OAI-K-allOf",
+      "level": "error",
+      "message": { "text": "keyword 'allOf' is not supported..." },
+      "locations": [{ "physicalLocation": { "artifactLocation": { "uri": "schema.json" } } }]
+    }]
+  }]
 }
+```
+
+### GitHub Actions
+
+```
+::error file=schema.json,title=OAI-K-allOf::keyword 'allOf' is not supported...
+```
+
+### JUnit
+
+```xml
+<testsuites>
+  <testsuite name="schema.json" tests="1" failures="1" skipped="0" errors="0" time="0">
+    <testcase name="OAI-K-allOf - keyword 'allOf'...">
+      <failure type="error" message="keyword 'allOf'...">keyword 'allOf'...</failure>
+    </testcase>
+  </testsuite>
+</testsuites>
 ```
 
 ## Exit codes
@@ -85,51 +189,40 @@ error[OAI-K-allOf]: keyword 'allOf' is not supported by openai.so.2026-04-30
 | Code | Meaning |
 |------|---------|
 | `0` | No errors (warnings alone are OK) |
-| `1` | At least one error-level diagnostic, or a fatal parse/IO error |
+| `1` | At least one error, or a fatal parse/IO error |
+| `2` | I/O error writing output file |
 
-## Capabilities (Phase 1)
-
-- **Class A keyword rules** — auto-generated from the profile. For example, if the profile marks `allOf` as `forbid`, any schema containing `allOf` produces `OAI-K-allOf`.
-- **Class B structural rules** — data-driven from the `[structural]` TOML section. Checks root type, `additionalProperties: false`, required-field completeness, nesting depth, total property count, enum cardinality, string-length budgets, and external `$ref` usage.
-- **Value restrictions** — restricted keywords (e.g., `format` limited to `date-time`, `email`, `uuid`) emit `OAI-K-<keyword>-restricted` when a disallowed value is used.
-- **In-memory cache** — identical schemas within a single CLI invocation are normalized only once via content-hash caching.
-- **Parallel processing** — schema files are processed in parallel with `rayon`.
-
-## Limitations (Phase 1)
-
-- Only **OpenAI** profile included. Anthropic profile and multi-profile composition are planned for Phase 2.
-- Only **human** and **JSON** output. SARIF, GitHub Actions annotations, and JUnit XML are planned for Phase 2.
-- Only **JSON Schema files** (`.json`) are accepted. Pydantic and Zod ingestion helpers are planned for Phases 3 and 4.
-- **No source spans** (line:col) for raw `.json` files because `serde_json` does not provide byte offsets. Source spans will be available via language-specific ingestion in Phases 3+.
-- **No disk cache** — in-memory only within a single CLI invocation. Persistent cache is planned for Phase 2 server mode.
-- **No auto-fix** — out of scope for v1.
-
-## Performance targets
-
-Measured on Apple M3 (or equivalent 2-core CI runner):
-
-| Scenario | Target | Actual |
-|----------|--------|--------|
-| Single 200-property schema | < 1 ms | ~330 µs |
-| 500 schemas, cold start | < 500 ms | ~5.1 ms |
-| 500 schemas, incremental (cache hit) | < 5 ms | ~640 µs |
-
-## Project structure
+## Architecture
 
 ```
 crates/
-├── schemalint/          # Core engine + CLI
-│   ├── src/cli/         # Argument parsing, file discovery, output formatters
-│   ├── src/ir/          # Arena-allocated IR (Node, NodeId, Arena)
-│   ├── src/normalize/   # Normalizer pipeline (dialect, refs, Tarjan SCC, desugar)
-│   ├── src/profile/     # TOML profile loader
-│   ├── src/rules/       # Rule trait, registry, Class A + Class B rules
-│   ├── tests/           # 87 tests across 10 test files
-│   └── benches/         # Criterion benchmarks
-└── schemalint-profiles/ # Built-in provider profiles
+├── schemalint/              # Core engine + CLI
+│   ├── src/cli/             # Args, file discovery, server, output formatters
+│   ├── src/ir/              # Arena-allocated IR (Node, NodeId, Arena)
+│   ├── src/normalize/       # Normalizer pipeline (dialect, $ref resolution, desugar)
+│   ├── src/profile/         # TOML profile loader
+│   ├── src/rules/           # Rule trait, registry, Class A/B + semantic rules
+│   ├── tests/               # 128 tests across 12 test files
+│   └── benches/             # Criterion benchmarks
+└── schemalint-profiles/     # Bundled provider profiles (zero deps)
     └── profiles/
-        └── openai.so.2026-04-30.toml
+        ├── openai.so.2026-04-30.toml
+        └── anthropic.so.2026-04-30.toml
 ```
+
+## Contribute
+
+```bash
+cargo build --workspace
+cargo test --workspace
+cargo clippy --workspace -- -D warnings
+cargo fmt --all -- --check
+cargo bench --no-run --workspace
+```
+
+Pre-commit hooks via [lefthook](https://github.com/evilmartians/lefthook) run fmt, clippy, and tests on staged `.rs` files.
+
+MSRV: **1.80**.
 
 ## License
 
