@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "discriminator": {
+    "propertyName": "kind"
+  },
+  "additionalProperties": false
+}

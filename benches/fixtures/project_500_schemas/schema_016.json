@@ -1,0 +1,1 @@
+{"type": "object", "properties": {"field_0": {"type": "string"}, "field_1": {"type": "integer"}, "field_2": {"type": "object", "properties": {"nested": {"type": "string"}}, "additionalProperties": false}, "field_3": {"type": "string"}, "field_4": {"type": "integer"}}, "required": ["field_0", "field_1", "field_2", "field_3", "field_4"], "additionalProperties": false}

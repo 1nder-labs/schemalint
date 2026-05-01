@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "credit_card": {
+      "type": "string"
+    }
+  },
+  "dependentRequired": {
+    "credit_card": [
+      "name"
+    ]
+  },
+  "additionalProperties": false
+}

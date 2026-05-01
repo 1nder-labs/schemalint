@@ -1,0 +1,12 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: "normalize_temp_paths(&stdout, dir.path())"
+---
+warning[OAI-K-uniqueItems]: keyword 'uniqueItems' is not supported by test
+   --> [TEMP_DIR]/schema.json
+     |
+     = profile: test
+     = schema path: 
+     = see: https://schemalint.dev/rules/OAI-K-uniqueItems
+
+1 issue found (0 errors, 1 warning) across 1 schema in [DURATION]ms

@@ -1,0 +1,5 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: "normalize_temp_paths(&stdout, dir.path())"
+---
+0 issues found (0 errors, 0 warnings) across 1 schema in [DURATION]ms

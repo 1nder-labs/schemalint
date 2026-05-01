@@ -1,0 +1,24 @@
+[
+  {
+    "code": "OAI-S-object-root",
+    "severity": "error",
+    "message": "root schema must be an object",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_16.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-object-root"
+  },
+  {
+    "code": "OAI-S-external-refs",
+    "severity": "error",
+    "message": "external $ref 'https://example.com/schema.json' is not supported",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_16.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-external-refs"
+  }
+]

@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "title": "User",
+  "description": "A user object",
+  "default": {
+    "name": "anon"
+  },
+  "properties": {
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "additionalProperties": false
+}

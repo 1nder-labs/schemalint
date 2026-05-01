@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": "1.0.0"
+    }
+  },
+  "additionalProperties": false
+}

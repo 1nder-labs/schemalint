@@ -1,1 +1,6 @@
-docs/
+target/
+Cargo.lock
+.schemalint/
+.DS_Store
+*.swp
+*.swo

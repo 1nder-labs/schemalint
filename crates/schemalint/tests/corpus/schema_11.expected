@@ -1,0 +1,25 @@
+[
+  {
+    "code": "OAI-K-additionalProperties-restricted",
+    "severity": "error",
+    "message": "keyword 'additionalProperties' has a restricted value not accepted by openai.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_11.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "allowed values: [Bool(false)]",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-additionalProperties-restricted"
+  },
+  {
+    "code": "OAI-S-additional-properties-false",
+    "severity": "error",
+    "message": "object must declare additionalProperties: false",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_11.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-additional-properties-false"
+  }
+]

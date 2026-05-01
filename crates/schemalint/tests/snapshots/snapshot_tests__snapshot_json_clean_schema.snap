@@ -1,0 +1,22 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: "normalize_temp_paths(&stdout, dir.path())"
+---
+{
+  "schema_version": "1.0",
+  "tool": {
+    "name": "schemalint",
+    "version": "0.1.0"
+  },
+  "profiles": [
+    "test"
+  ],
+  "summary": {
+    "total_issues": 0,
+    "errors": 0,
+    "warnings": 0,
+    "schemas_checked": 1,
+    "duration_ms": [DURATION]
+  },
+  "diagnostics": []
+}

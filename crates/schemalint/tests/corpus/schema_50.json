@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "age": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 150
+    }
+  },
+  "required": [
+    "age"
+  ],
+  "additionalProperties": false
+}

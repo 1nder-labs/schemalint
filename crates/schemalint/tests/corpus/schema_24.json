@@ -1,0 +1,15 @@
+{
+  "allOf": [
+    {
+      "type": "string"
+    }
+  ],
+  "oneOf": [
+    {
+      "type": "string"
+    }
+  ],
+  "not": {
+    "type": "number"
+  }
+}

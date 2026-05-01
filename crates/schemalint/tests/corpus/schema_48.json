@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "$ref": "https://example.com/a.json"
+    },
+    "b": {
+      "$ref": "https://example.com/b.json"
+    }
+  },
+  "additionalProperties": false
+}

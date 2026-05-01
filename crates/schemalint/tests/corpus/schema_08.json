@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "created_at"
+  ],
+  "additionalProperties": false
+}

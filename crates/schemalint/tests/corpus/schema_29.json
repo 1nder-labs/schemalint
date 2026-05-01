@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "if": {
+    "properties": {
+      "foo": {
+        "type": "string"
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "bar": {
+        "type": "string"
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "baz": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

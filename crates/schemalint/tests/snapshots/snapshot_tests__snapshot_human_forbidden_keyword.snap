@@ -1,0 +1,12 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: "normalize_temp_paths(&stdout, dir.path())"
+---
+error[OAI-K-allOf]: keyword 'allOf' is not supported by test
+   --> [TEMP_DIR]/schema.json
+     |
+     = profile: test
+     = schema path: 
+     = see: https://schemalint.dev/rules/OAI-K-allOf
+
+1 issue found (1 error, 0 warnings) across 1 schema in [DURATION]ms

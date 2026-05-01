@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "card": {
+      "type": "string",
+      "format": "credit-card"
+    }
+  },
+  "required": [
+    "card"
+  ],
+  "additionalProperties": false
+}
