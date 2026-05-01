@@ -1,3 +1,5 @@
 pub mod arena;
 
-pub use arena::{Arena, Node, NodeId, NodeKind};
+pub use arena::{
+    parse, Annotations, Arena, Node, NodeId, NodeKind, ParseError,
+};
