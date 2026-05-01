@@ -658,16 +658,19 @@ fn run_check_node(args: args::CheckNodeArgs) -> i32 {
         }
     }
 
-    // Apply exclude patterns: filter discovered models by module_path
+    // Apply exclude patterns: filter discovered models by module_path.
+    // Simple glob matching: strips leading **/ and trailing /** (or /*) then
+    // does a substring match on the remaining path component.
     if !exclude_globs.is_empty() {
         discovered_models.retain(|m| {
-            let kept = !exclude_globs.iter().any(|g| {
-                // Simple glob matching: check if module_path contains the glob pattern
-                // (stripping any leading ** or * wildcards for basic matching)
-                let pattern = g.trim_start_matches("**/");
-                m.module_path.contains(pattern)
-            });
-            kept
+            !exclude_globs.iter().any(|g| {
+                let core = g.trim_start_matches("**/");
+                let core = core
+                    .strip_suffix("/**")
+                    .or_else(|| core.strip_suffix("/*"))
+                    .unwrap_or(core);
+                m.module_path.contains(core)
+            })
         });
     }
 

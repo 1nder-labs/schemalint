@@ -65,13 +65,15 @@ impl NodeHelper {
     /// on PATH. If `node_path` provides an explicit executable, it is used as
     /// the runner with the bin path as the only argument.
     pub fn spawn(node_path: Option<&str>) -> Result<Self, NodeError> {
+        let bin = resolve_helper_path()?;
+
         let (runner, args): (String, Vec<String>) = if let Some(path) = node_path {
-            (path.to_string(), vec![])
+            (path.to_string(), vec![bin.to_string_lossy().into_owned()])
         } else {
-            let bin = resolve_helper_path().to_string_lossy().to_string();
+            let bin_str = bin.to_string_lossy().into_owned();
             let (runner_name, extra_args) = resolve_tsx_cmd()?;
             let mut all_args = extra_args;
-            all_args.push(bin);
+            all_args.push(bin_str);
             (runner_name, all_args)
         };
 
@@ -359,14 +361,26 @@ fn resolve_tsx_cmd() -> Result<(String, Vec<String>), NodeError> {
 /// Resolve the path to the `schemalint-zod` helper bin entry.
 ///
 /// Returns the absolute path to `typescript/schemalint-zod/bin/schemalint-zod.js`
-/// relative to the workspace root.
-fn resolve_helper_path() -> std::path::PathBuf {
+/// relative to the workspace root. Verifies the file exists.
+fn resolve_helper_path() -> Result<std::path::PathBuf, NodeError> {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     // CARGO_MANIFEST_DIR = <workspace>/crates/schemalint
     // Workspace root = ../../ from the manifest dir
     let ws_root = manifest_dir
         .parent()
         .and_then(|p| p.parent())
-        .unwrap_or(std::path::Path::new("."));
-    ws_root.join("typescript/schemalint-zod/bin/schemalint-zod.js")
+        .ok_or_else(|| {
+            NodeError::SpawnFailed(format!(
+                "cannot resolve workspace root from CARGO_MANIFEST_DIR '{}'",
+                manifest_dir.display()
+            ))
+        })?;
+    let bin_path = ws_root.join("typescript/schemalint-zod/bin/schemalint-zod.js");
+    if !bin_path.exists() {
+        return Err(NodeError::SpawnFailed(format!(
+            "helper binary not found at '{}' — ensure typescript/schemalint-zod is built",
+            bin_path.display()
+        )));
+    }
+    Ok(bin_path)
 }
