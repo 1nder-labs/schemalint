@@ -1,0 +1,63 @@
+name = "anthropic.so.2026-04-30"
+version = "2026-04-30"
+code_prefix = "ANT"
+
+# Supported keywords
+type = "allow"
+properties = "allow"
+required = "allow"
+items = "allow"
+enum = "allow"
+const = "allow"
+anyOf = "allow"
+allOf = "allow"
+"$ref" = "allow"
+"$defs" = "allow"
+definitions = "allow"
+description = "allow"
+title = "allow"
+default = "allow"
+pattern = "allow"
+
+# Restricted keywords
+additionalProperties = { kind = "restricted", allowed = [false] }
+format = { kind = "restricted", allowed = ["date-time", "time", "date", "duration", "email", "hostname", "uri", "ipv4", "ipv6", "uuid"] }
+minItems = { kind = "restricted", allowed = [0, 1] }
+
+# Forbidden keywords
+minimum = "forbid"
+maximum = "forbid"
+exclusiveMinimum = "forbid"
+exclusiveMaximum = "forbid"
+multipleOf = "forbid"
+minLength = "forbid"
+maxLength = "forbid"
+maxItems = "forbid"
+uniqueItems = "forbid"
+contains = "forbid"
+prefixItems = "forbid"
+not = "forbid"
+if = "forbid"
+then = "forbid"
+else = "forbid"
+dependentRequired = "forbid"
+dependentSchemas = "forbid"
+discriminator = "forbid"
+
+# Unknown keywords
+oneOf = "unknown"
+patternProperties = "unknown"
+unevaluatedProperties = "unknown"
+propertyNames = "unknown"
+minProperties = "unknown"
+maxProperties = "unknown"
+
+[structural]
+require_object_root = false
+require_additional_properties_false = true
+require_all_properties_in_required = false
+max_object_depth = 0
+max_total_properties = 0
+max_total_enum_values = 0
+max_string_length_total = 0
+external_refs = true

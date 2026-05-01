@@ -31,6 +31,7 @@ impl Severity {
 pub struct Profile {
     pub name: String,
     pub version: String,
+    pub code_prefix: String,
     /// Keyword → severity mapping. Keys are leaked `&'static str` for O(1) lookup.
     pub keyword_map: HashMap<&'static str, Severity>,
     /// Keyword → allowed values mapping for restricted keywords.
@@ -95,6 +96,15 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
         .unwrap_or("unknown")
         .to_string();
 
+    let code_prefix = table
+        .get("code_prefix")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            let first_segment = name.split('.').next().unwrap_or(&name);
+            first_segment.to_uppercase()
+        });
+
     let mut keyword_map = HashMap::new();
     let mut restrictions = HashMap::new();
 
@@ -146,7 +156,7 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
     // Walk top-level entries for keywords and restrictions.
     for (key, val) in table {
         match key.as_str() {
-            "name" | "version" | "structural" | "restrictions" => continue,
+            "name" | "version" | "code_prefix" | "structural" | "restrictions" => continue,
             _ => {}
         }
 
@@ -221,6 +231,7 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
     Ok(Profile {
         name,
         version,
+        code_prefix,
         keyword_map,
         restrictions,
         structural,

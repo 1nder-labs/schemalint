@@ -1,5 +1,6 @@
 name = "openai.so.2026-04-30"
 version = "2026-04-30"
+code_prefix = "OAI"
 
 # String keywords
 type = "allow"
@@ -36,7 +37,7 @@ discriminator = "forbid"
 "$defs" = "allow"
 definitions = "allow"
 anyOf = "allow"
-oneOf = "warn"
+oneOf = "unknown"
 allOf = "forbid"
 not = "forbid"
 if = "forbid"
@@ -49,7 +50,7 @@ dependentSchemas = "forbid"
 require_object_root = true
 require_additional_properties_false = true
 require_all_properties_in_required = false
-max_object_depth = 20
+max_object_depth = 10
 max_total_properties = 5000
 max_total_enum_values = 1000
 max_string_length_total = 120000
