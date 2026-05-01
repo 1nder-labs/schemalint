@@ -1,0 +1,56 @@
+[
+  {
+    "code": "OAI-K-if",
+    "severity": "error",
+    "message": "keyword 'if' is not supported by openai.so.2026-04-30",
+    "schemaPath": "",
+    "filePath": "crates/schemalint/tests/corpus/schema_29.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-if"
+  },
+  {
+    "code": "OAI-K-else",
+    "severity": "error",
+    "message": "keyword 'else' is not supported by openai.so.2026-04-30",
+    "schemaPath": "",
+    "filePath": "crates/schemalint/tests/corpus/schema_29.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-else"
+  },
+  {
+    "code": "OAI-K-then",
+    "severity": "error",
+    "message": "keyword 'then' is not supported by openai.so.2026-04-30",
+    "schemaPath": "",
+    "filePath": "crates/schemalint/tests/corpus/schema_29.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-then"
+  },
+  {
+    "code": "OAI-S-additional-properties-false",
+    "severity": "error",
+    "message": "object must declare additionalProperties: false",
+    "schemaPath": "/if",
+    "filePath": "crates/schemalint/tests/corpus/schema_29.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-additional-properties-false"
+  },
+  {
+    "code": "OAI-S-additional-properties-false",
+    "severity": "error",
+    "message": "object must declare additionalProperties: false",
+    "schemaPath": "/then",
+    "filePath": "crates/schemalint/tests/corpus/schema_29.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-additional-properties-false"
+  },
+  {
+    "code": "OAI-S-additional-properties-false",
+    "severity": "error",
+    "message": "object must declare additionalProperties: false",
+    "schemaPath": "/else",
+    "filePath": "crates/schemalint/tests/corpus/schema_29.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-additional-properties-false"
+  }
+]

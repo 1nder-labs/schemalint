@@ -1,0 +1,14 @@
+{
+  "$defs": {
+    "self": {
+      "$ref": "#/$defs/self"
+    }
+  },
+  "type": "object",
+  "properties": {
+    "me": {
+      "$ref": "#/$defs/self"
+    }
+  },
+  "additionalProperties": false
+}

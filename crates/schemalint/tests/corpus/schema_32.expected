@@ -1,0 +1,11 @@
+[
+  {
+    "code": "OAI-K-prefixItems",
+    "severity": "warning",
+    "message": "keyword 'prefixItems' is not supported by openai.so.2026-04-30",
+    "schemaPath": "/properties/tuple",
+    "filePath": "crates/schemalint/tests/corpus/schema_32.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-prefixItems"
+  }
+]

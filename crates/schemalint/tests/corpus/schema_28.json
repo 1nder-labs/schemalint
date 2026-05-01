@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "a": {
+      "type": "string"
+    }
+  },
+  "minProperties": 1,
+  "maxProperties": 5,
+  "additionalProperties": false
+}

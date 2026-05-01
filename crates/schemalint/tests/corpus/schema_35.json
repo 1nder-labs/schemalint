@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "score": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "exclusiveMaximum": 100
+    }
+  },
+  "additionalProperties": false
+}

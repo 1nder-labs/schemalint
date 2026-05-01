@@ -1,0 +1,21 @@
+{
+  "$defs": {
+    "name": {
+      "type": "string"
+    }
+  },
+  "type": "object",
+  "properties": {
+    "firstName": {
+      "$ref": "#/$defs/name"
+    },
+    "lastName": {
+      "$ref": "#/$defs/name"
+    }
+  },
+  "required": [
+    "firstName",
+    "lastName"
+  ],
+  "additionalProperties": false
+}

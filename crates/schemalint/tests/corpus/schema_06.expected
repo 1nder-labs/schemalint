@@ -1,0 +1,11 @@
+[
+  {
+    "code": "OAI-K-uniqueItems",
+    "severity": "warning",
+    "message": "keyword 'uniqueItems' is not supported by openai.so.2026-04-30",
+    "schemaPath": "/properties/tags",
+    "filePath": "crates/schemalint/tests/corpus/schema_06.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-uniqueItems"
+  }
+]

@@ -1,0 +1,39 @@
+{
+  "type": "object",
+  "properties": {
+    "next": {
+      "type": "object",
+      "properties": {
+        "next": {
+          "type": "object",
+          "properties": {
+            "next": {
+              "type": "object",
+              "properties": {
+                "next": {
+                  "type": "object",
+                  "properties": {
+                    "next": {
+                      "type": "object",
+                      "properties": {
+                        "next": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

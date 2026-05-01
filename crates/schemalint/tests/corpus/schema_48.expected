@@ -1,0 +1,20 @@
+[
+  {
+    "code": "OAI-S-external-refs",
+    "severity": "error",
+    "message": "external $ref 'https://example.com/a.json' is not supported",
+    "schemaPath": "/properties/a",
+    "filePath": "crates/schemalint/tests/corpus/schema_48.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-external-refs"
+  },
+  {
+    "code": "OAI-S-external-refs",
+    "severity": "error",
+    "message": "external $ref 'https://example.com/b.json' is not supported",
+    "schemaPath": "/properties/b",
+    "filePath": "crates/schemalint/tests/corpus/schema_48.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-external-refs"
+  }
+]

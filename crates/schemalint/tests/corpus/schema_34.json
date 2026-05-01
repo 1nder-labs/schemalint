@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "count": {
+      "type": "integer",
+      "multipleOf": 5
+    }
+  },
+  "additionalProperties": false
+}

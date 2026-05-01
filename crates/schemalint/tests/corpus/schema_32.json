@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "properties": {
+    "tuple": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

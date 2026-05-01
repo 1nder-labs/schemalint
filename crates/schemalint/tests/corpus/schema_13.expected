@@ -1,0 +1,11 @@
+[
+  {
+    "code": "OAI-S-object-root",
+    "severity": "error",
+    "message": "root schema must be an object",
+    "schemaPath": "",
+    "filePath": "crates/schemalint/tests/corpus/schema_13.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-object-root"
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "properties": {
+    "config": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "debug": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

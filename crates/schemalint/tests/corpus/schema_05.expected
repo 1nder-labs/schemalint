@@ -1,0 +1,20 @@
+[
+  {
+    "code": "OAI-K-not",
+    "severity": "error",
+    "message": "keyword 'not' is not supported by openai.so.2026-04-30",
+    "schemaPath": "",
+    "filePath": "crates/schemalint/tests/corpus/schema_05.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-not"
+  },
+  {
+    "code": "OAI-S-object-root",
+    "severity": "error",
+    "message": "root schema must be an object",
+    "schemaPath": "",
+    "filePath": "crates/schemalint/tests/corpus/schema_05.json",
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-object-root"
+  }
+]

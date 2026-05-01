@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "properties": {
+    "email": {
+      "type": "string",
+      "pattern": "^.*@.*$"
+    }
+  },
+  "additionalProperties": false
+}
