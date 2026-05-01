@@ -4,7 +4,7 @@ This document breaks the v1 implementation into discrete engineering phases. Eac
 
 ---
 
-## Phase 0 — Validation Spike
+## Phase 0 — Validation Spike (done)
 
 Before any production code is written, validate the riskiest architectural assumptions.
 
@@ -20,7 +20,7 @@ Before any production code is written, validate the riskiest architectural assum
 
 ---
 
-## Phase 1 — Foundation
+## Phase 1 — Foundation (done)
 
 Build the minimal end-to-end pipeline: parse a schema, load a profile, detect mismatches, emit output. No hand-written semantic rules yet; only what the profile TOML can drive automatically.
 
@@ -54,7 +54,7 @@ Build the minimal end-to-end pipeline: parse a schema, load a profile, detect mi
 
 ---
 
-## Phase 2 — Rules and Multi-Profile
+## Phase 2 — Rules and Multi-Profile (done)
 
 Add hand-written semantic rules, the second provider profile, multi-profile composition, and additional output formats.
 
@@ -81,7 +81,7 @@ All items deferred from Phase 1 are picked up here.
 
 ---
 
-## Phase 3 — Pydantic Ingestion
+## Phase 3 — Pydantic Ingestion (done)
 
 Add first-class Pydantic model discovery with source-span mapping and Python configuration support.
 
