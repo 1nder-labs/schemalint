@@ -14,6 +14,7 @@ pub struct Node {
     pub annotations: Annotations,
     pub unknown: IndexMap<String, Value>,
     pub parent: Option<NodeId>,
+    pub children: Vec<NodeId>,
     pub depth: u32,
     pub json_pointer: String,
     pub ref_target: Option<NodeId>,
@@ -86,6 +87,7 @@ pub struct Annotations {
     pub else_schema: Option<Value>,
     pub dependent_required: Option<Value>,
     pub dependent_schemas: Option<Value>,
+    pub schema: Option<Value>,
 }
 
 /// Arena allocator for IR nodes.
@@ -158,13 +160,14 @@ pub fn parse(value: Value) -> Result<(Arena, NodeId), ParseError> {
     Ok((arena, id))
 }
 
-fn parse_node(value: Value) -> Result<Node, ParseError> {
+pub fn parse_node(value: Value) -> Result<Node, ParseError> {
     match value {
         Value::Bool(true) => Ok(Node {
             kind: NodeKind::Any,
             annotations: Annotations::default(),
             unknown: IndexMap::new(),
             parent: None,
+            children: Vec::new(),
             depth: 0,
             json_pointer: String::new(),
             ref_target: None,
@@ -175,6 +178,7 @@ fn parse_node(value: Value) -> Result<Node, ParseError> {
             annotations: Annotations::default(),
             unknown: IndexMap::new(),
             parent: None,
+            children: Vec::new(),
             depth: 0,
             json_pointer: String::new(),
             ref_target: None,
@@ -216,6 +220,7 @@ fn parse_node(value: Value) -> Result<Node, ParseError> {
                     "title" => annotations.title = Some(val),
                     "default" => annotations.default = Some(val),
                     "discriminator" => annotations.discriminator = Some(val),
+                    "$schema" => annotations.schema = Some(val),
                     "$ref" => annotations.r#ref = Some(val),
                     "$defs" => annotations.defs = Some(val),
                     "definitions" => annotations.definitions = Some(val),
@@ -239,6 +244,7 @@ fn parse_node(value: Value) -> Result<Node, ParseError> {
                 annotations,
                 unknown,
                 parent: None,
+                children: Vec::new(),
                 depth: 0,
                 json_pointer: String::new(),
                 ref_target: None,

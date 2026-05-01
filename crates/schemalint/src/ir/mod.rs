@@ -1,5 +1,5 @@
 pub mod arena;
 
 pub use arena::{
-    parse, Annotations, Arena, Node, NodeId, NodeKind, ParseError,
+    parse, parse_node, Annotations, Arena, Node, NodeId, NodeKind, ParseError,
 };
