@@ -54,6 +54,7 @@ pub struct StructuralLimits {
     pub max_total_properties: u32,
     pub max_total_enum_values: u32,
     pub max_string_length_total: u32,
+    pub external_refs: bool,
 }
 
 /// Errors that can occur when loading a profile.
@@ -179,6 +180,9 @@ fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, Profi
     }
     if let Some(v) = t.get("max_string_length_total").and_then(|v| v.as_integer()) {
         limits.max_string_length_total = v as u32;
+    }
+    if let Some(v) = t.get("external_refs").and_then(|v| v.as_bool()) {
+        limits.external_refs = v;
     }
 
     Ok(limits)

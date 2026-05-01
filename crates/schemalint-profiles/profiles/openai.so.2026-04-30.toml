@@ -53,3 +53,4 @@ max_object_depth = 20
 max_total_properties = 5000
 max_total_enum_values = 1000
 max_string_length_total = 120000
+external_refs = true

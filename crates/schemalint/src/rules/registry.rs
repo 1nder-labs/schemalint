@@ -80,6 +80,9 @@ impl RuleSet {
             }));
         }
 
+        // Class B structural rules.
+        dynamic_rules.extend(super::class_b::generate_class_b_rules(profile));
+
         Self {
             static_rules: &*RULES,
             dynamic_rules,

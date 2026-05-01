@@ -130,6 +130,7 @@ max_string_length_total = 60000
         max_total_properties: 3000,
         max_total_enum_values: 500,
         max_string_length_total: 60000,
+        external_refs: false,
     });
 }
 
