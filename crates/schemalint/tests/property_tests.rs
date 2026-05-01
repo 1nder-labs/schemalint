@@ -1,5 +1,5 @@
 use proptest::prelude::*;
-use schemalint::cache::{hash_bytes, Cache};
+use schemalint::cache::{hash_bytes, Cache, DiskCache};
 use schemalint::ir::parse_node;
 use schemalint::normalize::normalize;
 
@@ -125,6 +125,60 @@ proptest! {
         prop_assert_eq!(
             cached.root_id, normalized.root_id,
             "cached result should have same root id"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Property: bincode round-trip produces identical NormalizedSchema
+// ---------------------------------------------------------------------------
+
+proptest! {
+    #[test]
+    fn prop_bincode_roundtrip_identical(schema in json_schema_strategy()) {
+        let normalized = normalize(schema).expect("normalization should succeed");
+        let serialized = serde_json::to_vec(&normalized).expect("serialize should succeed");
+        let deserialized: schemalint::normalize::NormalizedSchema =
+            serde_json::from_slice(&serialized).expect("deserialize should succeed");
+
+        prop_assert_eq!(
+            normalized.arena.len(),
+            deserialized.arena.len(),
+            "round-trip should preserve node count"
+        );
+        prop_assert_eq!(
+            normalized.root_id, deserialized.root_id,
+            "round-trip should preserve root id"
+        );
+        prop_assert_eq!(
+            normalized.dialect, deserialized.dialect,
+            "round-trip should preserve dialect"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Property: DiskCache round-trip survives get after insert
+// ---------------------------------------------------------------------------
+
+proptest! {
+    #[test]
+    fn prop_disk_cache_roundtrip(schema in json_schema_strategy()) {
+        let bytes = serde_json::to_vec(&schema).unwrap();
+        let hash = hash_bytes(&bytes);
+        let normalized = normalize(schema).expect("normalization should succeed");
+
+        let cache = DiskCache::new();
+        cache.insert(hash, normalized.clone());
+
+        let cached = cache.get(hash).expect("disk cache should return the entry");
+        prop_assert_eq!(
+            cached.arena.len(), normalized.arena.len(),
+            "disk cached result should have same node count"
+        );
+        prop_assert_eq!(
+            cached.root_id, normalized.root_id,
+            "disk cached result should have same root id"
         );
     }
 }

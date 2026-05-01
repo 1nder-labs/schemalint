@@ -1,7 +1,7 @@
 use crate::ir::Node;
 
 /// Detected JSON Schema dialect.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Dialect {
     Draft2020_12,
     Draft2019_09,

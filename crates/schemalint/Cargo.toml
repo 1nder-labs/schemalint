@@ -12,7 +12,8 @@ description = "Static analysis tool for JSON Schema compatibility with LLM struc
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
-indexmap = "2"
+indexmap = { version = "2", features = ["serde"] }
+dirs = "5.0"
 linkme = "0.3"
 clap = { version = "4", features = ["derive"] }
 rayon = "1"

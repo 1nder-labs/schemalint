@@ -9,7 +9,7 @@ pub mod dialect;
 pub mod refs;
 pub mod traverse;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NormalizedSchema {
     pub arena: Arena,
     pub root_id: NodeId,

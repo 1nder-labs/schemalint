@@ -1,7 +1,14 @@
+use std::fs;
+use std::io::Read;
+use std::path::PathBuf;
+use std::sync::RwLock;
+
 use rustc_hash::FxHasher;
 use std::hash::Hasher;
 
 use crate::normalize::NormalizedSchema;
+
+const CACHE_VERSION: u32 = 1;
 
 /// In-memory content-hash cache for normalized schemas.
 ///
@@ -27,6 +34,100 @@ impl Cache {
 
     pub fn clear(&mut self) {
         self.inner.clear();
+    }
+}
+
+/// Persistent disk-backed cache extending the in-memory cache.
+///
+/// Each cache entry is stored as a separate file under the system cache
+/// directory (e.g. `~/.cache/schemalint/`). A 4-byte version header is
+/// prepended to every file for future migration. If the version does not
+/// match, the entry is treated as a miss and overwritten.
+#[derive(Debug)]
+pub struct DiskCache {
+    memory: RwLock<Cache>,
+    cache_dir: Option<PathBuf>,
+}
+
+impl DiskCache {
+    pub fn new() -> Self {
+        let cache_dir = dirs::cache_dir().map(|d| d.join("schemalint"));
+        if let Some(ref dir) = cache_dir {
+            let _ = fs::create_dir_all(dir);
+        }
+        Self {
+            memory: RwLock::new(Cache::new()),
+            cache_dir,
+        }
+    }
+
+    /// Look up a normalized schema by its content hash.
+    ///
+    /// Checks the in-memory cache first, then falls back to the on-disk
+    /// cache. Disk entries are deserialized and inserted into memory on
+    /// a successful read.
+    pub fn get(&self, hash: u64) -> Option<NormalizedSchema> {
+        // In-memory hit
+        {
+            let memory = self.memory.read().unwrap();
+            if let Some(cached) = memory.get(hash) {
+                return Some(cached.clone());
+            }
+        }
+
+        // Disk fallback
+        let dir = self.cache_dir.as_ref()?;
+        let path = dir.join(format!("{:016x}.bin", hash));
+        let mut file = fs::File::open(&path).ok()?;
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf).ok()?;
+        if buf.len() < 4 {
+            return None;
+        }
+        let version = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
+        if version != CACHE_VERSION {
+            return None;
+        }
+        let schema: NormalizedSchema = serde_json::from_slice(&buf[4..]).ok()?;
+
+        // Populate memory cache for future lookups
+        self.memory.write().unwrap().insert(hash, schema.clone());
+        Some(schema)
+    }
+
+    /// Insert a normalized schema into both the in-memory and on-disk caches.
+    pub fn insert(&self, hash: u64, schema: NormalizedSchema) {
+        // Memory
+        self.memory.write().unwrap().insert(hash, schema.clone());
+
+        // Disk
+        if let Some(ref dir) = self.cache_dir {
+            let path = dir.join(format!("{:016x}.bin", hash));
+            let mut buf = Vec::new();
+            buf.extend_from_slice(&CACHE_VERSION.to_le_bytes());
+            if let Ok(serialized) = serde_json::to_vec(&schema) {
+                buf.extend_from_slice(&serialized);
+                let _ = fs::write(&path, &buf);
+            }
+            self.evict_if_needed(dir);
+        }
+    }
+
+    fn evict_if_needed(&self, dir: &PathBuf) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        let mut files: Vec<(fs::DirEntry, std::time::SystemTime)> = Vec::new();
+        for entry in entries.filter_map(|e| e.ok()) {
+            let Ok(meta) = entry.metadata() else { continue };
+            let Ok(mtime) = meta.modified() else { continue };
+            files.push((entry, mtime));
+        }
+        if files.len() > 1000 {
+            files.sort_by(|a, b| a.1.cmp(&b.1));
+            let to_remove = files.len() - 1000;
+            for (entry, _) in files.into_iter().take(to_remove) {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
     }
 }
 

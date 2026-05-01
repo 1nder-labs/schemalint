@@ -4,11 +4,11 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 /// Unique identifier for a node in the arena.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 pub struct NodeId(pub u32);
 
 /// A node in the normalized IR.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Node {
     pub kind: NodeKind,
     pub annotations: Annotations,
@@ -22,7 +22,7 @@ pub struct Node {
 }
 
 /// Classification of JSON Schema node kinds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum NodeKind {
     Object,
     Array,
@@ -42,7 +42,7 @@ pub enum NodeKind {
 ///
 /// Every field is `Option<Value>` so the parser can store the raw JSON value
 /// without loss. The normalizer (U4) operates on these raw values.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Annotations {
     pub r#type: Option<Value>,
     pub properties: Option<Value>,
@@ -90,7 +90,7 @@ pub struct Annotations {
 }
 
 /// Arena allocator for IR nodes.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Arena {
     nodes: Vec<Node>,
 }
