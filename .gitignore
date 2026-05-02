@@ -9,4 +9,3 @@ Cargo.lock
 docs/build/
 docs/.docusaurus/
 docs/node_modules/
-docs/package-lock.json
