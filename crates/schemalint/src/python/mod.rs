@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
@@ -7,7 +6,8 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-use crate::rules::registry::SourceSpan;
+// Re-export shared ingestion types for backward compat.
+pub use crate::ingest::{DiscoverResponse, DiscoveredModel};
 
 const DISCOVER_TIMEOUT_SECS: u64 = 60;
 const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
@@ -27,21 +27,6 @@ pub enum PythonError {
     InvalidResponse(String),
     #[error("discovery failed: {0}")]
     DiscoverFailed(String),
-}
-
-/// A single Pydantic model discovered by the Python helper.
-#[derive(Debug, Clone, serde::Serialize, Deserialize)]
-pub struct DiscoveredModel {
-    pub name: String,
-    pub module_path: String,
-    pub schema: serde_json::Value,
-    pub source_map: HashMap<String, SourceSpan>,
-}
-
-/// Response from the `discover` JSON-RPC method.
-#[derive(Debug, Clone, serde::Serialize, Deserialize)]
-pub struct DiscoverResponse {
-    pub models: Vec<DiscoveredModel>,
 }
 
 #[derive(Debug, Deserialize)]

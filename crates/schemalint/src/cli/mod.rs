@@ -18,6 +18,7 @@ pub mod emit_human;
 pub mod emit_json;
 pub mod emit_junit;
 pub mod emit_sarif;
+pub mod node_config;
 pub mod pyproject;
 pub mod server;
 
@@ -31,6 +32,10 @@ pub fn run() {
         }
         Commands::CheckPython(args) => {
             let exit_code = run_check_python(args);
+            process::exit(exit_code);
+        }
+        Commands::CheckNode(args) => {
+            let exit_code = run_check_node(args);
             process::exit(exit_code);
         }
         Commands::Server(_args) => {
@@ -397,7 +402,7 @@ fn run_check_python(args: args::CheckPythonArgs) -> i32 {
         }
     };
 
-    let mut discovered_models: Vec<crate::python::DiscoveredModel> = Vec::new();
+    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
     let mut discovery_failures = 0usize;
     for package in &packages {
         match helper.discover(package) {
@@ -437,9 +442,15 @@ fn run_check_python(args: args::CheckPythonArgs) -> i32 {
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
-    let schema_entries: Vec<(PathBuf, serde_json::Value)> = discovered_models
+    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovered_models
         .iter()
-        .map(|m| (PathBuf::from(&m.module_path), m.schema.clone()))
+        .map(|m| {
+            (
+                PathBuf::from(&m.module_path),
+                m.name.clone(),
+                m.schema.clone(),
+            )
+        })
         .collect();
 
     let results = process_schemas(schema_entries, &profile_rulesets);
@@ -515,40 +526,358 @@ fn run_check_python(args: args::CheckPythonArgs) -> i32 {
     }
 }
 
+fn run_check_node(args: args::CheckNodeArgs) -> i32 {
+    let start = std::time::Instant::now();
+
+    // -------------------------------------------------------------------
+    // 1. Load package.json configuration
+    // -------------------------------------------------------------------
+    let config_path = args
+        .config
+        .as_deref()
+        .unwrap_or_else(|| Path::new("package.json"));
+    let node_config = match node_config::load_node_config(config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return 1;
+        }
+    };
+
+    // -------------------------------------------------------------------
+    // 2. Merge CLI flags on top of config
+    // -------------------------------------------------------------------
+    let sources = if args.sources.is_empty() {
+        node_config
+            .as_ref()
+            .map(|c| c.include.clone())
+            .unwrap_or_default()
+    } else {
+        args.sources.clone()
+    };
+
+    let profile_args: Vec<String> = if args.profiles.is_empty() {
+        node_config
+            .as_ref()
+            .map(|c| c.profiles.clone())
+            .unwrap_or_default()
+    } else {
+        args.profiles
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect()
+    };
+
+    let exclude_globs: Vec<String> = node_config
+        .as_ref()
+        .map(|c| c.exclude.clone())
+        .unwrap_or_default();
+
+    if sources.is_empty() {
+        eprintln!(
+            "error: no sources specified. Use --source or configure \"schemalint\" in package.json"
+        );
+        return 1;
+    }
+
+    if profile_args.is_empty() {
+        eprintln!(
+            "error: no profiles specified. Use --profile or configure \"schemalint\" in package.json"
+        );
+        return 1;
+    }
+
+    // -------------------------------------------------------------------
+    // 3. Load profiles
+    // -------------------------------------------------------------------
+    let mut profiles = Vec::new();
+    for id in &profile_args {
+        let profile_bytes = match resolve_profile(id) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("error: failed to read profile '{}': {}", id, e);
+                return 1;
+            }
+        };
+        let profile = match load(&profile_bytes) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("error: failed to load profile '{}': {}", id, e);
+                return 1;
+            }
+        };
+        profiles.push(profile);
+    }
+
+    profiles.sort_by(|a, b| a.name.cmp(&b.name));
+    profiles.dedup_by_key(|p| p.name.clone());
+
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = profiles
+        .iter()
+        .map(|p| (p, RuleSet::from_profile(p)))
+        .collect();
+
+    let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
+
+    // -------------------------------------------------------------------
+    // 4. Determine output format
+    // -------------------------------------------------------------------
+    let format = args.format.unwrap_or_else(|| {
+        if std::io::stdout().is_terminal() {
+            OutputFormat::Human
+        } else {
+            OutputFormat::Json
+        }
+    });
+
+    // -------------------------------------------------------------------
+    // 5. Spawn Node helper and discover schemas
+    // -------------------------------------------------------------------
+    let mut helper = match crate::node::NodeHelper::spawn(args.node_path.as_deref()) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return 1;
+        }
+    };
+
+    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
+    let mut discovery_failures = 0usize;
+    for source in &sources {
+        match helper.discover(source) {
+            Ok(resp) => {
+                for model in resp.models {
+                    discovered_models.push(model);
+                }
+                // Log discovery warnings
+                for warning in &resp.warnings {
+                    eprintln!(
+                        "warning: discovery warning for '{}' in source '{}': {}",
+                        warning.model, source, warning.message
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("error: discovery failed for source '{}': {}", source, e);
+                discovery_failures += 1;
+            }
+        }
+    }
+
+    // Apply exclude patterns: filter discovered models by module_path.
+    // Simple glob matching: strips leading **/ and trailing /** (or /*),
+    // converts remaining * to path-segment wildcard, rejects on match.
+    if !exclude_globs.is_empty() {
+        discovered_models.retain(|m| {
+            !exclude_globs.iter().any(|g| {
+                let core = g.trim_start_matches("**/");
+                let core = core
+                    .strip_suffix("/**")
+                    .or_else(|| core.strip_suffix("/*"))
+                    .unwrap_or(core);
+                // Convert remaining * wildcards to path-segment matching:
+                // a * in the pattern matches anything within a path segment
+                // except /. Split on *, check each literal piece in order.
+                glob_match(core, &m.module_path)
+            })
+        });
+    }
+
+    helper.shutdown();
+
+    if discovered_models.is_empty() {
+        if discovery_failures > 0 {
+            eprintln!(
+                "error: all {} source(s) failed discovery",
+                discovery_failures
+            );
+            return 1;
+        }
+        if format == OutputFormat::Human {
+            println!("0 issues found (0 errors, 0 warnings) across 0 schemas");
+        } else {
+            print!(
+                "{}",
+                emit_json::emit_json_to_string(&[], 0, 0, &profile_names, Some(0))
+            );
+        }
+        return 0;
+    }
+
+    // -------------------------------------------------------------------
+    // 6. Normalize and check schemas
+    // -------------------------------------------------------------------
+    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovered_models
+        .iter()
+        .map(|m| {
+            (
+                PathBuf::from(&m.module_path),
+                m.name.clone(),
+                m.schema.clone(),
+            )
+        })
+        .collect();
+
+    let results = process_schemas(schema_entries, &profile_rulesets);
+
+    // -------------------------------------------------------------------
+    // 7. Attach source spans from discovery
+    // -------------------------------------------------------------------
+    let all_diagnostics = attach_source_spans(results, &discovered_models);
+
+    // -------------------------------------------------------------------
+    // 8. Aggregate results
+    // -------------------------------------------------------------------
+    let (all_diagnostics, total_errors, total_warnings) = aggregate_results(all_diagnostics);
+
+    // -------------------------------------------------------------------
+    // 9. Emit output
+    // -------------------------------------------------------------------
+    let duration_ms = Some(start.elapsed().as_millis() as u64);
+    let output_text = match format {
+        OutputFormat::Human => emit_human::emit_human_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            duration_ms,
+        ),
+        OutputFormat::Json => emit_json::emit_json_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Sarif => emit_sarif::emit_sarif_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Gha => emit_gha::emit_gha_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+        OutputFormat::Junit => emit_junit::emit_junit_to_string(
+            &all_diagnostics,
+            total_errors,
+            total_warnings,
+            &profile_names,
+            duration_ms,
+        ),
+    };
+
+    if let Some(out_path) = &args.output {
+        if let Err(e) = fs::write(out_path, &output_text) {
+            eprintln!(
+                "error: failed to write output to '{}': {}",
+                out_path.display(),
+                e
+            );
+            return 2;
+        }
+    } else {
+        print!("{}", output_text);
+    }
+
+    if total_errors > 0 || discovery_failures > 0 {
+        1
+    } else {
+        0
+    }
+}
+
+/// Simple glob matcher for exclude patterns.
+///
+/// Handles `*` (match anything within a single path segment except `/`)
+/// and `**` (match across path segments — handled by caller via `trim_start_matches`/`strip_suffix`).
+/// `?` is not supported; use `*` instead.
+fn glob_match(pattern: &str, path: &str) -> bool {
+    // Split on *, match each literal segment in order.
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.len() == 1 {
+        return path.contains(parts[0]);
+    }
+
+    let mut pos = 0usize;
+    for part in &parts {
+        if part.is_empty() {
+            continue;
+        }
+        match path[pos..].find(part) {
+            Some(offset) => {
+                pos += offset + part.len();
+            }
+            None => return false,
+        }
+    }
+
+    let last_part = parts.last().copied().unwrap_or("");
+    last_part.is_empty() || path.ends_with(last_part)
+}
+
+/// Attach source spans from discovered models to diagnostics.
+///
+/// Each result carries a `(module_path, model_name)` composite key.
+/// When multiple schemas share the same `module_path` (e.g., `UserSchema` and
+/// `AddressSchema` in `schemas/models.ts`), each model's source map is matched
+/// independently — no merging, no first-write-wins collision.
 fn attach_source_spans(
-    results: Vec<(PathBuf, Result<Vec<crate::rules::Diagnostic>, String>)>,
-    models: &[crate::python::DiscoveredModel],
-) -> Vec<(PathBuf, Result<Vec<crate::rules::Diagnostic>, String>)> {
+    results: Vec<(
+        PathBuf,
+        String,
+        Result<Vec<crate::rules::Diagnostic>, String>,
+    )>,
+    models: &[crate::ingest::DiscoveredModel],
+) -> Vec<(
+    PathBuf,
+    String,
+    Result<Vec<crate::rules::Diagnostic>, String>,
+)> {
+    // Build per-model lookup: (module_path, model_name) → source_map
+    use std::collections::HashMap;
+    let model_maps: HashMap<(&str, &str), &HashMap<String, crate::rules::registry::SourceSpan>> =
+        models
+            .iter()
+            .map(|m| ((m.module_path.as_str(), m.name.as_str()), &m.source_map))
+            .collect();
+
     results
         .into_iter()
-        .map(|(key, result)| match result {
+        .map(|(key, model_name, result)| match result {
             Ok(mut diags) => {
-                // Find the matching model's source map by module_path key
-                if let Some(model) = models
-                    .iter()
-                    .find(|m| m.module_path == key.to_string_lossy())
+                if let Some(source_map) =
+                    model_maps.get(&(key.to_string_lossy().as_ref(), model_name.as_str()))
                 {
                     for d in &mut diags {
-                        if let Some(span) = model.source_map.get(&d.pointer) {
+                        if let Some(span) = source_map.get(&d.pointer) {
                             d.source = Some(span.clone());
                         }
                     }
                 }
-                (key, Ok(diags))
+                (key, model_name, Ok(diags))
             }
-            Err(e) => (key, Err(e)),
+            Err(e) => (key, model_name, Err(e)),
         })
         .collect()
 }
 
 fn aggregate_results(
-    results: Vec<(PathBuf, Result<Vec<crate::rules::Diagnostic>, String>)>,
+    results: Vec<(
+        PathBuf,
+        String,
+        Result<Vec<crate::rules::Diagnostic>, String>,
+    )>,
 ) -> (Vec<(PathBuf, Vec<crate::rules::Diagnostic>)>, usize, usize) {
     let mut all_diagnostics: Vec<(PathBuf, Vec<crate::rules::Diagnostic>)> = Vec::new();
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;
 
-    for (path, result) in results {
+    for (path, _model_name, result) in results {
         match result {
             Ok(diags) => {
                 for d in &diags {
@@ -591,22 +920,201 @@ pub(crate) fn check_rulesets(
 
 /// Process schemas through the normalize → check pipeline.
 ///
-/// Takes pre-parsed JSON values with their source keys and returns diagnostics
-/// grouped by source key. Used by the Python check pipeline (and available for
-/// any batch processing of raw JSON schemas).
+/// Takes pre-parsed JSON values with their source keys and model names, and
+/// returns diagnostics grouped by source key. The model name is carried through
+/// to enable per-model source span lookups (avoiding collisions when multiple
+/// schemas share a module_path).
 pub(crate) fn process_schemas(
-    schemas: Vec<(PathBuf, serde_json::Value)>,
+    schemas: Vec<(PathBuf, String, serde_json::Value)>,
     profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
-) -> Vec<(PathBuf, Result<Vec<crate::rules::Diagnostic>, String>)> {
+) -> Vec<(
+    PathBuf,
+    String,
+    Result<Vec<crate::rules::Diagnostic>, String>,
+)> {
     schemas
         .into_iter()
-        .map(|(key, value)| {
+        .map(|(key, model_name, value)| {
             let normalized = match normalize(value) {
                 Ok(n) => n,
-                Err(e) => return (key, Err(format!("normalization failed: {}", e))),
+                Err(e) => return (key, model_name, Err(format!("normalization failed: {}", e))),
             };
             let diags = check_rulesets(&normalized.arena, profile_rulesets);
-            (key, Ok(diags))
+            (key, model_name, Ok(diags))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rules::registry::{DiagnosticSeverity, SourceSpan};
+
+    fn make_diag(pointer: &str) -> crate::rules::Diagnostic {
+        crate::rules::Diagnostic {
+            code: "TEST-001".into(),
+            severity: DiagnosticSeverity::Error,
+            message: "test diagnostic".into(),
+            pointer: pointer.to_string(),
+            source: None,
+            profile: "test".into(),
+            hint: None,
+        }
+    }
+
+    fn make_model(
+        name: &str,
+        module_path: &str,
+        spans: Vec<(&str, &str, u32)>,
+    ) -> crate::ingest::DiscoveredModel {
+        let mut source_map = std::collections::HashMap::new();
+        for (pointer, file, line) in spans {
+            source_map.insert(
+                pointer.to_string(),
+                SourceSpan {
+                    file: file.to_string(),
+                    line: Some(line),
+                    col: Some(1),
+                },
+            );
+        }
+        crate::ingest::DiscoveredModel {
+            name: name.to_string(),
+            module_path: module_path.to_string(),
+            schema: serde_json::json!({}),
+            source_map,
+        }
+    }
+
+    #[test]
+    fn attach_source_spans_single_model() {
+        let model = make_model(
+            "UserSchema",
+            "src/models.ts",
+            vec![("/properties/email", "src/models.ts", 5)],
+        );
+        let diags = vec![make_diag("/properties/email")];
+        let results = vec![(
+            PathBuf::from("src/models.ts"),
+            "UserSchema".into(),
+            Ok(diags),
+        )];
+
+        let out = attach_source_spans(results, &[model]);
+        let (_, _, result) = &out[0];
+        let diags = result.as_ref().unwrap();
+        assert_eq!(diags[0].source.as_ref().unwrap().file, "src/models.ts");
+        assert_eq!(diags[0].source.as_ref().unwrap().line, Some(5));
+    }
+
+    #[test]
+    fn attach_source_spans_two_models_same_file_no_collision() {
+        // UserSchema and AddressSchema share src/models.ts but have different
+        // properties. Each model's diagnostics must resolve to its own spans.
+        let user_model = make_model(
+            "UserSchema",
+            "src/models.ts",
+            vec![("/properties/email", "src/models.ts", 5)],
+        );
+        let addr_model = make_model(
+            "AddressSchema",
+            "src/models.ts",
+            vec![("/properties/street", "src/models.ts", 20)],
+        );
+
+        let user_diags = vec![make_diag("/properties/email")];
+        let addr_diags = vec![make_diag("/properties/street")];
+
+        let results = vec![
+            (
+                PathBuf::from("src/models.ts"),
+                "UserSchema".into(),
+                Ok(user_diags),
+            ),
+            (
+                PathBuf::from("src/models.ts"),
+                "AddressSchema".into(),
+                Ok(addr_diags),
+            ),
+        ];
+
+        let out = attach_source_spans(results, &[user_model, addr_model]);
+        let (_, _, r1) = &out[0];
+        let (_, _, r2) = &out[1];
+        assert_eq!(
+            r1.as_ref().unwrap()[0].source.as_ref().unwrap().line,
+            Some(5)
+        );
+        assert_eq!(
+            r2.as_ref().unwrap()[0].source.as_ref().unwrap().line,
+            Some(20)
+        );
+    }
+
+    #[test]
+    fn attach_source_spans_two_models_same_file_pointer_collision() {
+        // Both models define /properties/name at different lines.
+        // Each model's diagnostic must resolve to its OWN span, NOT the
+        // other model's span (first-write-wins would break this).
+        let user_model = make_model(
+            "UserSchema",
+            "src/models.ts",
+            vec![("/properties/name", "src/models.ts", 5)],
+        );
+        let addr_model = make_model(
+            "AddressSchema",
+            "src/models.ts",
+            vec![("/properties/name", "src/models.ts", 20)],
+        );
+
+        let user_diags = vec![make_diag("/properties/name")];
+        let addr_diags = vec![make_diag("/properties/name")];
+
+        let results = vec![
+            (
+                PathBuf::from("src/models.ts"),
+                "UserSchema".into(),
+                Ok(user_diags),
+            ),
+            (
+                PathBuf::from("src/models.ts"),
+                "AddressSchema".into(),
+                Ok(addr_diags),
+            ),
+        ];
+
+        let out = attach_source_spans(results, &[user_model, addr_model]);
+        let (_, _, r1) = &out[0];
+        let (_, _, r2) = &out[1];
+        // UserSchema's /properties/name → line 5
+        assert_eq!(
+            r1.as_ref().unwrap()[0].source.as_ref().unwrap().line,
+            Some(5)
+        );
+        // AddressSchema's /properties/name → line 20 (NOT line 5!)
+        assert_eq!(
+            r2.as_ref().unwrap()[0].source.as_ref().unwrap().line,
+            Some(20)
+        );
+    }
+
+    #[test]
+    fn attach_source_spans_unmatched_pointer_leaves_source_none() {
+        let model = make_model(
+            "UserSchema",
+            "src/models.ts",
+            vec![("/properties/email", "src/models.ts", 5)],
+        );
+        let diags = vec![make_diag("/properties/nonexistent")];
+        let results = vec![(
+            PathBuf::from("src/models.ts"),
+            "UserSchema".into(),
+            Ok(diags),
+        )];
+
+        let out = attach_source_spans(results, &[model]);
+        let (_, _, result) = &out[0];
+        let diags = result.as_ref().unwrap();
+        assert!(diags[0].source.is_none());
+    }
 }

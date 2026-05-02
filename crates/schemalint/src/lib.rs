@@ -2,7 +2,9 @@
 
 pub mod cache;
 pub mod cli;
+pub mod ingest;
 pub mod ir;
+pub mod node;
 pub mod normalize;
 pub mod profile;
 pub mod python;
