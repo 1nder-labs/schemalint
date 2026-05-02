@@ -9,7 +9,6 @@ on:
       - 'crates/schemalint-profiles/**'
       - 'crates/schemalint-docgen/**'
   pull_request:
-    branches: [main]
     paths:
       - 'docs/**'
       - 'crates/schemalint/src/rules/**'
