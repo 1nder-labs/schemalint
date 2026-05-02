@@ -25,5 +25,5 @@ anthropic.so.2026-04-30 only supports specific values for the 'minItems' keyword
 ## Good Example
 
 ```json
-{ "type": "object", "minItems": "<allowed-value>", "properties": {} }
+{ "type": "object", "minItems": 0, "properties": {} }
 ```

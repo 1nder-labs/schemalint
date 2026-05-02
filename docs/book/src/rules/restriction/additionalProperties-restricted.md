@@ -26,5 +26,5 @@ openai.so.2026-04-30 only supports specific values for the 'additionalProperties
 ## Good Example
 
 ```json
-{ "type": "object", "additionalProperties": "<allowed-value>", "properties": {} }
+{ "type": "object", "additionalProperties": false, "properties": {} }
 ```
