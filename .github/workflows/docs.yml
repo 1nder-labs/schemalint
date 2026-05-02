@@ -1,0 +1,84 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/book/**'
+      - 'crates/schemalint/src/rules/**'
+      - 'crates/schemalint-profiles/**'
+      - 'crates/schemalint-docgen/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/book/**'
+      - 'crates/schemalint/src/rules/**'
+      - 'crates/schemalint-profiles/**'
+      - 'crates/schemalint-docgen/**'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  docgen-check:
+    name: Check generated docs are up-to-date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run docgen
+        run: cargo run --bin schemalint-docgen
+
+      - name: Verify generated docs are not stale
+        run: |
+          if ! git diff --exit-code docs/book/src/rules/ docs/book/src/SUMMARY.md; then
+            echo "::error::Generated rule documentation is stale. Run 'cargo run --bin schemalint-docgen' locally and commit the changes."
+            exit 1
+          fi
+
+  build:
+    name: Build and deploy mdBook site
+    needs: docgen-check
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mdBook
+        uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: 'latest'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run docgen (ensure latest rules)
+        run: cargo run --bin schemalint-docgen
+
+      - name: Build mdBook
+        run: mdbook build docs/book
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/book/book
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

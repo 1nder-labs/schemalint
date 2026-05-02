@@ -1,0 +1,13 @@
+[book]
+title = "Schemalint"
+description = "Static analysis for JSON Schema compatibility with LLM structured-output providers"
+authors = ["schemalint contributors"]
+language = "en"
+
+[build]
+build-dir = "book"
+
+[output.html]
+site-url = "/schemalint/"
+git-repository-url = "https://github.com/1nder-labs/schemalint"
+edit-url-template = "https://github.com/1nder-labs/schemalint/edit/main/docs/book/{path}"

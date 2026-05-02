@@ -1,3 +1,14 @@
+# Summary
+
+- [Home](./index.md)
+- [Getting Started](./guide/installation.md)
+  - [Installation](./guide/installation.md)
+  - [Quick Start](./guide/quick-start.md)
+- [Configuration](./guide/configuration.md)
+  - [CI Integration](./guide/ci-integration.md)
+- [Profiles](./profiles/index.md)
+  - [OpenAI](./profiles/openai.md)
+  - [Anthropic](./profiles/anthropic.md)
 
 <!-- AUTO-GENERATED RULES -->
 - [Rule Reference](./rules/index.md)
@@ -39,3 +50,4 @@
     - [anyof-objects](./rules/semantic/anyof-objects.md)
     - [empty-object](./rules/semantic/empty-object.md)
 <!-- END AUTO-GENERATED RULES -->
+
