@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/schemalint", "crates/schemalint-profiles", "crates/schemalint-docgen"]
+members = ["crates/schemalint", "crates/schemalint-profiles", "crates/schemalint-docgen", "crates/schemalint-conformance"]
 resolver = "2"
 
 [workspace.package]
