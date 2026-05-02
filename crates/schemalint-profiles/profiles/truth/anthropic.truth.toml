@@ -367,5 +367,5 @@ limit_name = "allof_with_ref"
 test_schema = '''
 { "type": "object", "allOf": [ { "$ref": "#/$defs/Base" }, { "properties": { "extra": { "type": "string" } } } ], "$defs": { "Base": { "type": "object", "properties": { "id": { "type": "string" } } } } }
 '''
-expected_behavior = "accept"
+expected_behavior = "reject"
 expected_error_path = "/"

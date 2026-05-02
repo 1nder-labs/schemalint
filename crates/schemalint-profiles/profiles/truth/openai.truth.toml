@@ -352,7 +352,7 @@ limit_name = "require_object_root__array_root"
 test_schema = '''
 { "type": "array", "items": { "type": "string" } }
 '''
-expected_behavior = "accept"
+expected_behavior = "reject"
 expected_error_path = "/"
 
 [[structural_tests]]
