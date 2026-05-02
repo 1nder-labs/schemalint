@@ -2,13 +2,28 @@
 
 ## Workspace
 
-Two-crate workspace:
+Five-crate Rust workspace plus npm and TypeScript packages:
 - `crates/schemalint` — core engine, CLI, and all tests
-- `crates/schemalint-profiles` — built-in TOML profiles (no dependencies); consumed as a regular dependency by the main crate
+- `crates/schemalint-profiles` — built-in TOML profiles and conformance truth files (zero deps)
+- `crates/schemalint-docgen` — rule documentation generator (`publish = false`)
+- `crates/schemalint-conformance` — conformance mock server and truth engine (`publish = false`)
+- `crates/schemalint-python` — maturin PyPI packaging crate (`publish = false`)
+- `npm/cli/` — npm auto-download binary wrapper (`@schemalint/cli`)
+- `npm/core/` — npm programmatic API placeholder (`@schemalint/core`, requires CLI on PATH)
+- `typescript/schemalint-zod/` — Zod ingestion helper (`@schemalint/zod`)
 
 Entrypoints:
 - CLI binary: `crates/schemalint/src/main.rs` → `schemalint::cli::run()`
 - Library root: `crates/schemalint/src/lib.rs` re-exports `cache`, `cli`, `ir`, `normalize`, `profile`, `rules`
+- Docgen binary: `crates/schemalint-docgen/src/main.rs`
+- Conformance server: `crates/schemalint-conformance/src/main.rs`
+- PyPI wrapper: `crates/schemalint-python/src/main.rs` → `schemalint::cli::run()`
+
+## Documentation
+
+- Docusaurus v3.10 site at `docs/` — `npm run start` in `docs/` for local dev
+- Auto-generated rule reference pages at `docs/docs/rules/` — run `cargo run --bin schemalint-docgen` to regenerate
+- Docs deployed to GitHub Pages via `.github/workflows/docs.yml` on push to main
 
 ## Build & Verify
 

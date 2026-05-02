@@ -11,11 +11,8 @@ use schemalint_profiles::{ANTHROPIC_SO_2026_04_30, OPENAI_SO_2026_04_30};
 #[derive(Parser)]
 #[command(name = "schemalint-docgen")]
 struct Args {
-    #[arg(long, default_value = "docs/book/src/rules")]
+    #[arg(long, default_value = "docs/docs/rules")]
     output_dir: PathBuf,
-
-    #[arg(long, default_value = "docs/book/src/SUMMARY.md")]
-    summary_path: PathBuf,
 }
 
 /// Profile name + code prefix pair.
@@ -109,7 +106,7 @@ fn main() {
     }
 
     // Write output.
-    create_output(&args.output_dir, &args.summary_path, &deduped, &profiles);
+    create_output(&args.output_dir, &deduped, &profiles);
 }
 
 fn load_profiles() -> Vec<ProfileInfo> {
@@ -143,20 +140,34 @@ fn expand_code(template: &str, prefix: &str) -> String {
 
 fn create_output(
     output_dir: &Path,
-    summary_path: &Path,
     rules: &BTreeMap<String, DedupedRule>,
     profiles: &[ProfileInfo],
 ) {
-    // Create category directories.
-    for cat in &[
-        RuleCategory::Keyword,
-        RuleCategory::Restriction,
-        RuleCategory::Structural,
-        RuleCategory::Semantic,
-    ] {
-        fs::create_dir_all(output_dir.join(cat.as_str())).unwrap_or_else(|e| {
+    // Create category directories and _category_.json for Docusaurus.
+    let categories = [
+        ("Keyword Rules", RuleCategory::Keyword, 1),
+        ("Restriction Rules", RuleCategory::Restriction, 2),
+        ("Structural Rules", RuleCategory::Structural, 3),
+        ("Semantic Rules", RuleCategory::Semantic, 4),
+    ];
+
+    for &(label, cat, position) in &categories {
+        let dir = output_dir.join(cat.as_str());
+        fs::create_dir_all(&dir).unwrap_or_else(|e| {
             eprintln!("warning: {e}");
         });
+
+        // Write _category_.json for Docusaurus sidebar auto-generation.
+        let category_json = serde_json::json!({
+            "label": label,
+            "position": position,
+        });
+        let json_path = dir.join("_category_.json");
+        fs::write(
+            &json_path,
+            serde_json::to_string_pretty(&category_json).unwrap(),
+        )
+        .unwrap_or_else(|e| eprintln!("warning: failed to write {}: {e}", json_path.display()));
     }
 
     // Write index page.
@@ -172,9 +183,6 @@ fn create_output(
         fs::write(&path, &page)
             .unwrap_or_else(|e| eprintln!("warning: failed to write {}: {e}", path.display()));
     }
-
-    // Update SUMMARY.md with rule links.
-    inject_summary_rules(summary_path, rules);
 }
 
 fn build_index(rules: &BTreeMap<String, DedupedRule>, profiles: &[ProfileInfo]) -> String {
@@ -264,69 +272,4 @@ fn build_rule_page(rule: &DedupedRule, _profiles: &[ProfileInfo]) -> String {
     out.push_str("\n```\n");
 
     out
-}
-
-fn inject_summary_rules(summary_path: &Path, rules: &BTreeMap<String, DedupedRule>) {
-    let old_content = fs::read_to_string(summary_path).unwrap_or_default();
-
-    let marker_start = "<!-- AUTO-GENERATED RULES -->";
-    let marker_end = "<!-- END AUTO-GENERATED RULES -->";
-
-    let (prefix, remainder) = match old_content.split_once(marker_start) {
-        Some((pre, rest)) => {
-            let sanitized_prefix = match pre.split_once(marker_end) {
-                Some((before_end, _)) => before_end.to_string(),
-                None => pre.to_string(),
-            };
-            (sanitized_prefix, rest.to_string())
-        }
-        None => (old_content.clone(), String::new()),
-    };
-
-    let suffix = remainder
-        .split_once(marker_end)
-        .map(|(_, s)| s.trim_start_matches('\n').to_string())
-        .unwrap_or_default();
-
-    let mut new_content = prefix;
-    if !new_content.ends_with('\n') {
-        new_content.push('\n');
-    }
-    new_content.push_str(marker_start);
-    new_content.push('\n');
-
-    // Generate rules section sorted by category then name.
-    let categories = [
-        ("Keyword Rules", RuleCategory::Keyword),
-        ("Restriction Rules", RuleCategory::Restriction),
-        ("Structural Rules", RuleCategory::Structural),
-        ("Semantic Rules", RuleCategory::Semantic),
-    ];
-
-    new_content.push_str("- [Rule Reference](./rules/index.md)\n");
-
-    for (heading, cat) in &categories {
-        let cat_rules: Vec<_> = rules.values().filter(|r| r.category == *cat).collect();
-        if cat_rules.is_empty() {
-            continue;
-        }
-        new_content.push_str(&format!("  - [{heading}]()\n"));
-        for rule in &cat_rules {
-            new_content.push_str(&format!(
-                "    - [{}](./rules/{}/{}.md)\n",
-                rule.name,
-                cat.as_str(),
-                rule.name
-            ));
-        }
-    }
-
-    new_content.push_str(marker_end);
-    new_content.push('\n');
-
-    // Preserve anything after the end marker in the original.
-    new_content.push_str(&suffix);
-
-    fs::write(summary_path, &new_content)
-        .unwrap_or_else(|e| eprintln!("warning: failed to write SUMMARY.md: {e}"));
 }
