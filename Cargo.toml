@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/schemalint", "crates/schemalint-profiles"]
+members = ["crates/schemalint", "crates/schemalint-profiles", "crates/schemalint-docgen", "crates/schemalint-conformance", "crates/schemalint-python"]
 resolver = "2"
 
 [workspace.package]
@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["schemalint contributors"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/lahfir/schemalint"
+repository = "https://github.com/1nder-labs/schemalint"
 rust-version = "1.80"
 
 [profile.release]

@@ -4,3 +4,8 @@ Cargo.lock
 .DS_Store
 *.swp
 *.swo
+
+# Docusaurus
+docs/build/
+docs/.docusaurus/
+docs/node_modules/

@@ -1,0 +1,90 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'crates/schemalint/src/rules/**'
+      - 'crates/schemalint-profiles/**'
+      - 'crates/schemalint-docgen/**'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'crates/schemalint/src/rules/**'
+      - 'crates/schemalint-profiles/**'
+      - 'crates/schemalint-docgen/**'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  docgen-check:
+    name: Check generated docs are up-to-date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run docgen
+        run: cargo run --bin schemalint-docgen
+
+      - name: Verify generated docs are not stale
+        run: |
+          if ! git diff --exit-code docs/docs/rules/; then
+            echo "::error::Generated rule documentation is stale. Run 'cargo run --bin schemalint-docgen' locally and commit the changes."
+            exit 1
+          fi
+
+  build:
+    name: Build and deploy Docusaurus site
+    needs: docgen-check
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run docgen
+        run: cargo run --bin schemalint-docgen
+
+      - name: Install Docusaurus dependencies
+        run: npm ci
+        working-directory: docs
+
+      - name: Build Docusaurus site
+        run: npm run build
+        working-directory: docs
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/build
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

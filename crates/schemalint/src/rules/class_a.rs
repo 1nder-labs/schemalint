@@ -1,5 +1,6 @@
 use crate::ir::{Arena, NodeId};
-use crate::profile::Profile;
+use crate::profile::{Profile, Severity};
+use crate::rules::metadata::{RuleCategory, RuleMetadata};
 use crate::rules::registry::{Diagnostic, DiagnosticSeverity, KeywordAccessor, Rule};
 
 /// Class A auto-generated keyword rule.
@@ -33,6 +34,53 @@ impl Rule for KeywordRule {
             });
         }
         diagnostics
+    }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        let sev = match self.severity {
+            DiagnosticSeverity::Error => Severity::Forbid,
+            DiagnosticSeverity::Warning => Severity::Warn,
+        };
+        Some(RuleMetadata {
+            name: self.keyword.to_string(),
+            code: format!("{{prefix}}-K-{}", self.keyword),
+            description: format!(
+                "Flag usage of the '{}' keyword, which is {} by {}",
+                self.keyword,
+                match sev {
+                    Severity::Forbid => "not supported",
+                    Severity::Strip => "stripped",
+                    Severity::Warn => "discouraged",
+                    _ => "restricted",
+                },
+                self.profile_name
+            ),
+            rationale: format!(
+                "The {} structured-output provider {} the '{}' keyword. Schemas using this keyword may be rejected or silently altered.",
+                self.profile_name,
+                match sev {
+                    Severity::Forbid => "rejects",
+                    Severity::Strip => "strips",
+                    Severity::Warn => "discourages use of",
+                    _ => "restricts",
+                },
+                self.keyword
+            ),
+            severity: sev,
+            category: RuleCategory::Keyword,
+            bad_example: format!(
+                r#"{{ "type": "object", "{}": true, "properties": {{}} }}"#,
+                self.keyword
+            ),
+            good_example: r#"{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  }
+}"#.into(),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
     }
 }
 
@@ -69,5 +117,36 @@ impl Rule for RestrictionRule {
             }
         }
         diagnostics
+    }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: format!("{}-restricted", self.keyword),
+            code: format!("{{prefix}}-K-{}-restricted", self.keyword),
+            description: format!(
+                "Restrict values of the '{}' keyword to those accepted by {}",
+                self.keyword, self.profile_name
+            ),
+            rationale: format!(
+                "{} only supports specific values for the '{}' keyword. Using unsupported values will cause validation errors at the API level.",
+                self.profile_name, self.keyword
+            ),
+            severity: Severity::Forbid,
+            category: RuleCategory::Restriction,
+            bad_example: format!(
+                r#"{{ "type": "object", "{}": "invalid-value", "properties": {{}} }}"#,
+                self.keyword
+            ),
+            good_example: format!(
+                r#"{{ "type": "object", "{}": {}, "properties": {{}} }}"#,
+                self.keyword,
+                self.allowed_values
+                    .first()
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "\"<allowed-value>\"".to_string())
+            ),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
     }
 }

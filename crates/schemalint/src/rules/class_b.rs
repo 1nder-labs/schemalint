@@ -1,7 +1,8 @@
 use serde_json::Value;
 
 use crate::ir::{Arena, Node, NodeId};
-use crate::profile::Profile;
+use crate::profile::{Profile, Severity};
+use crate::rules::metadata::{RuleCategory, RuleMetadata};
 use crate::rules::registry::{Diagnostic, DiagnosticSeverity, Rule};
 
 /// Return `true` if the node's schema describes an object type.
@@ -118,6 +119,29 @@ impl Rule for ObjectRootRule {
         }
         Vec::new()
     }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "object-root".into(),
+            code: "{prefix}-S-object-root".into(),
+            description: "The root schema must be of type object".into(),
+            rationale: "Structured-output providers require the top-level schema to be an object. Array, string, or primitive root schemas are rejected at the API level.".into(),
+            severity: Severity::Forbid,
+            category: RuleCategory::Structural,
+            bad_example: r#"{
+  "type": "array",
+  "items": { "type": "string" }
+}"#.into(),
+            good_example: r#"{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  }
+}"#.into(),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -143,6 +167,32 @@ impl Rule for AdditionalPropertiesFalseRule {
                 hint: None,
             }],
         }
+    }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "additional-properties-false".into(),
+            code: "{prefix}-S-additional-properties-false".into(),
+            description: "Every object schema must declare additionalProperties: false".into(),
+            rationale: "Providers require all object nodes to explicitly set additionalProperties: false to guarantee no unexpected properties appear in responses.".into(),
+            severity: Severity::Forbid,
+            category: RuleCategory::Structural,
+            bad_example: r#"{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  }
+}"#.into(),
+            good_example: r#"{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string" }
+  }
+}"#.into(),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
     }
 }
 
@@ -184,6 +234,35 @@ impl Rule for AllPropertiesRequiredRule {
         }
         diagnostics
     }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "all-properties-required".into(),
+            code: "{prefix}-S-all-properties-required".into(),
+            description: "Every property must be listed in the required array".into(),
+            rationale: "Some providers require that all defined properties appear in the required array to enforce strict schema adherence and prevent ambiguity about optional fields.".into(),
+            severity: Severity::Forbid,
+            category: RuleCategory::Structural,
+            bad_example: r#"{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "age": { "type": "number" }
+  },
+  "required": ["name"]
+}"#.into(),
+            good_example: r#"{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "age": { "type": "number" }
+  },
+  "required": ["name", "age"]
+}"#.into(),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -209,6 +288,32 @@ impl Rule for MaxDepthRule {
             }];
         }
         Vec::new()
+    }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "max-depth".into(),
+            code: "{prefix}-S-max-depth".into(),
+            description: format!(
+                "Object nesting depth must not exceed {} levels",
+                self.limit
+            ),
+            rationale: format!(
+                "{} limits object nesting depth to {} levels. Exceeding this causes API rejection.",
+                self.profile_name, self.limit
+            ),
+            severity: Severity::Forbid,
+            category: RuleCategory::Structural,
+            bad_example: "{ \"type\": \"object\", \"properties\": { \"a\": { \"type\": \"object\", \"properties\": { \"b\": { \"type\": \"object\", \"properties\": { \"c\": { \"type\": \"object\", \"properties\": { \"d\": { \"type\": \"object\", \"properties\": { \"e\": { \"type\": \"object\", \"properties\": { \"f\": { \"type\": \"object\", \"properties\": { \"g\": { \"type\": \"object\", \"properties\": { \"h\": { \"type\": \"object\", \"properties\": { \"i\": { \"type\": \"object\", \"properties\": { \"j\": { \"type\": \"object\", \"properties\": { \"k\": { \"type\": \"object\", \"properties\": {} } } } } } } } } } } } } } } } } } } } } } } }".into(),
+            good_example: r#"{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  }
+}"#.into(),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
     }
 }
 
@@ -245,6 +350,32 @@ impl Rule for MaxTotalPropertiesRule {
         }
         Vec::new()
     }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "max-total-properties".into(),
+            code: "{prefix}-S-max-total-properties".into(),
+            description: format!(
+                "Total number of properties across all objects must not exceed {}",
+                self.limit
+            ),
+            rationale: format!(
+                "{} limits the total number of object properties across the entire schema to {}.",
+                self.profile_name, self.limit
+            ),
+            severity: Severity::Forbid,
+            category: RuleCategory::Structural,
+            bad_example: "{ \"type\": \"object\", \"properties\": { ...many properties exceeding the limit... } }".into(),
+            good_example: r#"{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  }
+}"#.into(),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -278,6 +409,32 @@ impl Rule for MaxTotalEnumValuesRule {
             }];
         }
         Vec::new()
+    }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "max-enum-values".into(),
+            code: "{prefix}-S-max-enum-values".into(),
+            description: format!(
+                "Total number of enum values across the schema must not exceed {}",
+                self.limit
+            ),
+            rationale: format!(
+                "{} imposes a limit of {} total enum values across the entire schema.",
+                self.profile_name, self.limit
+            ),
+            severity: Severity::Forbid,
+            category: RuleCategory::Structural,
+            bad_example: "{ \"type\": \"object\", \"properties\": { \"color\": { \"enum\": [...1000+ values...] } } }".into(),
+            good_example: r#"{
+  "type": "object",
+  "properties": {
+    "color": { "enum": ["red", "green", "blue"] }
+  }
+}"#.into(),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
     }
 }
 
@@ -328,6 +485,32 @@ impl Rule for MaxStringLengthRule {
         }
         Vec::new()
     }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "string-length-budget".into(),
+            code: "{prefix}-S-string-length-budget".into(),
+            description: format!(
+                "Total string length (property names + enum values) must not exceed {}",
+                self.limit
+            ),
+            rationale: format!(
+                "{} imposes a string length budget of {} across all property names and enum values.",
+                self.profile_name, self.limit
+            ),
+            severity: Severity::Forbid,
+            category: RuleCategory::Structural,
+            bad_example: "{ \"type\": \"object\", \"properties\": { \"very_long_property_name\": { \"type\": \"string\" } } }".into(),
+            good_example: r#"{
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" }
+  }
+}"#.into(),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -355,6 +538,39 @@ impl Rule for ExternalRefsRule {
             }
         }
         diagnostics
+    }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "external-refs".into(),
+            code: "{prefix}-S-external-refs".into(),
+            description: "External $ref values (URLs, absolute paths) are not supported".into(),
+            rationale: "Providers require all $ref references to be internal to the schema (e.g., `#/$defs/Foo`). External references via URLs or file paths are rejected.".into(),
+            severity: Severity::Forbid,
+            category: RuleCategory::Structural,
+            bad_example: r##"{
+  "type": "object",
+  "properties": {
+    "address": { "$ref": "https://example.com/schemas/address.json" }
+  }
+}"##.into(),
+            good_example: r##"{
+  "type": "object",
+  "$defs": {
+    "Address": {
+      "type": "object",
+      "properties": {
+        "street": { "type": "string" }
+      }
+    }
+  },
+  "properties": {
+    "address": { "$ref": "#/$defs/Address" }
+  }
+}"##.into(),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
     }
 }
 
@@ -399,5 +615,38 @@ impl Rule for AllOfWithRefRule {
             }
         }
         Vec::new()
+    }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "allof-with-ref".into(),
+            code: "{prefix}-S-allof-with-ref".into(),
+            description: "allOf combined with $ref is not supported by Anthropic".into(),
+            rationale: "Anthropic Structured Outputs does not support combining allOf with $ref references. Schemas using this pattern will be rejected by the Anthropic API.".into(),
+            severity: Severity::Forbid,
+            category: RuleCategory::Structural,
+            bad_example: r##"{
+  "type": "object",
+  "allOf": [
+    { "$ref": "#/$defs/Base" },
+    { "properties": { "extra": { "type": "string" } } }
+  ],
+  "$defs": {
+    "Base": {
+      "type": "object",
+      "properties": { "id": { "type": "string" } }
+    }
+  }
+}"##.into(),
+            good_example: r#"{
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "extra": { "type": "string" }
+  }
+}"#.into(),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
     }
 }

@@ -35,6 +35,13 @@ pub struct Diagnostic {
 /// Trait implemented by all lint rules.
 pub trait Rule: Sync {
     fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic>;
+
+    /// Return descriptive metadata for documentation generation.
+    /// Returns `None` if the rule predates the metadata system — doc
+    /// generation skips such rules gracefully.
+    fn metadata(&self) -> Option<super::metadata::RuleMetadata> {
+        None
+    }
 }
 
 /// Stable identifier for a rule.
@@ -126,6 +133,11 @@ impl RuleSet {
             diagnostics.extend(self.check_node(node_id, arena, profile));
         }
         diagnostics
+    }
+
+    /// Iterate over all dynamic rules (profile-generated).
+    pub fn dynamic_rules(&self) -> impl Iterator<Item = &dyn Rule> {
+        self.dynamic_rules.iter().map(|r| r.as_ref())
     }
 }
 

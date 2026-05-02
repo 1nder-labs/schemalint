@@ -1,0 +1,17 @@
+[package]
+name = "schemalint-python"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "schemalint CLI packaged as a Python wheel via maturin"
+publish = false
+
+[[bin]]
+name = "schemalint"
+path = "src/main.rs"
+
+[dependencies]
+schemalint = { path = "../schemalint" }
