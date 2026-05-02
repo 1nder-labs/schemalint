@@ -34,7 +34,6 @@ struct JsonRpcResponse {
     jsonrpc: Option<String>,
     result: Option<serde_json::Value>,
     error: Option<JsonRpcError>,
-    #[allow(dead_code)]
     id: Option<u64>,
 }
 
@@ -106,6 +105,8 @@ impl NodeHelper {
             .ok_or_else(|| NodeError::SpawnFailed("no stdin pipe available".to_string()))?;
 
         // Drain stderr continuously to prevent pipe-buffer deadlock.
+        // Lines are captured for error diagnostics only — not echoed
+        // unconditionally (user project stderr may contain secrets).
         let stderr_lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let stderr_capture = Arc::clone(&stderr_lines);
         thread::spawn(move || {
@@ -113,7 +114,6 @@ impl NodeHelper {
             for line in reader.lines() {
                 match line {
                     Ok(l) => {
-                        eprintln!("[schemalint-zod] {}", l);
                         if let Ok(mut lines) = stderr_capture.lock() {
                             lines.push(l);
                         }
@@ -150,6 +150,11 @@ impl NodeHelper {
     }
 
     /// Send a `discover` request for the given source glob and return discovered models.
+    ///
+    /// Drains stale responses (from previous timed-out requests) by checking the
+    /// `id` field against the request id. Stale lines are silently discarded.
+    /// After `MAX_STALE_DRAIN` mismatches, an error is returned to prevent
+    /// infinite loops in a corrupted protocol state.
     pub fn discover(&mut self, source: &str) -> Result<DiscoverResponse, NodeError> {
         let id = self.request_id;
         self.request_id += 1;
@@ -169,51 +174,68 @@ impl NodeHelper {
             .flush()
             .map_err(|e| NodeError::RequestFailed(format!("flush error: {}", e)))?;
 
-        let line = match self
-            .stdout_rx
-            .recv_timeout(Duration::from_secs(DISCOVER_TIMEOUT_SECS))
-        {
-            Ok(Some(line)) => line,
-            Ok(None) => {
-                return Err(self.augment_error(NodeError::InvalidResponse(
-                    "helper process closed stdout unexpectedly".to_string(),
-                )))
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                return Err(self.augment_error(NodeError::Timeout(DISCOVER_TIMEOUT_SECS)))
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(self.augment_error(NodeError::InvalidResponse(
-                    "stdout reader thread disconnected".to_string(),
-                )))
-            }
-        };
+        const MAX_STALE_DRAIN: usize = 4;
 
-        let response: JsonRpcResponse = serde_json::from_str(&line).map_err(|e| {
-            self.augment_error(NodeError::InvalidResponse(format!(
-                "response parse error: {}",
-                e
-            )))
-        })?;
+        for _ in 0..=MAX_STALE_DRAIN {
+            let line = match self
+                .stdout_rx
+                .recv_timeout(Duration::from_secs(DISCOVER_TIMEOUT_SECS))
+            {
+                Ok(Some(line)) => line,
+                Ok(None) => {
+                    return Err(self.augment_error(NodeError::InvalidResponse(
+                        "helper process closed stdout unexpectedly".to_string(),
+                    )))
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    return Err(self.augment_error(NodeError::Timeout(DISCOVER_TIMEOUT_SECS)))
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(self.augment_error(NodeError::InvalidResponse(
+                        "stdout reader thread disconnected".to_string(),
+                    )))
+                }
+            };
 
-        if let Some(error) = response.error {
-            return Err(self.augment_error(NodeError::DiscoverFailed(error.message)));
+            let response: JsonRpcResponse = serde_json::from_str(&line).map_err(|e| {
+                self.augment_error(NodeError::InvalidResponse(format!(
+                    "response parse error: {}",
+                    e
+                )))
+            })?;
+
+            if response.id != Some(id) {
+                // Stale response from a previous timed-out request — drain and retry.
+                continue;
+            }
+
+            if let Some(error) = response.error {
+                return Err(self.augment_error(NodeError::DiscoverFailed(error.message)));
+            }
+
+            if response.jsonrpc.as_deref() != Some("2.0") {
+                return Err(self.augment_error(NodeError::InvalidResponse(
+                    "response missing or has incorrect jsonrpc version".to_string(),
+                )));
+            }
+
+            let result = response.result.ok_or_else(|| {
+                self.augment_error(NodeError::InvalidResponse(
+                    "response missing result field".to_string(),
+                ))
+            })?;
+
+            return serde_json::from_value(result).map_err(|e| {
+                self.augment_error(NodeError::InvalidResponse(format!(
+                    "result parse error: {}",
+                    e
+                )))
+            });
         }
 
-        if response.jsonrpc.as_deref() != Some("2.0") {
-            return Err(self.augment_error(NodeError::InvalidResponse(
-                "response missing or has incorrect jsonrpc version".to_string(),
-            )));
-        }
-
-        let result = response.result.ok_or_else(|| {
-            self.augment_error(NodeError::InvalidResponse(
-                "response missing result field".to_string(),
-            ))
-        })?;
-
-        serde_json::from_value(result)
-            .map_err(|e| NodeError::InvalidResponse(format!("result parse error: {}", e)))
+        Err(self.augment_error(NodeError::InvalidResponse(
+            "too many stale responses — helper may be in a corrupted state".to_string(),
+        )))
     }
 
     /// Drain captured stderr lines and append them to the error message.
@@ -246,8 +268,20 @@ impl NodeHelper {
             NodeError::InvalidResponse(msg) => {
                 NodeError::InvalidResponse(format!("{}{}", msg, stderr_tail))
             }
-            NodeError::Timeout(secs) => NodeError::Timeout(secs),
-            other => other,
+            NodeError::Timeout(secs) => {
+                eprintln!(
+                    "[schemalint-zod] Node stderr during timeout:\n{}",
+                    stderr_tail
+                );
+                NodeError::Timeout(secs)
+            }
+            other => {
+                eprintln!(
+                    "[schemalint-zod] Node stderr during error:\n{}",
+                    stderr_tail
+                );
+                other
+            }
         }
     }
 
@@ -332,30 +366,51 @@ impl Drop for NodeHelper {
 ///
 /// Returns `(executable, extra_args)` where extra_args are passed before the
 /// bin path. Tries `tsx` directly first; falls back to `npx tsx`.
+/// Each probe is bounded by a 2-second timeout to prevent hangs.
 fn resolve_tsx_cmd() -> Result<(String, Vec<String>), NodeError> {
+    const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
     // Try standalone tsx
-    if Command::new("tsx")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok()
-    {
+    if probe_command("tsx", PROBE_TIMEOUT) {
         return Ok(("tsx".to_string(), vec![]));
     }
     // Fall back to npx tsx
-    if Command::new("npx")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok()
-    {
+    if probe_command("npx", PROBE_TIMEOUT) {
         return Ok(("npx".to_string(), vec!["tsx".to_string()]));
     }
     Err(NodeError::NotInstalled(
         "tsx or npx not found — install tsx via: npm install -g tsx".to_string(),
     ))
+}
+
+/// Check whether a command is available on PATH with a bounded timeout.
+fn probe_command(cmd: &str, timeout: Duration) -> bool {
+    match Command::new(cmd)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(mut child) => {
+            // Give the child `timeout` to exit; kill on timeout.
+            let start = Instant::now();
+            loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => return status.success(),
+                    Ok(None) => {
+                        if Instant::now() - start >= timeout {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            return false;
+                        }
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                    Err(_) => return false,
+                }
+            }
+        }
+        Err(_) => false,
+    }
 }
 
 /// Resolve the path to the `schemalint-zod` helper bin entry.
