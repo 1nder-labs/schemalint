@@ -36,19 +36,22 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build and test
-        run: cargo test --workspace
+        run: cargo test --workspace --exclude schemalint-python
 
       - name: Run clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --exclude schemalint-python -- -D warnings
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Build schemalint-python (maturin crate)
+        run: cargo build -p schemalint-python
+
       - name: Compile benchmarks
-        run: cargo bench --no-run --workspace
+        run: cargo bench --no-run --workspace --exclude schemalint-python
 
       - name: Run benchmark smoke test
-        run: cargo bench --workspace
+        run: cargo bench --workspace --exclude schemalint-python
 
   msrv:
     name: Check MSRV
@@ -65,4 +68,4 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check build with MSRV
-        run: cargo build --workspace
+        run: cargo build --workspace --exclude schemalint-python
