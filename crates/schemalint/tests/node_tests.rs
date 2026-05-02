@@ -73,12 +73,9 @@ fn run_check_node_json(dir: &Path, args: &[&str]) -> JsonOutput {
     full_args.extend(args);
     let output = cmd.args(&full_args).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    serde_json::from_str(&stdout).unwrap_or_else(|e| {
-        panic!(
-            "JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        )
-    })
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}"))
 }
 
 // ---------------------------------------------------------------------------
