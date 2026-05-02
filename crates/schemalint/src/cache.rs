@@ -56,6 +56,20 @@ impl Default for DiskCache {
 }
 
 impl DiskCache {
+    pub fn with_cache_dir(cache_dir: PathBuf) -> Self {
+        if let Err(e) = fs::create_dir_all(&cache_dir) {
+            eprintln!(
+                "warning: failed to create cache directory '{}': {}",
+                cache_dir.display(),
+                e
+            );
+        }
+        Self {
+            memory: RwLock::new(Cache::new()),
+            cache_dir: Some(cache_dir),
+        }
+    }
+
     pub fn new() -> Self {
         let cache_dir =
             dirs::cache_dir().map(|d| d.join(format!("schemalint-{}", std::process::id())));

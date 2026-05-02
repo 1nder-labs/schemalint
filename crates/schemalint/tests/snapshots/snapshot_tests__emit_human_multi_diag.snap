@@ -1,0 +1,27 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+error[OAI-K-allOf]: keyword 'allOf' is not supported
+   --> schema.json:42:8
+     |
+     = profile: openai.so
+     = schema path: /allOf
+     = hint: remove allOf
+     = see: https://schemalint.dev/rules/OAI-K-allOf
+
+error[OAI-K-anyOf]: keyword 'anyOf' is not supported
+   --> schema.json
+     |
+     = profile: openai.so
+     = schema path: /anyOf
+     = see: https://schemalint.dev/rules/OAI-K-anyOf
+
+warning[OAI-K-uniqueItems]: keyword 'uniqueItems' is discouraged
+   --> schema.json:15
+     |
+     = profile: openai.so
+     = schema path: /properties/items
+     = see: https://schemalint.dev/rules/OAI-K-uniqueItems
+
+3 issues found (2 errors, 1 warning) across 1 schema in 123ms

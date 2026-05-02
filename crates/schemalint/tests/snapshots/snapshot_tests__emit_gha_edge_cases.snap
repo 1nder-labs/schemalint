@@ -1,0 +1,8 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+::error file=special.json,title=TST-PERCENT,line=1,col=1::message with %25 percent sign [profile%3A test]
+::error file=special.json,title=TST-COLONS,line=2,col=1::message with %3A colons %3A%3A double [profile%3A test]
+::warning file=special.json,title=TST-NEWLINES::message with%0Anewline and%0D%0Awindows [profile%3A test]
+::error file=special.json,title=TST-COMMAS::message%2C with%2C commas [profile%3A test]

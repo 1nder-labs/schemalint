@@ -1,0 +1,20 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [],
+      "tool": {
+        "driver": {
+          "informationUri": "https://schemalint.dev",
+          "name": "schemalint",
+          "rules": []
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

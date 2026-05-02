@@ -1,0 +1,66 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "schema.json"
+                },
+                "region": {
+                  "startColumn": 8,
+                  "startLine": 42
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "keyword 'allOf' not supported"
+          },
+          "ruleId": "OAI-K-allOf"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "schema.json"
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "keyword 'anyOf' is a warning"
+          },
+          "ruleId": "OAI-K-anyOf"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://schemalint.dev",
+          "name": "schemalint",
+          "rules": [
+            {
+              "helpUri": "https://schemalint.dev/rules/OAI-K-allOf",
+              "id": "OAI-K-allOf"
+            },
+            {
+              "helpUri": "https://schemalint.dev/rules/OAI-K-anyOf",
+              "id": "OAI-K-anyOf"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}
