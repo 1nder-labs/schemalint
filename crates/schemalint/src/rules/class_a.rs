@@ -138,12 +138,12 @@ impl Rule for RestrictionRule {
                 self.keyword
             ),
             good_example: format!(
-                r#"{{ "type": "object", "{}": "{}", "properties": {{}} }}"#,
+                r#"{{ "type": "object", "{}": {}, "properties": {{}} }}"#,
                 self.keyword,
                 self.allowed_values
                     .first()
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("<allowed-value>")
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "\"<allowed-value>\"".to_string())
             ),
             see_also: Vec::new(),
             profile: Some(self.profile_name.clone()),

@@ -7,6 +7,10 @@ use clap::Parser;
 use schemalint_conformance::{evaluate, parse_truth, ProviderTruth, TruthResult};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 
+fn json_content_type() -> Header {
+    Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap()
+}
+
 #[derive(Parser)]
 #[command(name = "schemalint-conformance")]
 struct Args {
@@ -58,7 +62,7 @@ fn main() {
             Ok(None) => {} // timeout, continue loop
             Err(e) => {
                 eprintln!("warning: server error: {e}");
-                break;
+                continue;
             }
         }
     }
@@ -77,7 +81,13 @@ fn load_truth_files(truth_dir: &std::path::Path) -> HashMap<String, ProviderTrut
     };
 
     let mut map = HashMap::new();
-    for entry in entries.flatten() {
+    for entry in entries.filter_map(|r| match r {
+        Ok(e) => Some(e),
+        Err(e) => {
+            eprintln!("warning: unable to read directory entry: {e}");
+            None
+        }
+    }) {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("toml") {
             continue;
@@ -109,6 +119,37 @@ fn load_truth_files(truth_dir: &std::path::Path) -> HashMap<String, ProviderTrut
     map
 }
 
+fn percent_decode(s: &str) -> String {
+    if !s.contains('%') {
+        return s.to_string();
+    }
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let hi = chars.next().and_then(hex_val);
+            let lo = chars.next().and_then(hex_val);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                result.push((hi << 4 | lo) as char);
+            } else {
+                result.push('%');
+            }
+        } else {
+            result.push(b as char);
+        }
+    }
+    result
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
 fn handle_request(
     mut request: tiny_http::Request,
     truth_map: &HashMap<String, ProviderTruth>,
@@ -119,39 +160,55 @@ fn handle_request(
     // Route: POST /evaluate/{provider}
     let path_prefix = "/evaluate/";
     if request.method() != &Method::Post || !url.starts_with(path_prefix) {
-        let resp =
-            Response::from_string(r#"{"error": "not found"}"#).with_status_code(StatusCode(404));
-        let _ = request.respond(resp);
+        let resp = Response::from_string(r#"{"error": "not found"}"#)
+            .with_status_code(StatusCode(404))
+            .with_header(json_content_type());
+        if let Err(e) = request.respond(resp) {
+            eprintln!("warning: failed to send response: {e}");
+        }
         return;
     }
 
-    let provider = &url[path_prefix.len()..];
-    let Some(truth) = truth_map.get(provider) else {
+    let provider_raw = &url[path_prefix.len()..];
+    let provider = percent_decode(provider_raw);
+    let Some(truth) = truth_map.get(&provider) else {
         let resp =
             Response::from_string(serde_json::json!({"error": "unknown provider"}).to_string())
-                .with_status_code(StatusCode(404));
-        let _ = request.respond(resp);
+                .with_status_code(StatusCode(404))
+                .with_header(json_content_type());
+        if let Err(e) = request.respond(resp) {
+            eprintln!("warning: failed to send response: {e}");
+        }
         return;
     };
 
     // Read body with size limit.
     let mut body = String::with_capacity(max_body_size.min(65536));
-    let mut reader = request.as_reader().take(max_body_size as u64 + 1);
+    let max_body_size_u64 = max_body_size.min(u64::MAX as usize) as u64;
+    let mut reader = request
+        .as_reader()
+        .take(max_body_size_u64.saturating_add(1));
     match reader.read_to_string(&mut body) {
         Ok(n) if n > max_body_size => {
             let resp = Response::from_string(
                 serde_json::json!({"error": "request body too large"}).to_string(),
             )
-            .with_status_code(StatusCode(413));
-            let _ = request.respond(resp);
+            .with_status_code(StatusCode(413))
+            .with_header(json_content_type());
+            if let Err(e) = request.respond(resp) {
+                eprintln!("warning: failed to send response: {e}");
+            }
             return;
         }
         Err(e) => {
             let resp = Response::from_string(
                 serde_json::json!({"error": format!("failed to read body: {e}")}).to_string(),
             )
-            .with_status_code(StatusCode(400));
-            let _ = request.respond(resp);
+            .with_status_code(StatusCode(400))
+            .with_header(json_content_type());
+            if let Err(e) = request.respond(resp) {
+                eprintln!("warning: failed to send response: {e}");
+            }
             return;
         }
         _ => {}
@@ -164,8 +221,11 @@ fn handle_request(
             let resp = Response::from_string(
                 serde_json::json!({"error": format!("invalid JSON: {e}")}).to_string(),
             )
-            .with_status_code(StatusCode(400));
-            let _ = request.respond(resp);
+            .with_status_code(StatusCode(400))
+            .with_header(json_content_type());
+            if let Err(e) = request.respond(resp) {
+                eprintln!("warning: failed to send response: {e}");
+            }
             return;
         }
     };
@@ -191,9 +251,10 @@ fn handle_request(
         }
     };
 
-    let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
     let resp = Response::from_string(response_body)
         .with_status_code(StatusCode(200))
-        .with_header(header);
-    let _ = request.respond(resp);
+        .with_header(json_content_type());
+    if let Err(e) = request.respond(resp) {
+        eprintln!("warning: failed to send response: {e}");
+    }
 }

@@ -272,14 +272,20 @@ fn inject_summary_rules(summary_path: &Path, rules: &BTreeMap<String, DedupedRul
     let marker_start = "<!-- AUTO-GENERATED RULES -->";
     let marker_end = "<!-- END AUTO-GENERATED RULES -->";
 
-    let (prefix, _old_rules_section) = match old_content.split_once(marker_start) {
-        Some((pre, _)) => (pre.to_string(), String::new()),
+    let (prefix, remainder) = match old_content.split_once(marker_start) {
+        Some((pre, rest)) => {
+            let sanitized_prefix = match pre.split_once(marker_end) {
+                Some((before_end, _)) => before_end.to_string(),
+                None => pre.to_string(),
+            };
+            (sanitized_prefix, rest.to_string())
+        }
         None => (old_content.clone(), String::new()),
     };
 
-    let suffix = old_content
+    let suffix = remainder
         .split_once(marker_end)
-        .map(|(_, s)| s.to_string())
+        .map(|(_, s)| s.trim_start_matches('\n').to_string())
         .unwrap_or_default();
 
     let mut new_content = prefix;
