@@ -3,7 +3,9 @@ use serde_json::Value;
 use crate::ir::{Arena, NodeId};
 use crate::profile::Profile;
 use crate::rules::class_b::schema_is_object;
+use crate::rules::metadata::{RuleCategory, RuleMetadata};
 use crate::rules::registry::{Diagnostic, DiagnosticSeverity, Rule};
+use crate::Severity;
 
 // ---------------------------------------------------------------------------
 // EmptyObjectRule
@@ -48,6 +50,31 @@ impl Rule for EmptyObjectRule {
             ),
         }]
     }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "empty-object".into(),
+            code: "{prefix}-S-empty-object".into(),
+            description: "Object schema with additionalProperties: false but no properties".into(),
+            rationale: "Some providers may reject or misbehave when a schema permits no properties while also forbidding all extras via additionalProperties: false. This pattern is semantically valid but rarely intentional.".into(),
+            severity: Severity::Warn,
+            category: RuleCategory::Semantic,
+            bad_example: r#"{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {}
+}"#.into(),
+            good_example: r#"{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string" }
+  }
+}"#.into(),
+            see_also: Vec::new(),
+            profile: None,
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -78,6 +105,29 @@ impl Rule for AdditionalPropertiesObjectRule {
             }],
             _ => Vec::new(),
         }
+    }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "additional-properties-object".into(),
+            code: "{prefix}-S-additional-properties-object".into(),
+            description: "additionalProperties must be set to false, not an object schema".into(),
+            rationale: "LLM structured-output providers require additionalProperties: false to guarantee schema compliance. An object value indicates intent to define allowed extras, which most providers do not support.".into(),
+            severity: Severity::Forbid,
+            category: RuleCategory::Semantic,
+            bad_example: r#"{
+  "type": "object",
+  "additionalProperties": { "type": "string" },
+  "properties": {}
+}"#.into(),
+            good_example: r#"{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {}
+}"#.into(),
+            see_also: Vec::new(),
+            profile: None,
+        })
     }
 }
 
@@ -122,6 +172,33 @@ impl Rule for AnyOfObjectsHint {
                     .to_string(),
             ),
         }]
+    }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "anyof-objects".into(),
+            code: "{prefix}-S-anyof-objects".into(),
+            description: "anyOf with only object-typed branches may not be fully supported".into(),
+            rationale: "When all anyOf branches are object-typed, some providers may not correctly resolve the union. Merging branches into a single object schema when appropriate improves compatibility across providers.".into(),
+            severity: Severity::Warn,
+            category: RuleCategory::Semantic,
+            bad_example: r#"{
+  "type": "object",
+  "anyOf": [
+    { "type": "object", "properties": { "x": { "type": "string" } } },
+    { "type": "object", "properties": { "y": { "type": "number" } } }
+  ]
+}"#.into(),
+            good_example: r#"{
+  "type": "object",
+  "properties": {
+    "x": { "type": "string" },
+    "y": { "type": "number" }
+  }
+}"#.into(),
+            see_also: Vec::new(),
+            profile: None,
+        })
     }
 }
 
