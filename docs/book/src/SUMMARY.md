@@ -50,4 +50,3 @@
     - [anyof-objects](./rules/semantic/anyof-objects.md)
     - [empty-object](./rules/semantic/empty-object.md)
 <!-- END AUTO-GENERATED RULES -->
-
