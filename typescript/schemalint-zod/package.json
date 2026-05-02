@@ -1,7 +1,16 @@
 {
-  "name": "schemalint-zod",
+  "name": "@schemalint/zod",
   "version": "0.1.0",
   "description": "Zod schema discovery for schemalint — AST-based discovery + JSON-RPC server",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1nder-labs/schemalint.git",
+    "directory": "typescript/schemalint-zod"
+  },
+  "license": "MIT OR Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "schemalint-zod": "./bin/schemalint-zod.js"

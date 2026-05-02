@@ -1,0 +1,23 @@
+{
+  "name": "@schemalint/cli",
+  "version": "0.1.0",
+  "description": "schemalint CLI — static analysis for JSON Schema LLM compatibility",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1nder-labs/schemalint.git",
+    "directory": "npm/cli"
+  },
+  "bin": {
+    "schemalint": "./index.js"
+  },
+  "files": [
+    "index.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT OR Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  }
+}

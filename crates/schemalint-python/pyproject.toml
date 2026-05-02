@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "schemalint"
+version = "0.1.0"
+description = "Static analysis for JSON Schema compatibility with LLM structured-output providers"
+readme = "../../README.md"
+license = { text = "MIT OR Apache-2.0" }
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+]
+
+[project.urls]
+Homepage = "https://github.com/1nder-labs/schemalint"
+Documentation = "https://1nder-labs.github.io/schemalint"
+Repository = "https://github.com/1nder-labs/schemalint"
+
+[tool.maturin]
+bindings = "bin"
+python-source = "python"
+manifest-path = "Cargo.toml"
