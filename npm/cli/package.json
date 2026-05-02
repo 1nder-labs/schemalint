@@ -1,6 +1,6 @@
 {
   "name": "@schemalint/cli",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "schemalint CLI — static analysis for JSON Schema LLM compatibility",
   "repository": {
     "type": "git",

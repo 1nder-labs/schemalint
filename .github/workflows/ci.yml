@@ -69,3 +69,60 @@ jobs:
 
       - name: Check build with MSRV
         run: cargo build --workspace --exclude schemalint-python
+
+  bench-gate:
+    name: Benchmark Gate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run benchmarks
+        run: |
+          cargo bench --bench schemalint_benchmarks -- --output-format bencher > bench_output.txt
+          cat bench_output.txt
+
+      - name: Check thresholds
+        run: |
+          set -e
+          fail=0
+
+          check() {
+            name="$1"
+            threshold_ns="$2"
+            threshold_ms="$3"
+            actual=$(grep "^test ${name}/" bench_output.txt | sed 's/.*bench:[[:space:]]*\([0-9,]*\) ns\/iter.*/\1/' | tr -d ',')
+            if [ -z "$actual" ]; then
+              echo "::error::Benchmark '${name}' not found in output"
+              fail=1
+              return
+            fi
+            if [ "$actual" -gt "$threshold_ns" ]; then
+              actual_ms=$(echo "scale=2; $actual / 1000000" | bc)
+              echo "::error::bench_${name}: ${actual_ms} ms exceeds threshold ${threshold_ms} ms"
+              fail=1
+            else
+              actual_ms=$(echo "scale=2; $actual / 1000000" | bc)
+              echo "✓ bench_${name}: ${actual_ms} ms (threshold: ${threshold_ms} ms)"
+            fi
+          }
+
+          check "single_schema" 1000000 "1.0"
+          check "cold_start" 500000000 "500.0"
+          check "incremental" 5000000 "5.0"
+
+          if [ "$fail" -ne 0 ]; then
+            echo ""
+            echo "One or more benchmarks exceeded thresholds."
+            echo "Review the benchmark output above and investigate before tagging."
+            exit 1
+          fi
+          echo ""
+          echo "All benchmarks within thresholds."

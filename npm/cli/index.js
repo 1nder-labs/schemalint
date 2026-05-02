@@ -8,7 +8,10 @@ const https = require('https');
 const os = require('os');
 const path = require('path');
 
-const VERSION = '0.1.0';
+const VERSION = require('./package.json').version;
+if (!VERSION || VERSION === 'undefined') {
+  throw new Error('Missing or invalid version in package.json');
+}
 const REPO = '1nder-labs/schemalint';
 
 const TARGET_MAP = {
