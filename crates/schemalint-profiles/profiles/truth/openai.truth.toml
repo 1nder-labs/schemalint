@@ -1,0 +1,363 @@
+[provider]
+name = "openai"
+version = "2026-04-30"
+endpoint = "https://api.openai.com/v1/chat/completions"
+model = "gpt-4o-2024-08-06"
+behavior = "strict"
+
+# ============================================================================
+# Accepted Keywords
+# ============================================================================
+
+[[keywords]]
+name = "type"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "properties": {} }
+'''
+
+[[keywords]]
+name = "properties"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "properties": { "name": { "type": "string" } } }
+'''
+
+[[keywords]]
+name = "required"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }
+'''
+
+[[keywords]]
+name = "items"
+behavior = "accept"
+test_schema = '''
+{ "type": "array", "items": { "type": "string" } }
+'''
+
+[[keywords]]
+name = "minItems"
+behavior = "accept"
+test_schema = '''
+{ "type": "array", "items": { "type": "string" }, "minItems": 1 }
+'''
+
+[[keywords]]
+name = "maxItems"
+behavior = "accept"
+test_schema = '''
+{ "type": "array", "items": { "type": "string" }, "maxItems": 10 }
+'''
+
+[[keywords]]
+name = "minimum"
+behavior = "accept"
+test_schema = '''
+{ "type": "number", "minimum": 0 }
+'''
+
+[[keywords]]
+name = "maximum"
+behavior = "accept"
+test_schema = '''
+{ "type": "number", "maximum": 100 }
+'''
+
+[[keywords]]
+name = "exclusiveMinimum"
+behavior = "accept"
+test_schema = '''
+{ "type": "number", "exclusiveMinimum": 0 }
+'''
+
+[[keywords]]
+name = "exclusiveMaximum"
+behavior = "accept"
+test_schema = '''
+{ "type": "number", "exclusiveMaximum": 100 }
+'''
+
+[[keywords]]
+name = "multipleOf"
+behavior = "accept"
+test_schema = '''
+{ "type": "number", "multipleOf": 0.5 }
+'''
+
+[[keywords]]
+name = "minLength"
+behavior = "accept"
+test_schema = '''
+{ "type": "string", "minLength": 1 }
+'''
+
+[[keywords]]
+name = "maxLength"
+behavior = "accept"
+test_schema = '''
+{ "type": "string", "maxLength": 100 }
+'''
+
+[[keywords]]
+name = "pattern"
+behavior = "accept"
+test_schema = '''
+{ "type": "string", "pattern": "^[a-z]+$" }
+'''
+
+[[keywords]]
+name = "enum"
+behavior = "accept"
+test_schema = '''
+{ "type": "string", "enum": ["red", "green", "blue"] }
+'''
+
+[[keywords]]
+name = "const"
+behavior = "accept"
+test_schema = '''
+{ "const": "hello" }
+'''
+
+[[keywords]]
+name = "$ref"
+behavior = "accept"
+test_schema = '''
+{ "$defs": { "Name": { "type": "string" } }, "type": "object", "properties": { "name": { "$ref": "#/$defs/Name" } } }
+'''
+
+[[keywords]]
+name = "$defs"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "$defs": { "Address": { "type": "object", "properties": { "street": { "type": "string" } } } }, "properties": { "address": { "$ref": "#/$defs/Address" } } }
+'''
+
+[[keywords]]
+name = "definitions"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "definitions": { "Name": { "type": "string" } }, "properties": { "name": { "$ref": "#/definitions/Name" } } }
+'''
+
+[[keywords]]
+name = "anyOf"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "anyOf": [ { "properties": { "x": { "type": "string" } } }, { "properties": { "y": { "type": "number" } } } ] }
+'''
+
+[[keywords]]
+name = "description"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "description": "A test schema", "properties": {} }
+'''
+
+[[keywords]]
+name = "title"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "title": "Test Schema", "properties": {} }
+'''
+
+[[keywords]]
+name = "default"
+behavior = "accept"
+test_schema = '''
+{ "type": "string", "default": "hello" }
+'''
+
+# ============================================================================
+# Warned Keywords
+# ============================================================================
+
+[[keywords]]
+name = "prefixItems"
+behavior = "accept"
+test_schema = '''
+{ "type": "array", "prefixItems": [ { "type": "string" }, { "type": "number" } ] }
+'''
+
+[[keywords]]
+name = "uniqueItems"
+behavior = "accept"
+test_schema = '''
+{ "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+'''
+
+# ============================================================================
+# Rejected Keywords
+# ============================================================================
+
+[[keywords]]
+name = "discriminator"
+behavior = "reject"
+test_schema = '''
+{ "type": "object", "discriminator": { "propertyName": "type" }, "properties": { "type": { "type": "string" } } }
+'''
+expected_error = "discriminator is not supported by OpenAI"
+expected_error_path = "/discriminator"
+
+[[keywords]]
+name = "allOf"
+behavior = "reject"
+test_schema = '''
+{ "type": "object", "allOf": [{"properties": {"x": {"type": "string"}}}], "properties": {} }
+'''
+expected_error = "allOf is not supported by OpenAI"
+expected_error_path = "/allOf"
+
+[[keywords]]
+name = "not"
+behavior = "reject"
+test_schema = '''
+{ "type": "object", "not": { "type": "string" }, "properties": {} }
+'''
+expected_error = "not is not supported by OpenAI"
+expected_error_path = "/not"
+
+[[keywords]]
+name = "if"
+behavior = "reject"
+test_schema = '''
+{ "type": "object", "if": { "properties": { "kind": { "const": "a" } } }, "then": { "properties": { "x": { "type": "string" } } } }
+'''
+expected_error = "if is not supported by OpenAI"
+expected_error_path = "/if"
+
+[[keywords]]
+name = "then"
+behavior = "reject"
+test_schema = '''
+{ "type": "object", "properties": { "kind": { "const": "a" } }, "then": { "properties": { "x": { "type": "string" } } } }
+'''
+expected_error = "then is not supported by OpenAI"
+expected_error_path = "/then"
+
+[[keywords]]
+name = "else"
+behavior = "reject"
+test_schema = '''
+{ "type": "object", "properties": { "kind": { "const": "a" } }, "else": { "properties": { "fallback": { "type": "string" } } } }
+'''
+expected_error = "else is not supported by OpenAI"
+expected_error_path = "/else"
+
+[[keywords]]
+name = "dependentRequired"
+behavior = "reject"
+test_schema = '''
+{ "type": "object", "properties": { "credit_card": { "type": "string" } }, "dependentRequired": { "credit_card": ["billing_address"] } }
+'''
+expected_error = "dependentRequired is not supported by OpenAI"
+expected_error_path = "/dependentRequired"
+
+[[keywords]]
+name = "dependentSchemas"
+behavior = "reject"
+test_schema = '''
+{ "type": "object", "properties": { "kind": { "type": "string" } }, "dependentSchemas": { "kind": { "properties": { "value": { "type": "string" } } } } }
+'''
+expected_error = "dependentSchemas is not supported by OpenAI"
+expected_error_path = "/dependentSchemas"
+
+# ============================================================================
+# Unknown / Untested Keywords
+# These are marked as "unknown" in the profile but treated as accept by truth
+# ============================================================================
+
+[[keywords]]
+name = "contains"
+behavior = "accept"
+test_schema = '''
+{ "type": "array", "contains": { "type": "string" } }
+'''
+
+[[keywords]]
+name = "patternProperties"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "patternProperties": { "^S_": { "type": "string" } }, "properties": {} }
+'''
+
+[[keywords]]
+name = "unevaluatedProperties"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "unevaluatedProperties": false, "properties": {} }
+'''
+
+[[keywords]]
+name = "propertyNames"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "propertyNames": { "pattern": "^[a-z]+$" }, "properties": {} }
+'''
+
+[[keywords]]
+name = "minProperties"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "minProperties": 1, "properties": { "x": { "type": "string" } } }
+'''
+
+[[keywords]]
+name = "maxProperties"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "maxProperties": 10, "properties": { "x": { "type": "string" } } }
+'''
+
+[[keywords]]
+name = "oneOf"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "oneOf": [ { "properties": { "x": { "type": "string" } } }, { "properties": { "y": { "type": "number" } } } ] }
+'''
+
+# ============================================================================
+# Restricted Keywords
+# ============================================================================
+
+[[keywords]]
+name = "additionalProperties"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "additionalProperties": false, "properties": { "x": { "type": "string" } } }
+'''
+
+[[keywords]]
+name = "format"
+behavior = "accept"
+test_schema = '''
+{ "type": "string", "format": "email" }
+'''
+
+# ============================================================================
+# Structural Tests
+# ============================================================================
+
+[[structural_tests]]
+limit_name = "require_object_root"
+test_schema = '''
+{ "type": "object", "properties": { "name": { "type": "string" } } }
+'''
+expected_behavior = "accept"
+
+[[structural_tests]]
+limit_name = "require_object_root__array_root"
+test_schema = '''
+{ "type": "array", "items": { "type": "string" } }
+'''
+expected_behavior = "accept"
+expected_error_path = "/"
+
+[[structural_tests]]
+limit_name = "additional_properties_false"
+test_schema = '''
+{ "type": "object", "additionalProperties": false, "properties": { "x": { "type": "string" } } }
+'''
+expected_behavior = "accept"
