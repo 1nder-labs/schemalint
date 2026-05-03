@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "code": "OAI-K-minProperties",
+    "severity": "error",
+    "message": "keyword 'minProperties' is not supported by openai.so.2026-04-30",
+    "pointer": "",
+    "profile": "openai.so.2026-04-30"
+  }
+]

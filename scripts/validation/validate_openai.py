@@ -21,6 +21,22 @@ import time
 from pathlib import Path
 from typing import Optional
 
+# Load .env file from script directory if present
+def _load_env():
+    env_path = Path(__file__).resolve().parent / ".env"
+    if env_path.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_path)
+        except ImportError:
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, _, val = line.partition("=")
+                        os.environ.setdefault(key.strip(), val.strip().strip('"\''))
+_load_env()
+
 
 def validate_schema(schema_path: str, api_key: Optional[str] = None) -> dict:
     """Validate a single schema against OpenAI's API."""
@@ -91,6 +107,14 @@ def main():
         print(f"Validating {schema_path}...", file=sys.stderr)
         result = validate_schema(schema_path, api_key)
         results.append(result)
+
+        # Stop immediately on auth/permission errors (401, 403)
+        if result.get("api_error"):
+            err_lower = result["api_error"].lower()
+            if "401" in err_lower or "403" in err_lower or "invalid_api_key" in err_lower or "permission" in err_lower:
+                print(f"\nFATAL: Authentication error. Check your API key.", file=sys.stderr)
+                print(json.dumps(results, indent=2))
+                sys.exit(1)
 
         # Rate limit: max 5 requests per second for validation
         time.sleep(0.2)

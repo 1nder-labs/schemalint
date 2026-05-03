@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "code": "OAI-K-unevaluatedProperties",
+    "severity": "error",
+    "message": "keyword 'unevaluatedProperties' is not supported by openai.so.2026-04-30",
+    "pointer": "",
+    "profile": "openai.so.2026-04-30"
+  }
+]
