@@ -126,3 +126,102 @@ jobs:
           fi
           echo ""
           echo "All benchmarks within thresholds."
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: typescript/schemalint-zod/package-lock.json
+
+      - name: Install schemalint-zod dependencies
+        run: npm ci
+        working-directory: typescript/schemalint-zod
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Run coverage
+        run: |
+          cargo llvm-cov --workspace --exclude schemalint-python --lcov --output-path lcov.info
+
+      - name: Check coverage threshold
+        run: |
+          # Coverage threshold for crates/schemalint/src/.
+          #
+          # The 75% floor prevents erosion of the core crate's line coverage.
+          # Node/Python subprocess modules (~55%) are excluded from the target
+          # because they require external runtime dependencies (Node, Python,
+          # Pydantic) that make full line coverage impractical in CI.
+          # The target for core logic (emitters, normalizer, parser, rules)
+          # is 90%+. The overall threshold of 75% is achievable today and
+          # ensures no coverage regression slips through.
+          set -e
+
+          total_lf=0
+          total_lh=0
+          current_sf=""
+          in_record=false
+
+          while IFS= read -r line; do
+            if [[ "$line" == SF:* ]]; then
+              current_sf="${line#SF:}"
+              in_record=true
+            elif [[ "$line" == "end_of_record" ]]; then
+              in_record=false
+            elif [[ "$in_record" == true && "$line" == LF:* ]]; then
+              if [[ "$current_sf" == */crates/schemalint/src/* ]]; then
+                lf="${line#LF:}"
+                total_lf=$((total_lf + lf))
+              fi
+            elif [[ "$in_record" == true && "$line" == LH:* ]]; then
+              if [[ "$current_sf" == */crates/schemalint/src/* ]]; then
+                lh="${line#LH:}"
+                total_lh=$((total_lh + lh))
+              fi
+            fi
+          done < lcov.info
+
+          if [ "$total_lf" -eq 0 ]; then
+            echo "::error::No coverage data found for crates/schemalint/src/"
+            exit 1
+          fi
+
+          coverage=$(echo "scale=2; $total_lh * 100 / $total_lf" | bc)
+
+          echo ""
+          echo "Line coverage for crates/schemalint/src/: ${coverage}%"
+          echo "  Lines found:  $total_lf"
+          echo "  Lines hit:    $total_lh"
+
+          threshold=75.00
+          if (( $(echo "$coverage < $threshold" | bc -l) )); then
+            echo ""
+            echo "::error::Line coverage ${coverage}% is below threshold of ${threshold}%"
+            echo "See the coverage artifact (lcov.info) for file-level details."
+            exit 1
+          fi
+
+          echo ""
+          echo "Coverage gate passed (threshold: ${threshold}%)"
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov
+          path: lcov.info
