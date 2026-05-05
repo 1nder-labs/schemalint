@@ -2,14 +2,12 @@
 'use strict';
 
 const { spawnSync } = require('child_process');
-const crypto = require('crypto');
 const fs = require('fs');
-const https = require('https');
 const os = require('os');
 const path = require('path');
 
 const VERSION = require('./package.json').version;
-if (!VERSION || VERSION === 'undefined') {
+if (!VERSION) {
   throw new Error('Missing or invalid version in package.json');
 }
 const REPO = '1nder-labs/schemalint';
@@ -46,41 +44,17 @@ function getBinaryPath() {
   return path.join(getCacheDir(), target, `schemalint${EXE_EXT}`);
 }
 
-function downloadFile(url, dest) {
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
-    https.get(url, (res) => {
-      if (res.statusCode === 302 || res.statusCode === 301) {
-        file.close();
-        fs.unlinkSync(dest);
-        return downloadFile(res.headers.location, dest).then(resolve).catch(reject);
-      }
-      if (res.statusCode !== 200) {
-        file.close();
-        fs.unlinkSync(dest);
-        return reject(new Error(`Download failed with status ${res.statusCode}`));
-      }
-      res.pipe(file);
-      file.on('finish', () => {
-        file.close();
-        resolve();
-      });
-      file.on('error', (err) => {
-        fs.unlinkSync(dest);
-        reject(err);
-      });
-    }).on('error', (err) => {
-      fs.unlinkSync(dest);
-      reject(err);
-    });
-  });
-}
-
 function ensureBinary() {
   const binPath = getBinaryPath();
-  if (fs.existsSync(binPath)) {
+  const sentinelPath = binPath + '.verified';
+
+  if (fs.existsSync(binPath) && fs.existsSync(sentinelPath)) {
     return binPath;
   }
+
+  // Cache miss or incomplete extraction — clean slate.
+  try { fs.unlinkSync(sentinelPath); } catch {}
+  try { fs.unlinkSync(binPath); } catch {}
 
   const target = getTarget();
   const ext = process.platform === 'win32' ? '.zip' : '.tar.gz';
@@ -91,27 +65,44 @@ function ensureBinary() {
 
   const archivePath = path.join(cacheDir, archiveName);
 
-  try {
-    // Download archive.
-    const { execSync } = require('child_process');
-    execSync(`curl -fsSL -o "${archivePath}" "${url}"`, { stdio: 'pipe' });
-  } catch {
+  const { execSync } = require('child_process');
+
+  // Download with retry (exponential backoff, max 3 attempts).
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      execSync(`curl -fsSL --connect-timeout 10 --max-time 120 -o "${archivePath}" "${url}"`, { stdio: 'pipe' });
+      lastError = null;
+      break;
+    } catch (e) {
+      lastError = e.stderr ? e.stderr.toString().trim() : e.message;
+      if (attempt < 3) {
+        try { fs.unlinkSync(archivePath); } catch {}
+        const delayMs = Math.pow(2, attempt) * 1000;
+        const end = Date.now() + delayMs;
+        while (Date.now() < end) { /* spin-wait; acceptable for brief CLI installer delays */ }
+      }
+    }
+  }
+
+  if (lastError !== null) {
     throw new Error(
-      `Failed to download schemalint binary from ${url}. ` +
+      `Failed to download schemalint binary from ${url}: ${lastError}. ` +
       `Make sure the GitHub Release for v${VERSION} exists.`
     );
   }
 
   // Extract based on platform.
   try {
-    const { execSync } = require('child_process');
     if (process.platform === 'win32') {
       execSync(`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${cacheDir}'"`, { stdio: 'pipe' });
     } else {
       execSync(`tar -xzf "${archivePath}" -C "${cacheDir}"`, { stdio: 'pipe' });
     }
-  } catch {
-    throw new Error('Failed to extract schemalint binary');
+  } catch (e) {
+    const reason = e.stderr ? e.stderr.toString().trim() : e.message;
+    try { fs.unlinkSync(archivePath); } catch {}
+    throw new Error(`Failed to extract schemalint binary: ${reason}`);
   }
 
   // Clean up archive.
@@ -125,6 +116,9 @@ function ensureBinary() {
   if (process.platform !== 'win32') {
     fs.chmodSync(binPath, 0o755);
   }
+
+  // Write sentinel to mark successful extraction.
+  fs.writeFileSync(sentinelPath, 'verified');
 
   return binPath;
 }

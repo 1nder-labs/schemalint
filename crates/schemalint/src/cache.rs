@@ -57,16 +57,23 @@ impl Default for DiskCache {
 
 impl DiskCache {
     pub fn with_cache_dir(cache_dir: PathBuf) -> Self {
-        if let Err(e) = fs::create_dir_all(&cache_dir) {
+        // Isolate by PID to prevent concurrent process corruption.
+        // Callers needing shared caches should use file-level advisory locks.
+        let isolated = cache_dir.join(format!("pid-{}", std::process::id()));
+        if let Err(e) = fs::create_dir_all(&isolated) {
             eprintln!(
                 "warning: failed to create cache directory '{}': {}",
-                cache_dir.display(),
+                isolated.display(),
                 e
             );
+            return Self {
+                memory: RwLock::new(Cache::new()),
+                cache_dir: None,
+            };
         }
         Self {
             memory: RwLock::new(Cache::new()),
-            cache_dir: Some(cache_dir),
+            cache_dir: Some(isolated),
         }
     }
 

@@ -96,6 +96,11 @@ fn cache_overwrite_same_hash() {
 // DiskCache tests
 // ---------------------------------------------------------------------------
 
+/// Resolve the PID-isolated subdirectory that `with_cache_dir` uses.
+fn pid_isolated(dir: &std::path::Path) -> std::path::PathBuf {
+    dir.join(format!("pid-{}", std::process::id()))
+}
+
 #[test]
 fn disk_cache_roundtrip_write_read() {
     let dir = tempfile::tempdir().unwrap();
@@ -122,8 +127,8 @@ fn disk_cache_truncated_file_returns_none() {
         cache.insert(hash, schema);
     }
 
-    // Corrupt the file on disk: only 2 bytes (< 4-byte version header).
-    let file_path = dir.path().join(format!("{:016x}.bin", hash));
+    // Corrupt the file on disk inside the PID-isolated subdirectory.
+    let file_path = pid_isolated(dir.path()).join(format!("{:016x}.bin", hash));
     fs::write(&file_path, &[0x01, 0x02]).unwrap();
 
     // New DiskCache: in-memory is empty, must fall back to disk.
@@ -144,8 +149,8 @@ fn disk_cache_invalid_version_header_returns_none() {
         cache.insert(hash, schema);
     }
 
-    // Corrupt: overwrite with wrong version (99) and no body.
-    let file_path = dir.path().join(format!("{:016x}.bin", hash));
+    // Corrupt: overwrite with wrong version (99) and no body inside PID-isolated dir.
+    let file_path = pid_isolated(dir.path()).join(format!("{:016x}.bin", hash));
     let wrong_version: u32 = 99;
     fs::write(&file_path, &wrong_version.to_le_bytes()).unwrap();
 
@@ -180,8 +185,8 @@ fn disk_cache_second_get_hits_memory() {
     cache.insert(hash, schema.clone());
     // First get — reads from disk, populates memory
     let _first = cache.get(hash).unwrap();
-    // Delete the file on disk
-    let file_path = dir.path().join(format!("{:016x}.bin", hash));
+    // Delete the file on disk from the PID-isolated subdirectory
+    let file_path = pid_isolated(dir.path()).join(format!("{:016x}.bin", hash));
     fs::remove_file(&file_path).unwrap();
     // Second get — should hit in-memory, still return Some
     let second = cache.get(hash);

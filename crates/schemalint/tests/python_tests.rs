@@ -419,8 +419,9 @@ fn check_python_missing_required_package_flag() {
         .args(["check-python", "-p", "openai.so.2026-04-30"])
         .output()
         .unwrap();
+    assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("no packages specified.") || !output.status.success());
+    assert!(stderr.contains("no packages specified."));
 }
 
 #[test]
@@ -438,12 +439,9 @@ fn check_python_invalid_profile_name() {
         ])
         .output()
         .unwrap();
+    assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("unknown built-in profile")
-            || stderr.contains("failed to read profile")
-            || !output.status.success()
-    );
+    assert!(stderr.contains("unknown built-in profile"));
 }
 
 #[test]
@@ -463,5 +461,5 @@ fn check_python_invalid_format_cli_rejects() {
         .unwrap();
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("invalidfmt") || stderr.contains("error"));
+    assert!(stderr.contains("invalidfmt"));
 }

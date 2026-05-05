@@ -125,6 +125,58 @@ expected_error_path = "/allOf"
 }
 
 #[test]
+fn server_enforces_max_body_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let truth_path = dir.path().join("test.truth.toml");
+    std::fs::write(
+        &truth_path,
+        r#"
+[provider]
+name = "test"
+version = "1.0"
+behavior = "strict"
+
+[[keywords]]
+name = "type"
+behavior = "accept"
+test_schema = '''
+{ "type": "object" }
+'''
+"#,
+    )
+    .unwrap();
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_schemalint-conformance"));
+    cmd.arg("--truth-dir")
+        .arg(dir.path())
+        .arg("--port")
+        .arg("0")
+        .arg("--max-body-size")
+        .arg("10")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().expect("failed to start conformance server");
+
+    let mut addr = String::new();
+    let stdout = child.stdout.take().expect("stdout not captured");
+    let mut reader = std::io::BufReader::new(stdout);
+    use std::io::BufRead;
+    reader.read_line(&mut addr).expect("failed to read address");
+    let addr = addr.trim().to_string();
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Send 100-byte body when limit is 10 → expect HTTP 413.
+    let body = "x".repeat(100);
+    let (status, _body_str) = post_json(&addr, "/evaluate/test", &body);
+    assert_eq!(status, 413, "expected HTTP 413 Payload Too Large");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
 fn server_rejects_empty_truth_dir() {
     let dir = tempfile::tempdir().unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_schemalint-conformance"))

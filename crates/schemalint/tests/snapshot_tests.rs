@@ -785,6 +785,44 @@ fn test_emit_junit_source_variants() {
 }
 
 // ---------------------------------------------------------------------------
+// emit_sarif_to_string — rule_id ordering
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_emit_sarif_rule_ids_sorted() {
+    let path = std::path::PathBuf::from("schema.json");
+    let diags = vec![
+        diag(
+            "Z-K-last",
+            DiagnosticSeverity::Error,
+            "should appear last when sorted",
+            "/z",
+            None,
+            "test",
+            None,
+        ),
+        diag(
+            "A-K-first",
+            DiagnosticSeverity::Warning,
+            "should appear first when sorted",
+            "/a",
+            None,
+            "test",
+            None,
+        ),
+    ];
+    let output = emit_sarif_to_string(&[(path, diags)], 0, 0, &[], None);
+    // Verify alphabetical ordering of ruleIds in the driver rules.
+    let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+    let rules = parsed["runs"][0]["tool"]["driver"]["rules"]
+        .as_array()
+        .unwrap();
+    assert_eq!(rules[0]["id"], "A-K-first");
+    assert_eq!(rules[1]["id"], "Z-K-last");
+    insta::assert_snapshot!(output);
+}
+
+// ---------------------------------------------------------------------------
 // emit_gha_to_string — multi-diagnostic, empty, edge-cases, source variants
 // ---------------------------------------------------------------------------
 
