@@ -4,23 +4,16 @@ use std::process::Command;
 
 fn find_schemalint_binary() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let target_dir = std::env::var("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| manifest_dir.join("../../target"));
-    let bin = target_dir.join("debug/schemalint");
-    if bin.exists() {
-        return bin;
+    let candidates = [
+        manifest_dir.join("../../target/debug/schemalint"),
+        manifest_dir.join("../../target/llvm-cov-target/debug/schemalint"),
+    ];
+    for candidate in &candidates {
+        if candidate.exists() {
+            return candidate.clone();
+        }
     }
-    // Fallback for llvm-cov and other target-dir overrides
-    let fallback = manifest_dir.join("../../target/debug/schemalint");
-    if fallback.exists() {
-        return fallback;
-    }
-    panic!(
-        "schemalint binary not found. Checked: {}, {}",
-        bin.display(),
-        fallback.display()
-    );
+    panic!("schemalint binary not found. Checked: {:?}", candidates);
 }
 
 fn diag_key(v: &serde_json::Value) -> (String, String) {
