@@ -7,6 +7,7 @@ use tempfile::TempDir;
 
 use clap::Parser;
 use schemalint::cli::args::{Cli, Commands, OutputFormat};
+use schemalint::python::PythonError;
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -246,4 +247,219 @@ fn check_python_missing_pyproject_no_config_ok() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("no packages specified."));
+}
+
+// ---------------------------------------------------------------------------
+// PythonError display formatting
+// ---------------------------------------------------------------------------
+
+#[test]
+fn python_error_not_installed_display() {
+    let err = PythonError::NotInstalled("python3, python".into());
+    assert!(err.to_string().contains("python interpreter not found"));
+    assert!(err.to_string().contains("python3, python"));
+}
+
+#[test]
+fn python_error_spawn_failed_display() {
+    let err = PythonError::SpawnFailed("command not found: python3".into());
+    assert!(err.to_string().contains("failed to spawn python helper"));
+    assert!(err.to_string().contains("command not found: python3"));
+}
+
+#[test]
+fn python_error_timeout_display() {
+    let err = PythonError::Timeout(60);
+    assert!(err.to_string().contains("timed out after 60s"));
+}
+
+#[test]
+fn python_error_invalid_response_display() {
+    let err = PythonError::InvalidResponse("response parse error: missing field".into());
+    assert!(err
+        .to_string()
+        .contains("invalid response from python helper"));
+    assert!(err.to_string().contains("response parse error"));
+}
+
+#[test]
+fn python_error_discover_failed_display() {
+    let err = PythonError::DiscoverFailed("package not found: myapp.models".into());
+    assert!(err.to_string().contains("discovery failed"));
+    assert!(err.to_string().contains("package not found: myapp.models"));
+}
+
+#[test]
+fn python_error_request_failed_display() {
+    let err = PythonError::RequestFailed("write error: broken pipe".into());
+    assert!(err
+        .to_string()
+        .contains("failed to communicate with python helper"));
+    assert!(err.to_string().contains("broken pipe"));
+}
+
+// ---------------------------------------------------------------------------
+// Additional CLI argument parsing edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_check_python_all_formats() {
+    for (flag, expected) in [
+        ("human", OutputFormat::Human),
+        ("json", OutputFormat::Json),
+        ("sarif", OutputFormat::Sarif),
+        ("gha", OutputFormat::Gha),
+        ("junit", OutputFormat::Junit),
+    ] {
+        let cli = Cli::parse_from([
+            "schemalint",
+            "check-python",
+            "-P",
+            "myapp.models",
+            "-p",
+            "openai.so.2026-04-30",
+            "-f",
+            flag,
+        ]);
+        match cli.command {
+            Commands::CheckPython(args) => {
+                assert_eq!(args.format, Some(expected), "format flag -f {flag}");
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[test]
+fn parse_check_python_with_output_flag() {
+    let cli = Cli::parse_from([
+        "schemalint",
+        "check-python",
+        "-P",
+        "myapp.models",
+        "-p",
+        "openai.so.2026-04-30",
+        "-o",
+        "results.json",
+    ]);
+    match cli.command {
+        Commands::CheckPython(args) => {
+            assert_eq!(args.output, Some(std::path::PathBuf::from("results.json")));
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_check_python_with_output_and_format() {
+    let cli = Cli::parse_from([
+        "schemalint",
+        "check-python",
+        "-P",
+        "myapp.models",
+        "-p",
+        "openai.so.2026-04-30",
+        "-f",
+        "sarif",
+        "-o",
+        "results.sarif",
+    ]);
+    match cli.command {
+        Commands::CheckPython(args) => {
+            assert_eq!(args.format, Some(OutputFormat::Sarif));
+            assert_eq!(args.output, Some(std::path::PathBuf::from("results.sarif")));
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_check_python_empty_package_list() {
+    let cli = Cli::parse_from(["schemalint", "check-python", "-p", "openai.so.2026-04-30"]);
+    match cli.command {
+        Commands::CheckPython(args) => {
+            assert!(args.packages.is_empty());
+            assert!(!args.profiles.is_empty());
+        }
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn parse_check_python_minimal_args() {
+    let cli = Cli::parse_from([
+        "schemalint",
+        "check-python",
+        "-P",
+        "myapp",
+        "-p",
+        "openai.so.2026-04-30",
+    ]);
+    match cli.command {
+        Commands::CheckPython(args) => {
+            assert_eq!(args.packages, vec!["myapp"]);
+            assert_eq!(args.profiles.len(), 1);
+            assert!(args.format.is_none());
+            assert!(args.config.is_none());
+            assert!(args.python_path.is_none());
+            assert!(args.output.is_none());
+        }
+        _ => unreachable!(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CLI errors without Python (argument-level validation)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn check_python_missing_required_package_flag() {
+    let mut cmd = Command::cargo_bin("schemalint").unwrap();
+    let output = cmd
+        .args(["check-python", "-p", "openai.so.2026-04-30"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("no packages specified."));
+}
+
+#[test]
+fn check_python_invalid_profile_name() {
+    let tmp = TempDir::new().unwrap();
+    let mut cmd = Command::cargo_bin("schemalint").unwrap();
+    cmd.current_dir(tmp.path());
+    let output = cmd
+        .args([
+            "check-python",
+            "-P",
+            "myapp.models",
+            "-p",
+            "nonexistent-zzz-profile",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown built-in profile"));
+}
+
+#[test]
+fn check_python_invalid_format_cli_rejects() {
+    let mut cmd = Command::cargo_bin("schemalint").unwrap();
+    let output = cmd
+        .args([
+            "check-python",
+            "-P",
+            "myapp.models",
+            "-p",
+            "openai.so.2026-04-30",
+            "-f",
+            "invalidfmt",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalidfmt"));
 }

@@ -66,6 +66,8 @@ pub fn emit_sarif_to_string(
         }
     }
 
+    let mut rule_ids: Vec<_> = rule_ids.into_iter().collect();
+    rule_ids.sort();
     let rules: Vec<_> = rule_ids
         .into_iter()
         .map(|id| {

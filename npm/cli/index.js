@@ -2,13 +2,15 @@
 'use strict';
 
 const { spawnSync } = require('child_process');
-const crypto = require('crypto');
 const fs = require('fs');
 const https = require('https');
 const os = require('os');
 const path = require('path');
 
-const VERSION = '0.1.0';
+const VERSION = require('./package.json').version;
+if (!VERSION) {
+  throw new Error('Missing or invalid version in package.json');
+}
 const REPO = '1nder-labs/schemalint';
 
 const TARGET_MAP = {
@@ -43,41 +45,66 @@ function getBinaryPath() {
   return path.join(getCacheDir(), target, `schemalint${EXE_EXT}`);
 }
 
-function downloadFile(url, dest) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function downloadFile(url, destPath) {
   return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
-    https.get(url, (res) => {
-      if (res.statusCode === 302 || res.statusCode === 301) {
-        file.close();
-        fs.unlinkSync(dest);
-        return downloadFile(res.headers.location, dest).then(resolve).catch(reject);
+    const protocol = url.startsWith('https:') ? https : require('http');
+    const request = protocol.get(url, (response) => {
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        response.resume();
+        downloadFile(response.headers.location, destPath).then(resolve).catch(reject);
+        return;
       }
-      if (res.statusCode !== 200) {
-        file.close();
-        fs.unlinkSync(dest);
-        return reject(new Error(`Download failed with status ${res.statusCode}`));
+      if (response.statusCode !== 200) {
+        response.resume();
+        reject(new Error(`HTTP ${response.statusCode}`));
+        return;
       }
-      res.pipe(file);
+      const file = fs.createWriteStream(destPath);
+      response.pipe(file);
       file.on('finish', () => {
-        file.close();
-        resolve();
+        file.close((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
       });
       file.on('error', (err) => {
-        fs.unlinkSync(dest);
+        file.destroy();
+        fs.unlink(destPath, () => {});
         reject(err);
       });
-    }).on('error', (err) => {
-      fs.unlinkSync(dest);
+      response.on('error', (err) => {
+        file.destroy();
+        fs.unlink(destPath, () => {});
+        reject(err);
+      });
+    });
+    request.on('error', (err) => {
+      fs.unlink(destPath, () => {});
       reject(err);
+    });
+    request.setTimeout(120000, () => {
+      request.destroy();
+      fs.unlink(destPath, () => {});
+      reject(new Error('Request timeout'));
     });
   });
 }
 
-function ensureBinary() {
+async function ensureBinary() {
   const binPath = getBinaryPath();
-  if (fs.existsSync(binPath)) {
+  const sentinelPath = binPath + '.verified';
+
+  if (fs.existsSync(binPath) && fs.existsSync(sentinelPath)) {
     return binPath;
   }
+
+  // Cache miss or incomplete extraction — clean slate.
+  try { fs.unlinkSync(sentinelPath); } catch {}
+  try { fs.unlinkSync(binPath); } catch {}
 
   const target = getTarget();
   const ext = process.platform === 'win32' ? '.zip' : '.tar.gz';
@@ -88,27 +115,53 @@ function ensureBinary() {
 
   const archivePath = path.join(cacheDir, archiveName);
 
-  try {
-    // Download archive.
-    const { execSync } = require('child_process');
-    execSync(`curl -fsSL -o "${archivePath}" "${url}"`, { stdio: 'pipe' });
-  } catch {
+  // Download with retry (exponential backoff, max 3 attempts).
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await downloadFile(url, archivePath);
+      lastError = null;
+      break;
+    } catch (e) {
+      lastError = e.message;
+      if (attempt < 3) {
+        try { fs.unlinkSync(archivePath); } catch {}
+        const delayMs = Math.pow(2, attempt) * 1000;
+        await sleep(delayMs);
+      }
+    }
+  }
+
+  if (lastError !== null) {
     throw new Error(
-      `Failed to download schemalint binary from ${url}. ` +
+      `Failed to download schemalint binary from ${url}: ${lastError}. ` +
       `Make sure the GitHub Release for v${VERSION} exists.`
     );
   }
 
   // Extract based on platform.
   try {
-    const { execSync } = require('child_process');
     if (process.platform === 'win32') {
-      execSync(`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${cacheDir}'"`, { stdio: 'pipe' });
+      const result = spawnSync(
+        'powershell',
+        ['-Command', 'Expand-Archive', '-Path', archivePath, '-DestinationPath', cacheDir],
+        { stdio: 'pipe' }
+      );
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(result.stderr.toString().trim());
     } else {
-      execSync(`tar -xzf "${archivePath}" -C "${cacheDir}"`, { stdio: 'pipe' });
+      const result = spawnSync(
+        'tar',
+        ['-xzf', archivePath, '-C', cacheDir],
+        { stdio: 'pipe' }
+      );
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(result.stderr.toString().trim());
     }
-  } catch {
-    throw new Error('Failed to extract schemalint binary');
+  } catch (e) {
+    const reason = e.stderr ? e.stderr.toString().trim() : e.message;
+    try { fs.unlinkSync(archivePath); } catch {}
+    throw new Error(`Failed to extract schemalint binary: ${reason}`);
   }
 
   // Clean up archive.
@@ -123,14 +176,19 @@ function ensureBinary() {
     fs.chmodSync(binPath, 0o755);
   }
 
+  // Write sentinel to mark successful extraction.
+  fs.writeFileSync(sentinelPath, 'verified');
+
   return binPath;
 }
 
-try {
-  const binPath = ensureBinary();
-  const result = spawnSync(binPath, process.argv.slice(2), { stdio: 'inherit' });
-  process.exit(result.status ?? 1);
-} catch (err) {
-  console.error(`schemalint: ${err.message}`);
-  process.exit(1);
-}
+(async () => {
+  try {
+    const binPath = await ensureBinary();
+    const result = spawnSync(binPath, process.argv.slice(2), { stdio: 'inherit' });
+    process.exit(result.status ?? 1);
+  } catch (err) {
+    console.error(`schemalint: ${err.message}`);
+    process.exit(1);
+  }
+})();

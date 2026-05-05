@@ -1,0 +1,28 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+error[TST-SPECIAL]: message with special chars: 
+ tab	 backslash\ and unicode 你好
+   --> special.json:10:5
+     |
+     = profile: test
+     = schema path: /special
+     = hint: hint: with : colons and % percent
+     = see: https://schemalint.dev/rules/TST-SPECIAL
+
+warning[TST-EMPTY]: 
+   --> special.json
+     |
+     = profile: test
+     = schema path: 
+     = see: https://schemalint.dev/rules/TST-EMPTY
+
+error[TST-LONG]: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+   --> special.json
+     |
+     = profile: test
+     = schema path: /long
+     = see: https://schemalint.dev/rules/TST-LONG
+
+3 issues found (2 errors, 1 warning) across 1 schema

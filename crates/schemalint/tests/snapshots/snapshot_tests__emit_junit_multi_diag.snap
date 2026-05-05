@@ -1,0 +1,15 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="schema.json" tests="2" failures="1" skipped="1" errors="0" time="0">
+    <testcase name="OAI-K-allOf - keyword not supported" classname="schemalint" time="0" file="schema.json" line="42">
+      <failure type="error" message="keyword not supported">keyword not supported</failure>
+    </testcase>
+    <testcase name="OAI-K-anyOf - warning message" classname="schemalint" time="0">
+      <skipped message="warning message">warning message</skipped>
+    </testcase>
+  </testsuite>
+</testsuites>

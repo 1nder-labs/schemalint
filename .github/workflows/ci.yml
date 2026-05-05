@@ -13,6 +13,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -36,23 +37,27 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build and test
-        run: cargo test --workspace
+        run: cargo test --workspace --exclude schemalint-python
 
       - name: Run clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --exclude schemalint-python -- -D warnings
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Build schemalint-python (maturin crate)
+        run: cargo build -p schemalint-python
+
       - name: Compile benchmarks
-        run: cargo bench --no-run --workspace
+        run: cargo bench --no-run --workspace --exclude schemalint-python
 
       - name: Run benchmark smoke test
-        run: cargo bench --workspace
+        run: cargo bench --workspace --exclude schemalint-python
 
   msrv:
     name: Check MSRV
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -65,4 +70,69 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check build with MSRV
-        run: cargo build --workspace
+        run: cargo build --workspace --exclude schemalint-python
+
+  bench-gate:
+    name: Benchmark Gate
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run benchmarks
+        run: |
+          cargo bench --bench schemalint_benchmarks -- --output-format bencher > bench_output.txt
+          cat bench_output.txt
+
+      - name: Check thresholds
+        run: bash scripts/check-benchmarks.sh bench_output.txt
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: typescript/schemalint-zod/package-lock.json
+
+      - name: Install schemalint-zod dependencies
+        run: npm ci
+        working-directory: typescript/schemalint-zod
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Run coverage
+        run: |
+          cargo llvm-cov --workspace --exclude schemalint-python --lcov --output-path lcov.info
+
+      - name: Check coverage threshold
+        run: bash scripts/check-coverage.sh lcov.info 78.00
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov
+          path: lcov.info

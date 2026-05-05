@@ -1,0 +1,62 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "schema.json"
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "should appear last when sorted"
+          },
+          "ruleId": "Z-K-last"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "schema.json"
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "should appear first when sorted"
+          },
+          "ruleId": "A-K-first"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://schemalint.dev",
+          "name": "schemalint",
+          "rules": [
+            {
+              "helpUri": "https://schemalint.dev/rules/A-K-first",
+              "id": "A-K-first"
+            },
+            {
+              "helpUri": "https://schemalint.dev/rules/Z-K-last",
+              "id": "Z-K-last"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

@@ -1,0 +1,89 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "variants.json"
+                },
+                "region": {
+                  "startColumn": 5,
+                  "startLine": 10
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "full span with line and col"
+          },
+          "ruleId": "TST-FULL"
+        },
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "variants.json"
+                },
+                "region": {
+                  "startLine": 20
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "line only, no col"
+          },
+          "ruleId": "TST-LINEONLY"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "variants.json"
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "no source span at all"
+          },
+          "ruleId": "TST-NOSOURCE"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://schemalint.dev",
+          "name": "schemalint",
+          "rules": [
+            {
+              "helpUri": "https://schemalint.dev/rules/TST-FULL",
+              "id": "TST-FULL"
+            },
+            {
+              "helpUri": "https://schemalint.dev/rules/TST-LINEONLY",
+              "id": "TST-LINEONLY"
+            },
+            {
+              "helpUri": "https://schemalint.dev/rules/TST-NOSOURCE",
+              "id": "TST-NOSOURCE"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

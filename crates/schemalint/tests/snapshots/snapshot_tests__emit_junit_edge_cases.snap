@@ -1,0 +1,15 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="special.json" tests="2" failures="1" skipped="1" errors="0" time="0">
+    <testcase name="TST-XML - contains &lt;xml&gt; &amp; &quot;quotes&quot; &apos;apos&apos;" classname="schemalint" time="0" file="special.json" line="1">
+      <failure type="error" message="contains &lt;xml&gt; &amp; &quot;quotes&quot; &apos;apos&apos;">contains &lt;xml&gt; &amp; &quot;quotes&quot; &apos;apos&apos;</failure>
+    </testcase>
+    <testcase name="TST-EMPTY - " classname="schemalint" time="0">
+      <skipped message=""></skipped>
+    </testcase>
+  </testsuite>
+</testsuites>

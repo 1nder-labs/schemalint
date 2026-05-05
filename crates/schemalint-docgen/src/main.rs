@@ -177,7 +177,7 @@ fn create_output(
 
     // Write per-rule pages.
     for rule in rules.values() {
-        let page = build_rule_page(rule, profiles);
+        let page = build_rule_page(rule);
         let dir = output_dir.join(rule.category.as_str());
         let path = dir.join(format!("{}.md", rule.name));
         fs::write(&path, &page)
@@ -222,7 +222,7 @@ fn build_index(rules: &BTreeMap<String, DedupedRule>, profiles: &[ProfileInfo]) 
     out
 }
 
-fn build_rule_page(rule: &DedupedRule, _profiles: &[ProfileInfo]) -> String {
+fn build_rule_page(rule: &DedupedRule) -> String {
     let mut out = format!("# {}\n\n", rule.name);
     out.push_str("> Category: ");
 

@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "code": "OAI-K-contains",
+    "severity": "error",
+    "message": "keyword 'contains' is not supported by openai.so.2026-04-30",
+    "pointer": "/properties/items",
+    "profile": "openai.so.2026-04-30"
+  }
+]

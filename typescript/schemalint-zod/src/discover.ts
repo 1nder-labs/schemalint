@@ -22,6 +22,7 @@ export interface DiscoveryWarning {
 export interface DiscoverResponse {
   models: DiscoveredModel[];
   warnings: DiscoveryWarning[];
+  provider_hint?: string;
 }
 
 interface DiscoveredSchemaLocation {
@@ -105,9 +106,33 @@ export async function discoverZodSchemas(
   // Create program and walk ASTs to discover schemas
   const program = tsModule.createProgram(fileNames, compilerOptions);
 
-  // Step 1: AST walk to find z.object() calls and extract source locations
+  // Step 0: Scan provider imports for auto-detection
+  let providerHint: string | undefined;
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile || sourceFile.fileName.includes('node_modules')) continue;
+    if (!fileNames.includes(sourceFile.fileName)) continue;
+    const hint = scanProviderImports(sourceFile, tsModule);
+    if (hint) {
+      providerHint = hint;
+      break;
+    }
+  }
+
+  // Step 1: Collect zodTextFormat / zodResponseFormat references
+  // These point to schemas that should be discovered even if not top-level exported.
+  const zodFormatRefs: string[] = [];
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile || sourceFile.fileName.includes('node_modules')) continue;
+    if (!fileNames.includes(sourceFile.fileName)) continue;
+    for (const ref of scanZodTextFormatRefs(sourceFile, tsModule)) {
+      zodFormatRefs.push(ref);
+    }
+  }
+
+  // Step 2: AST walk to find z.object() calls and extract source locations
   const discoveredLocations: DiscoveredSchemaLocation[] = [];
   const nonFatal: DiscoveryWarning[] = [];
+  const zodFormatRefSet = new Set(zodFormatRefs);
 
   for (const sourceFile of program.getSourceFiles()) {
     // Skip lib files (e.g., node_modules, TypeScript DOM libs)
@@ -120,7 +145,7 @@ export async function discoverZodSchemas(
     // Only walk files in our filtered list
     if (!fileNames.includes(sourceFile.fileName)) continue;
 
-    const exports = findExportedSchemaCalls(sourceFile, tsModule);
+    const exports = findExportedSchemaCalls(sourceFile, tsModule, zodFormatRefSet);
     for (const exp of exports) {
       const sourceMap = buildSourceMapFromObjectLiteral(
         exp.objectArg,
@@ -139,7 +164,7 @@ export async function discoverZodSchemas(
     return { models: [], warnings: nonFatal };
   }
 
-  // Step 2: Runtime evaluation — import each file and evaluate schemas
+  // Step 3: Runtime evaluation — import each file and evaluate schemas
   const models: DiscoveredModel[] = [];
 
   for (const loc of discoveredLocations) {
@@ -160,7 +185,11 @@ export async function discoverZodSchemas(
     }
   }
 
-  return { models, warnings: nonFatal };
+  const response: DiscoverResponse = { models, warnings: nonFatal };
+  if (providerHint) {
+    response.provider_hint = providerHint;
+  }
+  return response;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,18 +202,22 @@ interface ExportedSchemaCall {
 }
 
 /**
- * Find top-level exported variable declarations that are `z.object({...})` calls.
+ * Find top-level `const` declarations that are `z.object({...})` calls.
+ * If `zodFormatRefs` is provided, non-exported schemas referenced by
+ * zodTextFormat/zodResponseFormat are also included.
  */
 function findExportedSchemaCalls(
   sourceFile: ts.SourceFile,
-  tsModule: typeof ts
+  tsModule: typeof ts,
+  zodFormatRefs?: Set<string>
 ): ExportedSchemaCall[] {
   const results: ExportedSchemaCall[] = [];
+  // Collect all const declarations (both exported and non-exported) for zodFormatRef matching
+  const allConstDeclarations: Map<string, ExportedSchemaCall> = new Map();
 
   function walk(node: ts.Node): void {
     if (
       tsModule.isVariableStatement(node) &&
-      hasExportModifier(node, tsModule) &&
       node.declarationList.declarations.length === 1
     ) {
       const decl = node.declarationList.declarations[0];
@@ -194,10 +227,14 @@ function findExportedSchemaCalls(
       ) {
         const call = findZObjectCall(decl.initializer, tsModule);
         if (call) {
-          results.push({
+          const entry: ExportedSchemaCall = {
             name: decl.name.text,
             objectArg: call,
-          });
+          };
+          allConstDeclarations.set(decl.name.text, entry);
+          if (hasExportModifier(node, tsModule)) {
+            results.push(entry);
+          }
         }
       }
     }
@@ -210,10 +247,12 @@ function findExportedSchemaCalls(
     ) {
       const call = findZObjectCall(node.expression, tsModule);
       if (call) {
-        results.push({
+        const entry = {
           name: 'default',
           objectArg: call,
-        });
+        };
+        results.push(entry);
+        allConstDeclarations.set('default', entry);
       }
     }
 
@@ -221,7 +260,77 @@ function findExportedSchemaCalls(
   }
 
   tsModule.forEachChild(sourceFile, walk);
+
+  // Add schemas referenced in zodTextFormat/zodResponseFormat calls that
+  // are not exported but are declared in this file (non-exported schemas
+  // referenced by format helpers).
+  if (zodFormatRefs && zodFormatRefs.size > 0) {
+    for (const name of zodFormatRefs) {
+      const decl = allConstDeclarations.get(name);
+      if (decl && !results.some(r => r.name === name)) {
+        results.push(decl);
+      }
+    }
+  }
+
   return results;
+}
+
+/**
+ * Scan for zodTextFormat(MySchema, "name") and zodResponseFormat(MySchema, "name")
+ * call expressions. Returns the list of schema names referenced as the first argument.
+ */
+function scanZodTextFormatRefs(
+  sourceFile: ts.SourceFile,
+  tsModule: typeof ts
+): string[] {
+  const refs: string[] = [];
+
+  function walk(node: ts.Node): void {
+    if (!tsModule.isCallExpression(node)) {
+      tsModule.forEachChild(node, walk);
+      return;
+    }
+    // Match zodTextFormat(...) or zodResponseFormat(...)
+    if (tsModule.isIdentifier(node.expression)) {
+      const name = node.expression.text;
+      if (
+        (name === 'zodTextFormat' || name === 'zodResponseFormat') &&
+        node.arguments.length >= 1 &&
+        tsModule.isIdentifier(node.arguments[0])
+      ) {
+        refs.push(node.arguments[0].text);
+        return; // no need to walk children of this call
+      }
+    }
+    tsModule.forEachChild(node, walk);
+  }
+
+  tsModule.forEachChild(sourceFile, walk);
+  return refs;
+}
+
+/**
+ * Scan a source file's import declarations for provider SDKs.
+ * Returns "openai" or "anthropic" if detected, undefined otherwise.
+ */
+function scanProviderImports(
+  sourceFile: ts.SourceFile,
+  tsModule: typeof ts
+): string | undefined {
+  for (const stmt of sourceFile.statements) {
+    if (!tsModule.isImportDeclaration(stmt)) continue;
+    const spec = stmt.moduleSpecifier;
+    if (!tsModule.isStringLiteral(spec)) continue;
+    const mod = spec.text;
+    if (mod === 'openai' || mod.startsWith('openai/')) {
+      return 'openai';
+    }
+    if (mod === '@anthropic-ai/sdk' || mod.startsWith('@anthropic-ai/')) {
+      return 'anthropic';
+    }
+  }
+  return undefined;
 }
 
 function hasExportModifier(

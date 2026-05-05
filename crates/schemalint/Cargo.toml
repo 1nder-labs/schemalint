@@ -20,7 +20,7 @@ rayon = "1"
 thiserror = "2"
 rustc-hash = "2"
 percent-encoding = "2"
-schemalint-profiles = { path = "../schemalint-profiles", version = "0.1.0" }
+schemalint-profiles = { path = "../schemalint-profiles", version = "1.0.0" }
 
 [dev-dependencies]
 insta = "1"

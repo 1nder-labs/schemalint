@@ -194,12 +194,10 @@ test_schema = '''
 
 [[keywords]]
 name = "discriminator"
-behavior = "reject"
+behavior = "accept"
 test_schema = '''
-{ "type": "object", "discriminator": { "propertyName": "type" }, "properties": { "type": { "type": "string" } } }
+{ "type": "object", "discriminator": { "propertyName": "type" }, "properties": { "type": { "type": "string" } }, "required": ["type"], "additionalProperties": false }
 '''
-expected_error = "discriminator is not supported by OpenAI"
-expected_error_path = "/discriminator"
 
 [[keywords]]
 name = "allOf"
@@ -271,10 +269,12 @@ expected_error_path = "/dependentSchemas"
 
 [[keywords]]
 name = "contains"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "array", "contains": { "type": "string" } }
 '''
+expected_error = "contains is not permitted"
+expected_error_path = "/contains"
 
 [[keywords]]
 name = "patternProperties"
@@ -285,10 +285,12 @@ test_schema = '''
 
 [[keywords]]
 name = "unevaluatedProperties"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "object", "unevaluatedProperties": false, "properties": {} }
 '''
+expected_error = "unevaluatedProperties is not permitted"
+expected_error_path = "/unevaluatedProperties"
 
 [[keywords]]
 name = "propertyNames"
@@ -299,10 +301,12 @@ test_schema = '''
 
 [[keywords]]
 name = "minProperties"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "object", "minProperties": 1, "properties": { "x": { "type": "string" } } }
 '''
+expected_error = "minProperties is not permitted"
+expected_error_path = "/minProperties"
 
 [[keywords]]
 name = "maxProperties"

@@ -1,0 +1,5 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+0 issues found (0 errors, 0 warnings) across 0 schemas in 42ms

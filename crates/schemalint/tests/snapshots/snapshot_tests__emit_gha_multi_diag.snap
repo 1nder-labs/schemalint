@@ -1,0 +1,6 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+::error file=schema.json,title=OAI-K-allOf,line=42,col=8::keyword not supported [profile%3A openai.so]
+::warning file=schema.json,title=OAI-K-anyOf::warning message [profile%3A openai.so]

@@ -173,7 +173,7 @@ fn run_check(args: args::CheckArgs) -> i32 {
             let hash = hash_bytes(&bytes);
             let cached_schema = {
                 let cache_guard = cache.lock().unwrap();
-                cache_guard.get(hash).cloned()
+                cache_guard.get(hash, &bytes).cloned()
             };
             if let Some(cached) = cached_schema {
                 let diags = check_rulesets(&cached.arena, &profile_rulesets);
@@ -191,7 +191,7 @@ fn run_check(args: args::CheckArgs) -> i32 {
             };
 
             let diags = check_rulesets(&normalized.arena, &profile_rulesets);
-            cache.lock().unwrap().insert(hash, normalized);
+            cache.lock().unwrap().insert(hash, bytes, normalized);
             (path, Ok(diags))
         })
         .collect();
@@ -556,7 +556,7 @@ fn run_check_node(args: args::CheckNodeArgs) -> i32 {
         args.sources.clone()
     };
 
-    let profile_args: Vec<String> = if args.profiles.is_empty() {
+    let mut profile_args: Vec<String> = if args.profiles.is_empty() {
         node_config
             .as_ref()
             .map(|c| c.profiles.clone())
@@ -580,16 +580,124 @@ fn run_check_node(args: args::CheckNodeArgs) -> i32 {
         return 1;
     }
 
-    if profile_args.is_empty() {
+    // -------------------------------------------------------------------
+    // 3. Determine output format
+    // -------------------------------------------------------------------
+    let format = args.format.unwrap_or_else(|| {
+        if std::io::stdout().is_terminal() {
+            OutputFormat::Human
+        } else {
+            OutputFormat::Json
+        }
+    });
+
+    // -------------------------------------------------------------------
+    // 4. Spawn Node helper and discover schemas
+    // -------------------------------------------------------------------
+    let mut helper = match crate::node::NodeHelper::spawn(args.node_path.as_deref()) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return 1;
+        }
+    };
+
+    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
+    let mut discovery_failures = 0usize;
+    let mut provider_hint: Option<String> = None;
+    for source in &sources {
+        match helper.discover(source) {
+            Ok(resp) => {
+                if provider_hint.is_none() {
+                    provider_hint = resp.provider_hint.clone();
+                }
+                for model in resp.models {
+                    discovered_models.push(model);
+                }
+                // Log discovery warnings
+                for warning in &resp.warnings {
+                    eprintln!(
+                        "warning: discovery warning for '{}' in source '{}': {}",
+                        warning.model, source, warning.message
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("error: discovery failed for source '{}': {}", source, e);
+                discovery_failures += 1;
+            }
+        }
+    }
+
+    // Apply exclude patterns
+    if !exclude_globs.is_empty() {
+        discovered_models.retain(|m| {
+            !exclude_globs.iter().any(|g| {
+                let core = g.trim_start_matches("**/");
+                let core = core
+                    .strip_suffix("/**")
+                    .or_else(|| core.strip_suffix("/*"))
+                    .unwrap_or(core);
+                glob_match(core, &m.module_path)
+            })
+        });
+    }
+
+    let total_discovered = discovered_models.len();
+    if total_discovered == 0 {
+        eprintln!("warning: no Zod schemas discovered in source globs");
+    } else {
         eprintln!(
-            "error: no profiles specified. Use --profile or configure \"schemalint\" in package.json"
+            "info: discovered {} Zod schema(s) in {} source glob(s)",
+            total_discovered,
+            sources.len()
+        );
+    }
+
+    helper.shutdown();
+
+    if discovered_models.is_empty() && discovery_failures > 0 {
+        // If no profiles configured yet, show the profiles error instead of
+        // the generic discovery failure — the user may have forgotten to
+        // configure profiles/packages.json.
+        if profile_args.is_empty() {
+            eprintln!(
+                "error: no profiles specified. Use --profile or configure \"schemalint\" in package.json"
+            );
+            return 1;
+        }
+        eprintln!(
+            "error: all {} source(s) failed discovery",
+            discovery_failures
         );
         return 1;
     }
 
     // -------------------------------------------------------------------
-    // 3. Load profiles
+    // 5. Auto-detect profile from provider_hint if none specified
     // -------------------------------------------------------------------
+    if profile_args.is_empty() {
+        if let Some(ref hint) = provider_hint {
+            let resolved = match hint.as_str() {
+                "openai" => "openai.so.2026-04-30".to_string(),
+                "anthropic" => "anthropic.so.2026-04-30".to_string(),
+                other => {
+                    eprintln!("error: unknown provider hint '{}' from source files", other);
+                    return 1;
+                }
+            };
+            eprintln!(
+                "info: auto-detected provider '{}' from source imports → using profile '{}'",
+                hint, resolved
+            );
+            profile_args.push(resolved);
+        } else {
+            eprintln!(
+                "error: no profiles specified. Use --profile or configure \"schemalint\" in package.json"
+            );
+            return 1;
+        }
+    }
     let mut profiles = Vec::new();
     for id in &profile_args {
         let profile_bytes = match resolve_profile(id) {
@@ -618,91 +726,6 @@ fn run_check_node(args: args::CheckNodeArgs) -> i32 {
         .collect();
 
     let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
-
-    // -------------------------------------------------------------------
-    // 4. Determine output format
-    // -------------------------------------------------------------------
-    let format = args.format.unwrap_or_else(|| {
-        if std::io::stdout().is_terminal() {
-            OutputFormat::Human
-        } else {
-            OutputFormat::Json
-        }
-    });
-
-    // -------------------------------------------------------------------
-    // 5. Spawn Node helper and discover schemas
-    // -------------------------------------------------------------------
-    let mut helper = match crate::node::NodeHelper::spawn(args.node_path.as_deref()) {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
-        }
-    };
-
-    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
-    let mut discovery_failures = 0usize;
-    for source in &sources {
-        match helper.discover(source) {
-            Ok(resp) => {
-                for model in resp.models {
-                    discovered_models.push(model);
-                }
-                // Log discovery warnings
-                for warning in &resp.warnings {
-                    eprintln!(
-                        "warning: discovery warning for '{}' in source '{}': {}",
-                        warning.model, source, warning.message
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("error: discovery failed for source '{}': {}", source, e);
-                discovery_failures += 1;
-            }
-        }
-    }
-
-    // Apply exclude patterns: filter discovered models by module_path.
-    // Simple glob matching: strips leading **/ and trailing /** (or /*),
-    // converts remaining * to path-segment wildcard, rejects on match.
-    if !exclude_globs.is_empty() {
-        discovered_models.retain(|m| {
-            !exclude_globs.iter().any(|g| {
-                let core = g.trim_start_matches("**/");
-                let core = core
-                    .strip_suffix("/**")
-                    .or_else(|| core.strip_suffix("/*"))
-                    .unwrap_or(core);
-                // Convert remaining * wildcards to path-segment matching:
-                // a * in the pattern matches anything within a path segment
-                // except /. Split on *, check each literal piece in order.
-                glob_match(core, &m.module_path)
-            })
-        });
-    }
-
-    helper.shutdown();
-
-    if discovered_models.is_empty() {
-        if discovery_failures > 0 {
-            eprintln!(
-                "error: all {} source(s) failed discovery",
-                discovery_failures
-            );
-            return 1;
-        }
-        if format == OutputFormat::Human {
-            println!("0 issues found (0 errors, 0 warnings) across 0 schemas");
-        } else {
-            print!(
-                "{}",
-                emit_json::emit_json_to_string(&[], 0, 0, &profile_names, Some(0))
-            );
-        }
-        return 0;
-    }
 
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas

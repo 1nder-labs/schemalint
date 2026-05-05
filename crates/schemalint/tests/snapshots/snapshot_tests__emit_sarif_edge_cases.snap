@@ -1,0 +1,66 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "results": [
+        {
+          "level": "error",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "special.json"
+                },
+                "region": {
+                  "startColumn": 1,
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "contains <xml> & \"quotes\" 'single'"
+          },
+          "ruleId": "TST-XML"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "special.json"
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": ""
+          },
+          "ruleId": "TST-EMPTY"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://schemalint.dev",
+          "name": "schemalint",
+          "rules": [
+            {
+              "helpUri": "https://schemalint.dev/rules/TST-EMPTY",
+              "id": "TST-EMPTY"
+            },
+            {
+              "helpUri": "https://schemalint.dev/rules/TST-XML",
+              "id": "TST-XML"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}
