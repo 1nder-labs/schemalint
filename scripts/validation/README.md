@@ -53,7 +53,56 @@ python scripts/validation/compare_with_openai.py --all \
 python scripts/validation/compare_with_openai.py schema_03.json
 ```
 
+### `check_drift.py`
+
+Detects when a provider changes keyword support between validation runs
+(e.g., OpenAI adding or removing support for a keyword).
+
+```bash
+# Compare against previous results:
+python scripts/validation/check_drift.py \
+    --previous scripts/validation/results/openai_bulk_2026-05-03.json \
+    --latest scripts/validation/results/openai_bulk_2026-05-10.json
+```
+
+Exit code 1 if drift detected. Use `--format json` for CI consumption.
+
+## Maintenance Workflow
+
+### Weekly: Run fresh validation
+
+```bash
+DATE=$(date +%Y-%m-%d)
+python scripts/validation/validate_openai.py \
+    --model gpt-4o --output scripts/validation/results/openai_${DATE}.json \
+    crates/schemalint/tests/corpus/schema_*.json
+```
+
+### Check for drift
+
+```bash
+python scripts/validation/check_drift.py \
+    --previous scripts/validation/results/openai_bulk_2026-05-03.json \
+    --latest scripts/validation/results/openai_$(date +%Y-%m-%d).json
+```
+
+### If drift detected
+
+1. **Compare details**: `python scripts/validation/compare_with_openai.py --all --api-results results/latest.json`
+2. **Update the TOML profile**: Edit `crates/schemalint-profiles/profiles/openai.so.2026-04-30.toml`
+3. **Update the truth file**: Edit `crates/schemalint-profiles/profiles/truth/openai.truth.toml`
+4. **Regen expected files**: `cargo run -p schemalint -- check -p openai.so.2026-04-30 --format json schema_X.json > expected`
+5. **Run tests**: `cargo test --workspace --exclude schemalint-python`
+6. **Commit** with message `fix(profile): OpenAI {added,removed} support for {keyword}`
+
 ## Interpreting Results
+
+| Scenario | Meaning |
+|----------|---------|
+| Both reject | Profile is accurate |
+| Both accept | Profile is accurate |
+| schemalint rejects, OpenAI accepts | **False positive** — profile too strict |
+| schemalint accepts, OpenAI rejects | **False negative** — profile too lenient |
 
 | Scenario | Meaning |
 |----------|---------|
