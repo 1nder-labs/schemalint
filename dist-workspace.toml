@@ -17,3 +17,5 @@ unix-archive = ".tar.gz"
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Allow dirty CI files (we've added custom jobs and timeout-minutes)
+allow-dirty = ["ci"]

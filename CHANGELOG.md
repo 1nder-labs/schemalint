@@ -22,4 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+## [1.0.0] - 2026-05-05
+
+### Added
+- v1.0 release with multi-channel distribution (cargo-dist, maturin, npm)
+- Coverage and benchmark CI gates
+- Automated release workflow with cross-platform smoke tests
+- Docusaurus documentation site
+
 ## [0.1.0] - Unreleased
