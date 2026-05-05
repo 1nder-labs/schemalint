@@ -69,31 +69,45 @@ Exit code 1 if drift detected. Use `--format json` for CI consumption.
 
 ## Maintenance Workflow
 
-### Weekly: Run fresh validation
+This is a **local, manual maintenance task** — not automated in CI.
+API calls cost money and should only be made intentionally.
+
+Run this weekly or whenever OpenAI's structured outputs docs are updated.
+
+### 1. Run fresh validation against the API
 
 ```bash
 DATE=$(date +%Y-%m-%d)
 python scripts/validation/validate_openai.py \
-    --model gpt-4o --output scripts/validation/results/openai_${DATE}.json \
+    --model gpt-4o \
+    --output scripts/validation/results/openai_${DATE}.json \
     crates/schemalint/tests/corpus/schema_*.json
+# 50 schemas, ~$0.005 total cost
 ```
 
-### Check for drift
+### 2. Check for drift (anything change since last run?)
 
 ```bash
 python scripts/validation/check_drift.py \
     --previous scripts/validation/results/openai_bulk_2026-05-03.json \
     --latest scripts/validation/results/openai_$(date +%Y-%m-%d).json
+# Exit code 1 = drift detected, exit 0 = all stable
 ```
 
-### If drift detected
+### 3. If drift detected, get detailed mismatches
 
-1. **Compare details**: `python scripts/validation/compare_with_openai.py --all --api-results results/latest.json`
-2. **Update the TOML profile**: Edit `crates/schemalint-profiles/profiles/openai.so.2026-04-30.toml`
-3. **Update the truth file**: Edit `crates/schemalint-profiles/profiles/truth/openai.truth.toml`
-4. **Regen expected files**: `cargo run -p schemalint -- check -p openai.so.2026-04-30 --format json schema_X.json > expected`
-5. **Run tests**: `cargo test --workspace --exclude schemalint-python`
-6. **Commit** with message `fix(profile): OpenAI {added,removed} support for {keyword}`
+```bash
+python scripts/validation/compare_with_openai.py --all \
+    --api-results scripts/validation/results/openai_$(date +%Y-%m-%d).json
+```
+
+### 4. Fix the profile and truth files
+
+- Edit `crates/schemalint-profiles/profiles/openai.so.2026-04-30.toml`
+- Edit `crates/schemalint-profiles/profiles/truth/openai.truth.toml`
+- Regenerate expected files for affected schemas
+- Run `cargo test --workspace --exclude schemalint-python`
+- Commit: `fix(profile): OpenAI {added,removed} support for {keyword}`
 
 ## Interpreting Results
 
