@@ -6,11 +6,11 @@ build-backend = "maturin"
 name = "schemalint"
 version = "1.0.0"
 description = "Static analysis for JSON Schema compatibility with LLM structured-output providers"
-readme = "../../README.md"
+readme = "README.md"
 license = { text = "MIT OR Apache-2.0" }
 requires-python = ">=3.8"
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "License :: OSI Approved :: Apache Software License",

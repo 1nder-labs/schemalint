@@ -114,9 +114,9 @@ proptest! {
         let normalized = normalize(schema).expect("normalization should succeed");
 
         let mut cache = Cache::new();
-        cache.insert(hash, normalized.clone());
+        cache.insert(hash, bytes.clone(), normalized.clone());
 
-        let cached = cache.get(hash).expect("cache should contain the entry");
+        let cached = cache.get(hash, &bytes).expect("cache should contain the entry");
         prop_assert_eq!(
             cached.arena.len(),
             normalized.arena.len(),
@@ -169,9 +169,9 @@ proptest! {
         let normalized = normalize(schema).expect("normalization should succeed");
 
         let cache = DiskCache::new();
-        cache.insert(hash, normalized.clone());
+        cache.insert(hash, bytes.clone(), normalized.clone());
 
-        let cached = cache.get(hash).expect("disk cache should return the entry");
+        let cached = cache.get(hash, &bytes).expect("disk cache should return the entry");
         prop_assert_eq!(
             cached.arena.len(), normalized.arena.len(),
             "disk cached result should have same node count"

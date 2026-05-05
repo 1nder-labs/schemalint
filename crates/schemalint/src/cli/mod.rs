@@ -173,7 +173,7 @@ fn run_check(args: args::CheckArgs) -> i32 {
             let hash = hash_bytes(&bytes);
             let cached_schema = {
                 let cache_guard = cache.lock().unwrap();
-                cache_guard.get(hash).cloned()
+                cache_guard.get(hash, &bytes).cloned()
             };
             if let Some(cached) = cached_schema {
                 let diags = check_rulesets(&cached.arena, &profile_rulesets);
@@ -191,7 +191,7 @@ fn run_check(args: args::CheckArgs) -> i32 {
             };
 
             let diags = check_rulesets(&normalized.arena, &profile_rulesets);
-            cache.lock().unwrap().insert(hash, normalized);
+            cache.lock().unwrap().insert(hash, bytes, normalized);
             (path, Ok(diags))
         })
         .collect();
@@ -349,7 +349,7 @@ fn run_check_python(args: args::CheckPythonArgs) -> i32 {
     }
 
     // -------------------------------------------------------------------
-    // 6. Load profiles
+    // 3. Load profiles
     // -------------------------------------------------------------------
     let mut profiles = Vec::new();
     for id in &profile_args {

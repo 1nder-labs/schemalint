@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
@@ -8,7 +9,14 @@ use std::hash::Hasher;
 
 use crate::normalize::NormalizedSchema;
 
-const CACHE_VERSION: u32 = 1;
+const CACHE_VERSION: u32 = 2;
+const MAX_MEMORY_ENTRIES: usize = 1000;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct CacheEntry {
+    schema: NormalizedSchema,
+    original_bytes: Vec<u8>,
+}
 
 /// In-memory content-hash cache for normalized schemas.
 ///
@@ -16,7 +24,8 @@ const CACHE_VERSION: u32 = 1;
 /// Disk persistence is deferred to Phase 2 server mode.
 #[derive(Debug, Default)]
 pub struct Cache {
-    inner: std::collections::HashMap<u64, NormalizedSchema>,
+    inner: std::collections::HashMap<u64, CacheEntry>,
+    order: VecDeque<u64>,
 }
 
 impl Cache {
@@ -24,16 +33,40 @@ impl Cache {
         Self::default()
     }
 
-    pub fn get(&self, hash: u64) -> Option<&NormalizedSchema> {
-        self.inner.get(&hash)
+    /// Look up a normalized schema by its content hash, verifying the
+    /// stored raw bytes match the provided bytes to prevent cache poisoning
+    /// via hash collisions.
+    pub fn get(&self, hash: u64, bytes: &[u8]) -> Option<&NormalizedSchema> {
+        let entry = self.inner.get(&hash)?;
+        if entry.original_bytes == bytes {
+            Some(&entry.schema)
+        } else {
+            None
+        }
     }
 
-    pub fn insert(&mut self, hash: u64, schema: NormalizedSchema) {
-        self.inner.insert(hash, schema);
+    pub fn insert(&mut self, hash: u64, bytes: Vec<u8>, schema: NormalizedSchema) {
+        let is_new = !self.inner.contains_key(&hash);
+        if is_new && self.inner.len() >= MAX_MEMORY_ENTRIES {
+            if let Some(oldest) = self.order.pop_front() {
+                self.inner.remove(&oldest);
+            }
+        }
+        self.inner.insert(
+            hash,
+            CacheEntry {
+                schema,
+                original_bytes: bytes,
+            },
+        );
+        if is_new {
+            self.order.push_back(hash);
+        }
     }
 
     pub fn clear(&mut self) {
         self.inner.clear();
+        self.order.clear();
     }
 }
 
@@ -99,12 +132,14 @@ impl DiskCache {
     ///
     /// Checks the in-memory cache first, then falls back to the on-disk
     /// cache. Disk entries are deserialized and inserted into memory on
-    /// a successful read.
-    pub fn get(&self, hash: u64) -> Option<NormalizedSchema> {
+    /// a successful read.  The stored raw bytes are verified against
+    /// `bytes` on every hit to prevent cache poisoning via hash
+    /// collisions.
+    pub fn get(&self, hash: u64, bytes: &[u8]) -> Option<NormalizedSchema> {
         // In-memory hit
         {
             let memory = self.memory.read().unwrap();
-            if let Some(cached) = memory.get(hash) {
+            if let Some(cached) = memory.get(hash, bytes) {
                 return Some(cached.clone());
             }
         }
@@ -122,24 +157,38 @@ impl DiskCache {
         if version != CACHE_VERSION {
             return None;
         }
-        let schema: NormalizedSchema = serde_json::from_slice(&buf[4..]).ok()?;
+        let entry: CacheEntry = serde_json::from_slice(&buf[4..]).ok()?;
+        if entry.original_bytes != bytes {
+            return None;
+        }
 
         // Populate memory cache for future lookups
-        self.memory.write().unwrap().insert(hash, schema.clone());
-        Some(schema)
+        self.memory.write().unwrap().insert(
+            hash,
+            entry.original_bytes.clone(),
+            entry.schema.clone(),
+        );
+        Some(entry.schema)
     }
 
     /// Insert a normalized schema into both the in-memory and on-disk caches.
-    pub fn insert(&self, hash: u64, schema: NormalizedSchema) {
+    pub fn insert(&self, hash: u64, bytes: Vec<u8>, schema: NormalizedSchema) {
         // Memory
-        self.memory.write().unwrap().insert(hash, schema.clone());
+        self.memory
+            .write()
+            .unwrap()
+            .insert(hash, bytes.clone(), schema.clone());
 
         // Disk
         if let Some(ref dir) = self.cache_dir {
             let path = dir.join(format!("{:016x}.bin", hash));
             let mut buf = Vec::new();
             buf.extend_from_slice(&CACHE_VERSION.to_le_bytes());
-            match serde_json::to_vec(&schema) {
+            let entry = CacheEntry {
+                schema,
+                original_bytes: bytes,
+            };
+            match serde_json::to_vec(&entry) {
                 Ok(serialized) => {
                     buf.extend_from_slice(&serialized);
                     if let Err(e) = fs::write(&path, &buf) {

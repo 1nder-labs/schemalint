@@ -2,6 +2,27 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+fn find_schemalint_binary() -> PathBuf {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let target_dir = std::env::var("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| manifest_dir.join("../../target"));
+    let bin = target_dir.join("debug/schemalint");
+    if bin.exists() {
+        return bin;
+    }
+    // Fallback for llvm-cov and other target-dir overrides
+    let fallback = manifest_dir.join("../../target/debug/schemalint");
+    if fallback.exists() {
+        return fallback;
+    }
+    panic!(
+        "schemalint binary not found. Checked: {}, {}",
+        bin.display(),
+        fallback.display()
+    );
+}
+
 fn diag_key(v: &serde_json::Value) -> (String, String) {
     (
         v["code"].as_str().unwrap_or("").to_string(),
@@ -96,7 +117,7 @@ fn run_corpus(corpus_dir: &PathBuf, bin: &PathBuf, profile: &str, prefix: &str) 
 #[test]
 fn corpus_openai_schemas_match_expected() {
     let corpus_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus");
-    let bin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/schemalint");
+    let bin = find_schemalint_binary();
 
     let failures = run_corpus(&corpus_dir, &bin, "openai.so.2026-04-30", "schema_");
 
@@ -112,7 +133,7 @@ fn corpus_openai_schemas_match_expected() {
 #[test]
 fn corpus_anthropic_schemas_match_expected() {
     let corpus_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus");
-    let bin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/schemalint");
+    let bin = find_schemalint_binary();
 
     let failures = run_corpus(&corpus_dir, &bin, "anthropic.so.2026-04-30", "ant_schema_");
 

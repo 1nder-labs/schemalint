@@ -1,15 +1,13 @@
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
+use std::time::Duration;
 
 use clap::Parser;
 use schemalint_conformance::{evaluate, parse_truth, ProviderTruth, TruthResult};
-use tiny_http::{Header, Method, Response, Server, StatusCode};
-
-fn json_content_type() -> Header {
-    Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap()
-}
 
 #[derive(Parser)]
 #[command(name = "schemalint-conformance")]
@@ -32,37 +30,71 @@ fn main() {
     let truth_map = load_truth_files(&args.truth_dir);
     let server_addr = format!("127.0.0.1:{}", args.port);
 
-    let server = Server::http(&server_addr).unwrap_or_else(|e| {
+    let listener = TcpListener::bind(&server_addr).unwrap_or_else(|e| {
         eprintln!("error: failed to bind to {server_addr}: {e}");
         std::process::exit(1);
     });
 
     // Print bound address for CI consumption.
-    let addr = server.server_addr();
-    println!("{addr}");
+    println!("{}", listener.local_addr().unwrap());
 
     let truth_map = Arc::new(truth_map);
     let max_body_size = args.max_body_size;
 
     // Graceful shutdown on SIGTERM/CTRL-C.
-    let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
-        r.store(false, std::sync::atomic::Ordering::Release);
+        r.store(false, Ordering::Release);
     })
     .unwrap_or_else(|_| eprintln!("warning: unable to set SIGINT handler"));
 
-    while running.load(std::sync::atomic::Ordering::Acquire) {
-        match server.recv_timeout(std::time::Duration::from_secs(1)) {
-            Ok(Some(request)) => {
-                let map = truth_map.clone();
-                let mbs = max_body_size;
-                std::thread::spawn(move || handle_request(request, &map, mbs));
+    // Bounded channel so we don't queue an unbounded number of connections.
+    let (tx, rx) = mpsc::sync_channel::<TcpStream>(32);
+    let rx = Arc::new(std::sync::Mutex::new(rx));
+
+    // Fixed-size worker thread pool.
+    const NUM_WORKERS: usize = 8;
+    for _ in 0..NUM_WORKERS {
+        let rx = rx.clone();
+        let map = truth_map.clone();
+        let mbs = max_body_size;
+        std::thread::spawn(move || loop {
+            let stream = match rx.lock().unwrap().recv() {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            handle_connection(stream, &map, mbs);
+        });
+    }
+
+    listener.set_nonblocking(true).unwrap_or_else(|e| {
+        eprintln!("error: failed to set nonblocking mode: {e}");
+        std::process::exit(1);
+    });
+
+    while running.load(Ordering::Acquire) {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                // Apply backpressure: if the channel is full, retry until
+                // shutdown or a worker becomes free.
+                let mut stream = Some(stream);
+                while running.load(Ordering::Acquire) {
+                    match tx.try_send(stream.take().unwrap()) {
+                        Ok(()) => break,
+                        Err(mpsc::TrySendError::Full(s)) => {
+                            stream = Some(s);
+                            std::thread::sleep(Duration::from_millis(50));
+                        }
+                        Err(mpsc::TrySendError::Disconnected(_)) => return,
+                    }
+                }
             }
-            Ok(None) => {} // timeout, continue loop
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(100));
+            }
             Err(e) => {
-                eprintln!("warning: server error: {e}");
-                continue;
+                eprintln!("warning: accept error: {e}");
             }
         }
     }
@@ -96,7 +128,7 @@ fn load_truth_files(truth_dir: &std::path::Path) -> HashMap<String, ProviderTrut
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or_default();
-        // Expect filenames like "openai.truth" → provider key "openai".
+        // Expect filenames like "openai.truth" -> provider key "openai".
         let provider_key = file_name.strip_suffix(".truth").unwrap_or(file_name);
 
         let truth = parse_truth(&std::fs::read_to_string(&path).unwrap_or_else(|e| {
@@ -119,110 +151,153 @@ fn load_truth_files(truth_dir: &std::path::Path) -> HashMap<String, ProviderTrut
     map
 }
 
-fn handle_request(
-    mut request: tiny_http::Request,
+fn handle_connection(
+    mut stream: TcpStream,
     truth_map: &HashMap<String, ProviderTruth>,
     max_body_size: usize,
 ) {
-    let url = request.url().to_string();
-
-    // Route: POST /evaluate/{provider}
-    let path_prefix = "/evaluate/";
-    if request.method() != &Method::Post || !url.starts_with(path_prefix) {
-        let resp = Response::from_string(r#"{"error": "not found"}"#)
-            .with_status_code(StatusCode(404))
-            .with_header(json_content_type());
-        if let Err(e) = request.respond(resp) {
-            eprintln!("warning: failed to send response: {e}");
-        }
+    // Prevent Slowloris: cap time spent waiting for bytes from the client.
+    if let Err(e) = stream.set_read_timeout(Some(Duration::from_secs(30))) {
+        eprintln!("warning: failed to set read timeout: {e}");
         return;
     }
-
-    let provider_raw = &url[path_prefix.len()..];
-    let Some(truth) = truth_map.get(provider_raw) else {
-        let resp =
-            Response::from_string(serde_json::json!({"error": "unknown provider"}).to_string())
-                .with_status_code(StatusCode(404))
-                .with_header(json_content_type());
-        if let Err(e) = request.respond(resp) {
-            eprintln!("warning: failed to send response: {e}");
-        }
-        return;
-    };
-
-    // Read body with size limit.
-    let mut body = String::with_capacity(max_body_size.min(65536));
-    let max_body_size_u64 = max_body_size.min(u64::MAX as usize) as u64;
-    let mut reader = request
-        .as_reader()
-        .take(max_body_size_u64.saturating_add(1));
-    match reader.read_to_string(&mut body) {
-        Ok(n) if n > max_body_size => {
-            let resp = Response::from_string(
-                serde_json::json!({"error": "request body too large"}).to_string(),
-            )
-            .with_status_code(StatusCode(413))
-            .with_header(json_content_type());
-            if let Err(e) = request.respond(resp) {
-                eprintln!("warning: failed to send response: {e}");
-            }
-            return;
-        }
-        Err(e) => {
-            let resp = Response::from_string(
-                serde_json::json!({"error": format!("failed to read body: {e}")}).to_string(),
-            )
-            .with_status_code(StatusCode(400))
-            .with_header(json_content_type());
-            if let Err(e) = request.respond(resp) {
-                eprintln!("warning: failed to send response: {e}");
-            }
-            return;
-        }
-        _ => {}
+    if let Err(e) = stream.set_write_timeout(Some(Duration::from_secs(30))) {
+        eprintln!("warning: failed to set write timeout: {e}");
+        // Continue anyway; write timeout is best-effort.
     }
 
-    // Parse JSON schema body.
-    let schema: serde_json::Value = match serde_json::from_str(&body) {
-        Ok(v) => v,
-        Err(e) => {
-            let resp = Response::from_string(
-                serde_json::json!({"error": format!("invalid JSON: {e}")}).to_string(),
-            )
-            .with_status_code(StatusCode(400))
-            .with_header(json_content_type());
-            if let Err(e) = request.respond(resp) {
-                eprintln!("warning: failed to send response: {e}");
-            }
+    let result = {
+        let mut reader = BufReader::new(&stream);
+
+        let mut request_line = String::new();
+        if reader.read_line(&mut request_line).is_err() {
             return;
         }
-    };
 
-    // Evaluate.
-    let result = evaluate(truth, &schema);
-    let response_body = match &result {
-        TruthResult::Accepted { transformed } => {
-            serde_json::json!({"status": "accepted", "transformed": transformed}).to_string()
+        let parts: Vec<&str> = request_line.split_whitespace().collect();
+        if parts.len() != 3 {
+            let _ = send_json_response(&mut stream, 400, r#"{"error":"bad request"}"#);
+            return;
         }
-        TruthResult::Rejected { errors } => {
-            let errs: Vec<_> = errors
-                .iter()
-                .map(|e| {
-                    serde_json::json!({
-                        "message": e.message,
-                        "pointer": e.pointer,
-                        "keyword": e.keyword,
+        let method = parts[0];
+        let path = parts[1];
+
+        // Read headers.
+        let mut content_length: Option<usize> = None;
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line).is_err() {
+                return;
+            }
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                break;
+            }
+            if let Some((key, value)) = trimmed.split_once(':') {
+                let key = key.trim().to_lowercase();
+                if key == "content-length" {
+                    content_length = value.trim().parse().ok();
+                }
+            }
+        }
+
+        // Route: POST /evaluate/{provider}
+        let path_prefix = "/evaluate/";
+        if method != "POST" || !path.starts_with(path_prefix) {
+            let _ = send_json_response(&mut stream, 404, r#"{"error":"not found"}"#);
+            return;
+        }
+
+        let provider_raw = &path[path_prefix.len()..];
+        let Some(truth) = truth_map.get(provider_raw) else {
+            let _ = send_json_response(&mut stream, 404, r#"{"error":"unknown provider"}"#);
+            return;
+        };
+
+        // Read body with size limit.
+        let body = match content_length {
+            Some(0) => String::new(),
+            Some(len) => {
+                if len > max_body_size {
+                    let _ = send_json_response(
+                        &mut stream,
+                        413,
+                        r#"{"error":"request body too large"}"#,
+                    );
+                    return;
+                }
+                let mut buf = vec![0u8; len];
+                if reader.read_exact(&mut buf).is_err() {
+                    let _ =
+                        send_json_response(&mut stream, 400, r#"{"error":"failed to read body"}"#);
+                    return;
+                }
+                String::from_utf8_lossy(&buf).into_owned()
+            }
+            None => {
+                let _ =
+                    send_json_response(&mut stream, 400, r#"{"error":"missing Content-Length"}"#);
+                return;
+            }
+        };
+
+        // Parse JSON schema body.
+        let schema: serde_json::Value = match serde_json::from_str(&body) {
+            Ok(v) => v,
+            Err(e) => {
+                let msg = format!(r#"{{"error":"invalid JSON: {e}"}}"#);
+                let _ = send_json_response(&mut stream, 400, &msg);
+                return;
+            }
+        };
+
+        // Evaluate.
+        let result = evaluate(truth, &schema);
+        let response_body = match &result {
+            TruthResult::Accepted { transformed } => {
+                serde_json::json!({"status": "accepted", "transformed": transformed}).to_string()
+            }
+            TruthResult::Rejected { errors } => {
+                let errs: Vec<_> = errors
+                    .iter()
+                    .map(|e| {
+                        serde_json::json!({
+                            "message": e.message,
+                            "pointer": e.pointer,
+                            "keyword": e.keyword,
+                        })
                     })
-                })
-                .collect();
-            serde_json::json!({"status": "rejected", "errors": errs}).to_string()
-        }
+                    .collect();
+                serde_json::json!({"status": "rejected", "errors": errs}).to_string()
+            }
+        };
+
+        send_json_response(&mut stream, 200, &response_body)
     };
 
-    let resp = Response::from_string(response_body)
-        .with_status_code(StatusCode(200))
-        .with_header(json_content_type());
-    if let Err(e) = request.respond(resp) {
+    if let Err(e) = result {
         eprintln!("warning: failed to send response: {e}");
     }
+}
+
+fn send_json_response(stream: &mut TcpStream, status: u16, body: &str) -> std::io::Result<()> {
+    let status_text = match status {
+        200 => "OK",
+        400 => "Bad Request",
+        404 => "Not Found",
+        413 => "Payload Too Large",
+        _ => "Internal Server Error",
+    };
+    let response = format!(
+        "HTTP/1.1 {status} {status_text}\r\n\
+         Content-Type: application/json\r\n\
+         Content-Length: {}\r\n\
+         Connection: close\r\n\
+         \r\n\
+         {body}",
+        body.len()
+    );
+    stream.write_all(response.as_bytes())?;
+    stream.flush()?;
+    Ok(())
 }

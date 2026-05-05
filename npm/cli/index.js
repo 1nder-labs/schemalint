@@ -3,6 +3,7 @@
 
 const { spawnSync } = require('child_process');
 const fs = require('fs');
+const https = require('https');
 const os = require('os');
 const path = require('path');
 
@@ -44,7 +45,56 @@ function getBinaryPath() {
   return path.join(getCacheDir(), target, `schemalint${EXE_EXT}`);
 }
 
-function ensureBinary() {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https:') ? https : require('http');
+    const request = protocol.get(url, (response) => {
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        response.resume();
+        downloadFile(response.headers.location, destPath).then(resolve).catch(reject);
+        return;
+      }
+      if (response.statusCode !== 200) {
+        response.resume();
+        reject(new Error(`HTTP ${response.statusCode}`));
+        return;
+      }
+      const file = fs.createWriteStream(destPath);
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      file.on('error', (err) => {
+        file.destroy();
+        fs.unlink(destPath, () => {});
+        reject(err);
+      });
+      response.on('error', (err) => {
+        file.destroy();
+        fs.unlink(destPath, () => {});
+        reject(err);
+      });
+    });
+    request.on('error', (err) => {
+      fs.unlink(destPath, () => {});
+      reject(err);
+    });
+    request.setTimeout(120000, () => {
+      request.destroy();
+      fs.unlink(destPath, () => {});
+      reject(new Error('Request timeout'));
+    });
+  });
+}
+
+async function ensureBinary() {
   const binPath = getBinaryPath();
   const sentinelPath = binPath + '.verified';
 
@@ -65,22 +115,19 @@ function ensureBinary() {
 
   const archivePath = path.join(cacheDir, archiveName);
 
-  const { execSync } = require('child_process');
-
   // Download with retry (exponential backoff, max 3 attempts).
   let lastError = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      execSync(`curl -fsSL --connect-timeout 10 --max-time 120 -o "${archivePath}" "${url}"`, { stdio: 'pipe' });
+      await downloadFile(url, archivePath);
       lastError = null;
       break;
     } catch (e) {
-      lastError = e.stderr ? e.stderr.toString().trim() : e.message;
+      lastError = e.message;
       if (attempt < 3) {
         try { fs.unlinkSync(archivePath); } catch {}
         const delayMs = Math.pow(2, attempt) * 1000;
-        const end = Date.now() + delayMs;
-        while (Date.now() < end) { /* spin-wait; acceptable for brief CLI installer delays */ }
+        await sleep(delayMs);
       }
     }
   }
@@ -95,9 +142,21 @@ function ensureBinary() {
   // Extract based on platform.
   try {
     if (process.platform === 'win32') {
-      execSync(`powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${cacheDir}'"`, { stdio: 'pipe' });
+      const result = spawnSync(
+        'powershell',
+        ['-Command', 'Expand-Archive', '-Path', archivePath, '-DestinationPath', cacheDir],
+        { stdio: 'pipe' }
+      );
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(result.stderr.toString().trim());
     } else {
-      execSync(`tar -xzf "${archivePath}" -C "${cacheDir}"`, { stdio: 'pipe' });
+      const result = spawnSync(
+        'tar',
+        ['-xzf', archivePath, '-C', cacheDir],
+        { stdio: 'pipe' }
+      );
+      if (result.error) throw result.error;
+      if (result.status !== 0) throw new Error(result.stderr.toString().trim());
     }
   } catch (e) {
     const reason = e.stderr ? e.stderr.toString().trim() : e.message;
@@ -123,11 +182,13 @@ function ensureBinary() {
   return binPath;
 }
 
-try {
-  const binPath = ensureBinary();
-  const result = spawnSync(binPath, process.argv.slice(2), { stdio: 'inherit' });
-  process.exit(result.status ?? 1);
-} catch (err) {
-  console.error(`schemalint: ${err.message}`);
-  process.exit(1);
-}
+(async () => {
+  try {
+    const binPath = await ensureBinary();
+    const result = spawnSync(binPath, process.argv.slice(2), { stdio: 'inherit' });
+    process.exit(result.status ?? 1);
+  } catch (err) {
+    console.error(`schemalint: ${err.message}`);
+    process.exit(1);
+  }
+})();

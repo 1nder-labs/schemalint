@@ -26,8 +26,8 @@ fn cache_insert_get_hit() {
     let schema = make_dummy_schema();
     let bytes = serde_json::to_vec(&json!({"test": "hit"})).unwrap();
     let hash = hash_bytes(&bytes);
-    cache.insert(hash, schema.clone());
-    let cached = cache.get(hash);
+    cache.insert(hash, bytes.clone(), schema.clone());
+    let cached = cache.get(hash, &bytes);
     assert!(cached.is_some());
     assert_eq!(cached.unwrap().root_id, schema.root_id);
     assert_eq!(cached.unwrap().arena.len(), schema.arena.len());
@@ -39,16 +39,18 @@ fn cache_miss_different_content() {
     let schema = make_dummy_schema();
     let bytes = serde_json::to_vec(&json!({"content": "a"})).unwrap();
     let hash = hash_bytes(&bytes);
-    cache.insert(hash, schema);
-    let other_hash = hash_bytes(b"completely different content");
-    assert!(cache.get(other_hash).is_none());
+    cache.insert(hash, bytes, schema);
+    let other_bytes = b"completely different content";
+    let other_hash = hash_bytes(other_bytes);
+    assert!(cache.get(other_hash, other_bytes).is_none());
 }
 
 #[test]
 fn cache_miss_empty() {
     let cache = Cache::new();
-    let hash = hash_bytes(b"nothing inserted");
-    assert!(cache.get(hash).is_none());
+    let bytes = b"nothing inserted";
+    let hash = hash_bytes(bytes);
+    assert!(cache.get(hash, bytes).is_none());
 }
 
 #[test]
@@ -58,11 +60,11 @@ fn cache_clear_empties_all_entries() {
     let bytes2 = serde_json::to_vec(&json!({"b": 2})).unwrap();
     let h1 = hash_bytes(&bytes1);
     let h2 = hash_bytes(&bytes2);
-    cache.insert(h1, make_dummy_schema());
-    cache.insert(h2, make_dummy_schema());
+    cache.insert(h1, bytes1.clone(), make_dummy_schema());
+    cache.insert(h2, bytes2.clone(), make_dummy_schema());
     cache.clear();
-    assert!(cache.get(h1).is_none());
-    assert!(cache.get(h2).is_none());
+    assert!(cache.get(h1, &bytes1).is_none());
+    assert!(cache.get(h2, &bytes2).is_none());
 }
 
 #[test]
@@ -70,12 +72,14 @@ fn cache_multiple_inserts() {
     let mut cache = Cache::new();
     let s1 = make_dummy_schema();
     let s2 = schemalint::normalize::normalize(json!({"type": "integer"})).unwrap();
-    let h1 = hash_bytes(b"schema1");
-    let h2 = hash_bytes(b"schema2");
-    cache.insert(h1, s1.clone());
-    cache.insert(h2, s2.clone());
-    let got1 = cache.get(h1).unwrap();
-    let got2 = cache.get(h2).unwrap();
+    let b1 = b"schema1";
+    let b2 = b"schema2";
+    let h1 = hash_bytes(b1);
+    let h2 = hash_bytes(b2);
+    cache.insert(h1, b1.to_vec(), s1.clone());
+    cache.insert(h2, b2.to_vec(), s2.clone());
+    let got1 = cache.get(h1, b1).unwrap();
+    let got2 = cache.get(h2, b2).unwrap();
     assert_eq!(got1.arena.len(), s1.arena.len());
     assert_eq!(got2.arena.len(), s2.arena.len());
 }
@@ -85,10 +89,11 @@ fn cache_overwrite_same_hash() {
     let mut cache = Cache::new();
     let s1 = make_dummy_schema();
     let s2 = schemalint::normalize::normalize(json!({"type": "boolean"})).unwrap();
-    let hash = hash_bytes(b"same hash different schema");
-    cache.insert(hash, s1);
-    cache.insert(hash, s2.clone());
-    let cached = cache.get(hash).unwrap();
+    let bytes = b"same hash different schema";
+    let hash = hash_bytes(bytes);
+    cache.insert(hash, bytes.to_vec(), s1);
+    cache.insert(hash, bytes.to_vec(), s2.clone());
+    let cached = cache.get(hash, bytes).unwrap();
     assert_eq!(cached.arena.len(), s2.arena.len());
 }
 
@@ -108,8 +113,8 @@ fn disk_cache_roundtrip_write_read() {
     let schema = make_dummy_schema();
     let bytes = serde_json::to_vec(&json!({"disk": "roundtrip"})).unwrap();
     let hash = hash_bytes(&bytes);
-    cache.insert(hash, schema.clone());
-    let cached = cache.get(hash).unwrap();
+    cache.insert(hash, bytes.clone(), schema.clone());
+    let cached = cache.get(hash, &bytes).unwrap();
     assert_eq!(cached.root_id, schema.root_id);
     assert_eq!(cached.arena.len(), schema.arena.len());
 }
@@ -124,7 +129,7 @@ fn disk_cache_truncated_file_returns_none() {
     {
         let cache = DiskCache::with_cache_dir(dir.path().to_path_buf());
         let schema = make_dummy_schema();
-        cache.insert(hash, schema);
+        cache.insert(hash, bytes.clone(), schema);
     }
 
     // Corrupt the file on disk inside the PID-isolated subdirectory.
@@ -133,7 +138,7 @@ fn disk_cache_truncated_file_returns_none() {
 
     // New DiskCache: in-memory is empty, must fall back to disk.
     let fresh_cache = DiskCache::with_cache_dir(dir.path().to_path_buf());
-    assert!(fresh_cache.get(hash).is_none());
+    assert!(fresh_cache.get(hash, &bytes).is_none());
 }
 
 #[test]
@@ -146,7 +151,7 @@ fn disk_cache_invalid_version_header_returns_none() {
     {
         let cache = DiskCache::with_cache_dir(dir.path().to_path_buf());
         let schema = make_dummy_schema();
-        cache.insert(hash, schema);
+        cache.insert(hash, bytes.clone(), schema);
     }
 
     // Corrupt: overwrite with wrong version (99) and no body inside PID-isolated dir.
@@ -156,23 +161,25 @@ fn disk_cache_invalid_version_header_returns_none() {
 
     // New DiskCache: in-memory is empty, must fall back to disk.
     let fresh_cache = DiskCache::with_cache_dir(dir.path().to_path_buf());
-    assert!(fresh_cache.get(hash).is_none());
+    assert!(fresh_cache.get(hash, &bytes).is_none());
 }
 
 #[test]
 fn disk_cache_nonexistent_entry_returns_none() {
     let dir = tempfile::tempdir().unwrap();
     let cache = DiskCache::with_cache_dir(dir.path().to_path_buf());
-    let hash = hash_bytes(b"this file does not exist on disk");
-    assert!(cache.get(hash).is_none());
+    let bytes = b"this file does not exist on disk";
+    let hash = hash_bytes(bytes);
+    assert!(cache.get(hash, bytes).is_none());
 }
 
 #[test]
 fn disk_cache_empty_cache_dir_returns_none() {
     let dir = tempfile::tempdir().unwrap();
     let cache = DiskCache::with_cache_dir(dir.path().to_path_buf());
+    let bytes = b"";
     let hash = 0xdead_beef;
-    assert!(cache.get(hash).is_none());
+    assert!(cache.get(hash, bytes).is_none());
 }
 
 #[test]
@@ -182,14 +189,14 @@ fn disk_cache_second_get_hits_memory() {
     let schema = make_dummy_schema();
     let bytes = serde_json::to_vec(&json!({"mem": "cache"})).unwrap();
     let hash = hash_bytes(&bytes);
-    cache.insert(hash, schema.clone());
+    cache.insert(hash, bytes.clone(), schema.clone());
     // First get — reads from disk, populates memory
-    let _first = cache.get(hash).unwrap();
+    let _first = cache.get(hash, &bytes).unwrap();
     // Delete the file on disk from the PID-isolated subdirectory
     let file_path = pid_isolated(dir.path()).join(format!("{:016x}.bin", hash));
     fs::remove_file(&file_path).unwrap();
     // Second get — should hit in-memory, still return Some
-    let second = cache.get(hash);
+    let second = cache.get(hash, &bytes);
     assert!(second.is_some());
 }
 
@@ -201,13 +208,14 @@ fn multithreaded_insert_read() {
     let bytes = serde_json::to_vec(&json!({"mt": "shared"})).unwrap();
     let hash = hash_bytes(&bytes);
 
-    cache.insert(hash, schema.clone());
+    cache.insert(hash, bytes.clone(), schema.clone());
 
     let mut handles = vec![];
     for _ in 0..8 {
         let cache = Arc::clone(&cache);
+        let thread_bytes = bytes.clone();
         handles.push(thread::spawn(move || {
-            let cached = cache.get(hash);
+            let cached = cache.get(hash, &thread_bytes);
             assert!(cached.is_some());
             let c = cached.unwrap();
             assert_eq!(c.root_id, schema.root_id);

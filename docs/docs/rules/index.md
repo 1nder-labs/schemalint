@@ -10,10 +10,10 @@ This page lists all lint rules grouped by category.
 | [allOf](./keyword/allOf.md) | keyword | Forbid | `OAI-K-allOf` | `—` | 
 | [allof-with-ref](./structural/allof-with-ref.md) | structural | Forbid | `—` | `ANT-S-allof-with-ref` | 
 | [anyof-objects](./semantic/anyof-objects.md) | semantic | Warn | `OAI-S-anyof-objects` | `ANT-S-anyof-objects` | 
-| [contains](./keyword/contains.md) | keyword | Forbid | `—` | `ANT-K-contains` | 
+| [contains](./keyword/contains.md) | keyword | Forbid | `OAI-K-contains` | `ANT-K-contains` | 
 | [dependentRequired](./keyword/dependentRequired.md) | keyword | Forbid | `OAI-K-dependentRequired` | `ANT-K-dependentRequired` | 
 | [dependentSchemas](./keyword/dependentSchemas.md) | keyword | Forbid | `OAI-K-dependentSchemas` | `ANT-K-dependentSchemas` | 
-| [discriminator](./keyword/discriminator.md) | keyword | Forbid | `OAI-K-discriminator` | `ANT-K-discriminator` | 
+| [discriminator](./keyword/discriminator.md) | keyword | Forbid | `—` | `ANT-K-discriminator` | 
 | [else](./keyword/else.md) | keyword | Forbid | `OAI-K-else` | `ANT-K-else` | 
 | [empty-object](./semantic/empty-object.md) | semantic | Warn | `OAI-S-empty-object` | `ANT-S-empty-object` | 
 | [exclusiveMaximum](./keyword/exclusiveMaximum.md) | keyword | Forbid | `—` | `ANT-K-exclusiveMaximum` | 
@@ -29,6 +29,7 @@ This page lists all lint rules grouped by category.
 | [maximum](./keyword/maximum.md) | keyword | Forbid | `—` | `ANT-K-maximum` | 
 | [minItems-restricted](./restriction/minItems-restricted.md) | restriction | Forbid | `—` | `ANT-K-minItems-restricted` | 
 | [minLength](./keyword/minLength.md) | keyword | Forbid | `—` | `ANT-K-minLength` | 
+| [minProperties](./keyword/minProperties.md) | keyword | Forbid | `OAI-K-minProperties` | `—` | 
 | [minimum](./keyword/minimum.md) | keyword | Forbid | `—` | `ANT-K-minimum` | 
 | [multipleOf](./keyword/multipleOf.md) | keyword | Forbid | `—` | `ANT-K-multipleOf` | 
 | [not](./keyword/not.md) | keyword | Forbid | `OAI-K-not` | `ANT-K-not` | 
@@ -36,4 +37,5 @@ This page lists all lint rules grouped by category.
 | [prefixItems](./keyword/prefixItems.md) | keyword | Warn | `OAI-K-prefixItems` | `ANT-K-prefixItems` | 
 | [string-length-budget](./structural/string-length-budget.md) | structural | Forbid | `OAI-S-string-length-budget` | `—` | 
 | [then](./keyword/then.md) | keyword | Forbid | `OAI-K-then` | `ANT-K-then` | 
+| [unevaluatedProperties](./keyword/unevaluatedProperties.md) | keyword | Forbid | `OAI-K-unevaluatedProperties` | `—` | 
 | [uniqueItems](./keyword/uniqueItems.md) | keyword | Warn | `OAI-K-uniqueItems` | `ANT-K-uniqueItems` | 

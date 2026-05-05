@@ -6,16 +6,15 @@
 
 | Profile | Code |
 |---------|------|
-| openai.so.2026-04-30 | `OAI-K-discriminator` |
 | anthropic.so.2026-04-30 | `ANT-K-discriminator` |
 
 ## Description
 
-Flag usage of the 'discriminator' keyword, which is not supported by openai.so.2026-04-30
+Flag usage of the 'discriminator' keyword, which is not supported by anthropic.so.2026-04-30
 
 ## Rationale
 
-The openai.so.2026-04-30 structured-output provider rejects the 'discriminator' keyword. Schemas using this keyword may be rejected or silently altered.
+The anthropic.so.2026-04-30 structured-output provider rejects the 'discriminator' keyword. Schemas using this keyword may be rejected or silently altered.
 
 ## Bad Example
 
