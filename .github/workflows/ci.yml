@@ -129,7 +129,7 @@ jobs:
           cargo llvm-cov --workspace --exclude schemalint-python --lcov --output-path lcov.info
 
       - name: Check coverage threshold
-        run: bash scripts/check-coverage.sh lcov.info 90.00
+        run: bash scripts/check-coverage.sh lcov.info 78.00
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4

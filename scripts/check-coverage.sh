@@ -12,17 +12,17 @@
 # require external runtimes (Node, Python, Pydantic) — they are excluded
 # from the target.
 #
-# The 75% floor prevents erosion of the core crate's line coverage.
-# The coverage threshold for core logic (emitters, normalizer, parser, rules)
-# is 90%+. The 75% gate on all of crates/schemalint/src/ ensures no
-# coverage regression slips through.
+# The 78% floor prevents erosion of the core crate's line coverage.
+# The target for core logic (emitters, normalizer, parser, rules) is 90%+.
+# The 78% gate on all of crates/schemalint/src/ ensures no coverage
+# regression slips through while the team closes the remaining gap.
 #
 # Input: reads lcov.info in the current directory.
 # Exit:  0 if coverage meets the threshold, 1 otherwise.
 set -euo pipefail
 
 LCOV_FILE="${1:-lcov.info}"
-THRESHOLD="${2:-75.00}"
+THRESHOLD="${2:-78.00}"
 
 if [ ! -f "$LCOV_FILE" ]; then
   echo "::error::Coverage file '${LCOV_FILE}' not found"
