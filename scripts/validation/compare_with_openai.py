@@ -75,21 +75,20 @@ def validate_with_openai(schema_path: str, api_key: str) -> dict:
         schema = json.load(f)
 
     try:
-        client.chat.completions.create(
+        client.responses.create(
             model="gpt-4o-2024-08-06",
-            messages=[
+            input=[
                 {"role": "system", "content": "Return any valid JSON."},
                 {"role": "user", "content": "Test"}
             ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
+            text={
+                "format": {
+                    "type": "json_schema",
                     "name": "test",
                     "strict": True,
                     "schema": schema
                 }
-            },
-            max_tokens=1
+            }
         )
         return {"rejected": False, "error": None}
     except Exception as e:

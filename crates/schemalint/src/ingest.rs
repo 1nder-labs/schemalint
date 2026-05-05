@@ -17,6 +17,8 @@ pub struct DiscoverResponse {
     pub models: Vec<DiscoveredModel>,
     #[serde(default)]
     pub warnings: Vec<DiscoveryWarning>,
+    #[serde(default)]
+    pub provider_hint: Option<String>,
 }
 
 /// A non-fatal warning produced during discovery (e.g., unparseable schemas).
