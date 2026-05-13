@@ -142,6 +142,9 @@ struct AnyOfObjectsHint;
 impl Rule for AnyOfObjectsHint {
     fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         let node_ref = &arena[node];
+        if node_ref.parent.is_none() {
+            return Vec::new();
+        }
         let Some(Value::Array(branches)) = &node_ref.annotations.any_of else {
             return Vec::new();
         };

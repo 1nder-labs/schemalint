@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, 'fixtures');
 const packageRoot = path.join(__dirname, '..', '..');
-const binPath = path.join(packageRoot, 'bin', 'schemalint-zod.js');
+const serverPath = path.join(packageRoot, 'dist', 'main.js');
 
 function sendJsonRpc(
   child: ReturnType<typeof spawn>,
@@ -64,7 +64,7 @@ function sendRaw(
 }
 
 function spawnServer() {
-  return spawn('npx', ['tsx', binPath], {
+  return spawn('node', [serverPath], {
     cwd: fixturesDir,
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env },
@@ -121,9 +121,6 @@ describe('JSON-RPC server', () => {
         id: 2,
       });
       expect(JSON.parse(shutdownStr).result).toBe('ok');
-
-      // Close stdin so the readline interface unblocks and process exits
-      child.stdin?.end();
 
       const exitCode = await waitForExit(child);
       expect(exitCode).toBe(0);

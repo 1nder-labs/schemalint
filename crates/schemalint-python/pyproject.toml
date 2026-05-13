@@ -23,6 +23,9 @@ Homepage = "https://github.com/1nder-labs/schemalint"
 Documentation = "https://1nder-labs.github.io/schemalint"
 Repository = "https://github.com/1nder-labs/schemalint"
 
+[project.scripts]
+schemalint = "schemalint.cli:main"
+
 [tool.maturin]
 bindings = "bin"
 python-source = "python"

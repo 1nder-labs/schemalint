@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "code": "OAI-S-all-properties-required",
+    "severity": "error",
+    "message": "object has 1 property not listed in required: 'me'",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_47.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "Add every object property to required",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-all-properties-required"
+  }
+]

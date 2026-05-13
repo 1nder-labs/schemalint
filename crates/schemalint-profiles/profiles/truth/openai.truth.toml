@@ -1,7 +1,7 @@
 [provider]
 name = "openai"
 version = "2026-04-30"
-endpoint = "https://api.openai.com/v1/chat/completions"
+endpoint = "https://api.openai.com/v1/responses"
 model = "gpt-4o-2024-08-06"
 behavior = "strict"
 
@@ -183,10 +183,12 @@ test_schema = '''
 
 [[keywords]]
 name = "uniqueItems"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
 '''
+expected_error = "uniqueItems is not permitted"
+expected_error_path = "/uniqueItems"
 
 # ============================================================================
 # Rejected Keywords
@@ -294,10 +296,12 @@ expected_error_path = "/unevaluatedProperties"
 
 [[keywords]]
 name = "propertyNames"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "object", "propertyNames": { "pattern": "^[a-z]+$" }, "properties": {} }
 '''
+expected_error = "propertyNames is not permitted"
+expected_error_path = "/propertyNames"
 
 [[keywords]]
 name = "minProperties"
@@ -310,17 +314,21 @@ expected_error_path = "/minProperties"
 
 [[keywords]]
 name = "maxProperties"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "object", "maxProperties": 10, "properties": { "x": { "type": "string" } } }
 '''
+expected_error = "maxProperties is not permitted"
+expected_error_path = "/maxProperties"
 
 [[keywords]]
 name = "oneOf"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "object", "oneOf": [ { "properties": { "x": { "type": "string" } } }, { "properties": { "y": { "type": "number" } } } ] }
 '''
+expected_error = "oneOf is not permitted"
+expected_error_path = "/oneOf"
 
 # ============================================================================
 # Restricted Keywords

@@ -1,12 +1,13 @@
 # Validation Scripts
 
-These scripts validate schemalint's profile accuracy against the real OpenAI Responses API (Structured Outputs).
+These scripts validate schemalint's profile accuracy against the real OpenAI
+Responses API and Anthropic Claude API structured-output surfaces.
 
 ## Why?
 
 Documentation can drift from reality. These scripts provide **ground truth** by
-submitting schemas directly to OpenAI's Responses API with Structured Outputs
-and comparing the API's rejection reasons with schemalint's predicted errors.
+submitting schemas directly to provider APIs with Structured Outputs and
+comparing the API's rejection reasons with schemalint's predicted errors.
 
 ## Supported Models
 
@@ -36,6 +37,24 @@ python scripts/validation/validate_openai.py --model gpt-4o-mini schema_*.json
 
 # Save results:
 python scripts/validation/validate_openai.py --output results.json schema_*.json
+```
+
+### `validate_anthropic.py`
+
+Validates one or more schemas against the native Claude API. The script can
+exercise JSON outputs (`output_config.format`) or strict tool schemas
+(`input_schema` with `strict: true`), which share the same documented JSON
+Schema limitations.
+
+```bash
+# JSON output schema:
+python scripts/validation/validate_anthropic.py schema_01.json schema_02.json
+
+# Strict tool input_schema:
+python scripts/validation/validate_anthropic.py --surface tool schema_*.json
+
+# Different model:
+python scripts/validation/validate_anthropic.py --model sonnet-4.6 schema_*.json
 ```
 
 ### `compare_with_openai.py`
@@ -103,8 +122,8 @@ python scripts/validation/compare_with_openai.py --all \
 
 ### 4. Fix the profile and truth files
 
-- Edit `crates/schemalint-profiles/profiles/openai.so.2026-04-30.toml`
-- Edit `crates/schemalint-profiles/profiles/truth/openai.truth.toml`
+- Edit the matching profile under `crates/schemalint-profiles/profiles/`
+- Edit the matching truth file under `crates/schemalint-profiles/profiles/truth/`
 - Regenerate expected files for affected schemas
 - Run `cargo test --workspace --exclude schemalint-python`
 - Commit: `fix(profile): OpenAI {added,removed} support for {keyword}`
@@ -117,6 +136,8 @@ python scripts/validation/compare_with_openai.py --all \
 | Both accept | Profile is accurate |
 | schemalint rejects, OpenAI accepts | **False positive** — profile too strict |
 | schemalint accepts, OpenAI rejects | **False negative** — profile too lenient |
+| OpenAI transport/API error | Infrastructure failure — rerun; do not classify as schema acceptance/rejection |
+| Anthropic transport/API error | Infrastructure failure — rerun; do not classify as schema acceptance/rejection |
 
 | Scenario | Meaning |
 |----------|---------|
@@ -130,6 +151,7 @@ python scripts/validation/compare_with_openai.py --all \
 Create `scripts/validation/.env`:
 ```
 OPENAI_API_KEY=sk-proj-...
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 No export needed. Both scripts auto-load from `.env`.

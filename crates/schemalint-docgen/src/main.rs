@@ -189,11 +189,11 @@ fn build_index(rules: &BTreeMap<String, DedupedRule>, profiles: &[ProfileInfo]) 
     let mut out = String::from("# Rule Reference\n\n");
     out.push_str("This page lists all lint rules grouped by category.\n\n");
 
-    out.push_str("| Rule | Category | Severity | ");
+    out.push_str("| Rule | Category | Severity");
     for p in profiles {
-        out.push_str(&format!("{} | ", p.name));
+        out.push_str(&format!(" | {}", p.name));
     }
-    out.push_str("\n|------|----------|----------|");
+    out.push_str(" |\n|------|----------|----------|");
     for _ in profiles {
         out.push_str("------|");
     }
@@ -201,7 +201,7 @@ fn build_index(rules: &BTreeMap<String, DedupedRule>, profiles: &[ProfileInfo]) 
 
     for rule in rules.values() {
         out.push_str(&format!(
-            "| [{}](./{}/{}.md) | {} | {} | ",
+            "| [{}](./{}/{}.md) | {} | {}",
             rule.name,
             rule.category.as_str(),
             rule.name,
@@ -215,9 +215,9 @@ fn build_index(rules: &BTreeMap<String, DedupedRule>, profiles: &[ProfileInfo]) 
                 .find(|(pn, _)| pn == &p.name)
                 .map(|(_, c)| c.as_str())
                 .unwrap_or("—");
-            out.push_str(&format!("`{code}` | "));
+            out.push_str(&format!(" | `{code}`"));
         }
-        out.push('\n');
+        out.push_str(" |\n");
     }
     out
 }

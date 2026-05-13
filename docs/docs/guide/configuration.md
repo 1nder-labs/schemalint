@@ -8,9 +8,9 @@ Schemalint can be configured through CLI arguments, language-specific config fil
 schemalint check [OPTIONS] [PATHS]...
 
 OPTIONS:
-  -p, --profile <PROFILE>    Provider profile (can be specified multiple times)
+  -p, --profile <PROFILE>    Provider profile ID or TOML path (can be specified multiple times)
   -f, --format <FORMAT>      Output format: human, json, sarif, gha, junit
-  --cache-dir <DIR>          Directory for cached normalized schemas
+  -o, --output <OUTPUT>      Write output to a file instead of stdout
 ```
 
 ## Python (pyproject.toml)

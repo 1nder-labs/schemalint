@@ -14,21 +14,16 @@ Object nesting depth must not exceed 10 levels
 
 ## Rationale
 
-openai.so.2026-04-30 limits object nesting depth to 10 levels. Exceeding this causes API rejection.
+openai.so.2026-04-30 limits object nesting depth to 10 levels.
 
 ## Bad Example
 
 ```json
-{ "type": "object", "properties": { "a": { "type": "object", "properties": { "b": { "type": "object", "properties": { "c": { "type": "object", "properties": { "d": { "type": "object", "properties": { "e": { "type": "object", "properties": { "f": { "type": "object", "properties": { "g": { "type": "object", "properties": { "h": { "type": "object", "properties": { "i": { "type": "object", "properties": { "j": { "type": "object", "properties": { "k": { "type": "object", "properties": {} } } } } } } } } } } } } } } } } } } } } } } }
+{ "type": "object", "properties": { "nested": { "type": "object", "properties": { "too_deep": { "type": "object" } } } } }
 ```
 
 ## Good Example
 
 ```json
-{
-  "type": "object",
-  "properties": {
-    "name": { "type": "string" }
-  }
-}
+{ "type": "object", "properties": { "name": { "type": "string" } } }
 ```

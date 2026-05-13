@@ -8,6 +8,10 @@ use serde::Deserialize;
 
 use crate::ingest::DiscoverResponse;
 
+mod resolve;
+
+use resolve::{resolve_compiled_helper_path, resolve_helper_path, resolve_tsx_cmd};
+
 const DISCOVER_TIMEOUT_SECS: u64 = 60;
 const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 
@@ -59,17 +63,31 @@ pub struct NodeHelper {
 impl NodeHelper {
     /// Spawn the Node helper subprocess.
     ///
-    /// Resolves `tsx` as the TypeScript runner, then resolves the helper bin
-    /// path relative to the workspace. Uses `npx tsx` fallback if `tsx` is not
-    /// on PATH. If `node_path` provides an explicit executable, it is used as
-    /// the runner with the bin path as the only argument.
+    /// Prefers the compiled helper from `typescript/schemalint-zod/dist`.
+    /// Falls back to the TypeScript source helper through `tsx` when the
+    /// compiled entry is unavailable. If `node_path` provides an explicit
+    /// executable, it is used as the runner with the resolved helper entry.
     pub fn spawn(node_path: Option<&str>) -> Result<Self, NodeError> {
-        let bin = resolve_helper_path()?;
+        let compiled_bin = resolve_compiled_helper_path();
 
         let (runner, args): (String, Vec<String>) = if let Some(path) = node_path {
-            (path.to_string(), vec![bin.to_string_lossy().into_owned()])
+            let source_bin;
+            let entry = match compiled_bin.as_ref() {
+                Some(compiled) => compiled,
+                None => {
+                    source_bin = resolve_helper_path()?;
+                    &source_bin
+                }
+            };
+            (path.to_string(), vec![entry.to_string_lossy().into_owned()])
+        } else if let Some(compiled) = compiled_bin {
+            (
+                "node".to_string(),
+                vec![compiled.to_string_lossy().into_owned()],
+            )
         } else {
-            let bin_str = bin.to_string_lossy().into_owned();
+            let source_bin = resolve_helper_path()?;
+            let bin_str = source_bin.to_string_lossy().into_owned();
             let (runner_name, extra_args) = resolve_tsx_cmd()?;
             let mut all_args = extra_args;
             all_args.push(bin_str);
@@ -360,82 +378,4 @@ impl Drop for NodeHelper {
             }
         }
     }
-}
-
-/// Resolve the `tsx` runner command.
-///
-/// Returns `(executable, extra_args)` where extra_args are passed before the
-/// bin path. Tries `tsx` directly first; falls back to `npx tsx`.
-/// Each probe is bounded by a 2-second timeout to prevent hangs.
-fn resolve_tsx_cmd() -> Result<(String, Vec<String>), NodeError> {
-    const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
-
-    // Try standalone tsx
-    if probe_command("tsx", PROBE_TIMEOUT) {
-        return Ok(("tsx".to_string(), vec![]));
-    }
-    // Fall back to npx tsx
-    if probe_command("npx", PROBE_TIMEOUT) {
-        return Ok(("npx".to_string(), vec!["tsx".to_string()]));
-    }
-    Err(NodeError::NotInstalled(
-        "tsx or npx not found — install tsx via: npm install -g tsx".to_string(),
-    ))
-}
-
-/// Check whether a command is available on PATH with a bounded timeout.
-fn probe_command(cmd: &str, timeout: Duration) -> bool {
-    match Command::new(cmd)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(mut child) => {
-            // Give the child `timeout` to exit; kill on timeout.
-            let start = Instant::now();
-            loop {
-                match child.try_wait() {
-                    Ok(Some(status)) => return status.success(),
-                    Ok(None) => {
-                        if Instant::now() - start >= timeout {
-                            let _ = child.kill();
-                            let _ = child.wait();
-                            return false;
-                        }
-                        thread::sleep(Duration::from_millis(50));
-                    }
-                    Err(_) => return false,
-                }
-            }
-        }
-        Err(_) => false,
-    }
-}
-
-/// Resolve the path to the `schemalint-zod` helper bin entry.
-///
-/// Returns the absolute path to `typescript/schemalint-zod/bin/schemalint-zod.js`
-/// relative to the workspace root. Verifies the file exists.
-fn resolve_helper_path() -> Result<std::path::PathBuf, NodeError> {
-    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    // CARGO_MANIFEST_DIR = <workspace>/crates/schemalint
-    // Workspace root = ../../ from the manifest dir
-    let ws_root = manifest_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .ok_or_else(|| {
-            NodeError::SpawnFailed(format!(
-                "cannot resolve workspace root from CARGO_MANIFEST_DIR '{}'",
-                manifest_dir.display()
-            ))
-        })?;
-    let bin_path = ws_root.join("typescript/schemalint-zod/bin/schemalint-zod.js");
-    if !bin_path.exists() {
-        return Err(NodeError::SpawnFailed(format!(
-            "helper binary not found at '{}' — ensure typescript/schemalint-zod is built",
-            bin_path.display()
-        )));
-    }
-    Ok(bin_path)
 }

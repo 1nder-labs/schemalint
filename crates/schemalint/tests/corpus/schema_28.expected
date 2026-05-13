@@ -1,9 +1,36 @@
 [
   {
+    "code": "OAI-K-maxProperties",
+    "severity": "error",
+    "message": "keyword 'maxProperties' is not supported by openai.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_28.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-maxProperties"
+  },
+  {
     "code": "OAI-K-minProperties",
     "severity": "error",
     "message": "keyword 'minProperties' is not supported by openai.so.2026-04-30",
     "pointer": "",
-    "profile": "openai.so.2026-04-30"
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_28.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-minProperties"
+  },
+  {
+    "code": "OAI-S-all-properties-required",
+    "severity": "error",
+    "message": "object has 1 property not listed in required: 'a'",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_28.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "Add every object property to required",
+    "seeUrl": "https://schemalint.dev/rules/OAI-S-all-properties-required"
   }
 ]

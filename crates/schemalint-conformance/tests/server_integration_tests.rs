@@ -3,7 +3,10 @@ use std::net::TcpStream;
 use std::process::{Child, Command};
 use std::time::Duration;
 
-fn start_server(truth_dir: &std::path::Path) -> (Child, String) {
+fn start_server(
+    truth_dir: &std::path::Path,
+    max_body_size: Option<usize>,
+) -> Option<(Child, String)> {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_schemalint-conformance"));
     cmd.arg("--truth-dir")
         .arg(truth_dir)
@@ -11,6 +14,9 @@ fn start_server(truth_dir: &std::path::Path) -> (Child, String) {
         .arg("0")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    if let Some(limit) = max_body_size {
+        cmd.arg("--max-body-size").arg(limit.to_string());
+    }
 
     let mut child = cmd.spawn().expect("failed to start conformance server");
 
@@ -19,13 +25,25 @@ fn start_server(truth_dir: &std::path::Path) -> (Child, String) {
     let stdout = child.stdout.take().expect("stdout not captured");
     let mut reader = std::io::BufReader::new(stdout);
     use std::io::BufRead;
-    reader.read_line(&mut addr).expect("failed to read address");
+    let bytes = reader.read_line(&mut addr).expect("failed to read address");
     let addr = addr.trim().to_string();
+    if bytes == 0 || addr.is_empty() {
+        let mut stderr = String::new();
+        if let Some(mut stderr_pipe) = child.stderr.take() {
+            let _ = stderr_pipe.read_to_string(&mut stderr);
+        }
+        let _ = child.wait();
+        if stderr.contains("Operation not permitted") || stderr.contains("os error 1") {
+            eprintln!("skipping conformance server test: local TCP bind is not permitted");
+            return None;
+        }
+        panic!("server did not print a bound address; stderr:\n{stderr}");
+    }
 
     // Give the server time to start.
     std::thread::sleep(Duration::from_millis(500));
 
-    (child, addr)
+    Some((child, addr))
 }
 
 fn post_json(addr: &str, path: &str, body: &str) -> (u16, String) {
@@ -85,7 +103,9 @@ expected_error_path = "/allOf"
     )
     .unwrap();
 
-    let (mut child, addr) = start_server(dir.path());
+    let Some((mut child, addr)) = start_server(dir.path(), None) else {
+        return;
+    };
 
     // Test accept.
     let (status, body) = post_json(
@@ -146,26 +166,9 @@ test_schema = '''
     )
     .unwrap();
 
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_schemalint-conformance"));
-    cmd.arg("--truth-dir")
-        .arg(dir.path())
-        .arg("--port")
-        .arg("0")
-        .arg("--max-body-size")
-        .arg("10")
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-
-    let mut child = cmd.spawn().expect("failed to start conformance server");
-
-    let mut addr = String::new();
-    let stdout = child.stdout.take().expect("stdout not captured");
-    let mut reader = std::io::BufReader::new(stdout);
-    use std::io::BufRead;
-    reader.read_line(&mut addr).expect("failed to read address");
-    let addr = addr.trim().to_string();
-
-    std::thread::sleep(Duration::from_millis(500));
+    let Some((mut child, addr)) = start_server(dir.path(), Some(10)) else {
+        return;
+    };
 
     // Send 100-byte body when limit is 10 → expect HTTP 413.
     let body = "x".repeat(100);

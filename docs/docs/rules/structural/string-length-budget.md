@@ -10,11 +10,11 @@
 
 ## Description
 
-Total string length (property names + enum values) must not exceed 120000
+Total property and enum string length must not exceed 120000
 
 ## Rationale
 
-openai.so.2026-04-30 imposes a string length budget of 120000 across all property names and enum values.
+openai.so.2026-04-30 enforces a schema string-length budget.
 
 ## Bad Example
 
@@ -25,10 +25,5 @@ openai.so.2026-04-30 imposes a string length budget of 120000 across all propert
 ## Good Example
 
 ```json
-{
-  "type": "object",
-  "properties": {
-    "name": { "type": "string" }
-  }
-}
+{ "type": "object", "properties": { "name": { "type": "string" } } }
 ```

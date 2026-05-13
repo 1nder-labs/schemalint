@@ -1,4 +1,4 @@
-interface SourceMapEntry {
+export interface SourceMapEntry {
     file: string;
     line?: number;
 }
@@ -28,5 +28,4 @@ export interface DiscoverResponse {
  * 6. Converts schemas to JSON Schema via zod-to-json-schema or native.
  */
 export declare function discoverZodSchemas(sourceGlob: string): Promise<DiscoverResponse>;
-export {};
 //# sourceMappingURL=discover.d.ts.map

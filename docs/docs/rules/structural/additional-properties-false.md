@@ -15,27 +15,16 @@ Every object schema must declare additionalProperties: false
 
 ## Rationale
 
-Providers require all object nodes to explicitly set additionalProperties: false to guarantee no unexpected properties appear in responses.
+Providers require object nodes to explicitly reject extra properties.
 
 ## Bad Example
 
 ```json
-{
-  "type": "object",
-  "properties": {
-    "name": { "type": "string" }
-  }
-}
+{ "type": "object", "properties": { "name": { "type": "string" } } }
 ```
 
 ## Good Example
 
 ```json
-{
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "name": { "type": "string" }
-  }
-}
+{ "type": "object", "additionalProperties": false, "properties": { "name": { "type": "string" } } }
 ```

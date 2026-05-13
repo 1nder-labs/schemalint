@@ -14,7 +14,7 @@ The root schema must be of type object
 
 ## Rationale
 
-Structured-output providers require the top-level schema to be an object. Array, string, or primitive root schemas are rejected at the API level.
+Structured-output providers require the top-level schema to be an object.
 
 ## Bad Example
 
@@ -30,8 +30,6 @@ Structured-output providers require the top-level schema to be an object. Array,
 ```json
 {
   "type": "object",
-  "properties": {
-    "name": { "type": "string" }
-  }
+  "properties": { "name": { "type": "string" } }
 }
 ```

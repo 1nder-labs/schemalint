@@ -1,8 +1,13 @@
 import { discoverZodSchemas } from './discover.js';
-const METHODS = new Set(['discover', 'shutdown']);
 function sendResponse(id, result) {
     const response = { jsonrpc: '2.0', result, id };
     process.stdout.write(JSON.stringify(response) + '\n');
+}
+function sendFinalResponse(id, result) {
+    const response = { jsonrpc: '2.0', result, id };
+    process.stdout.write(JSON.stringify(response) + '\n', () => {
+        process.exit(0);
+    });
 }
 function sendError(id, code, message, data) {
     const error = {
@@ -52,7 +57,7 @@ async function processLine(line) {
         return true;
     }
     if (method === 'shutdown') {
-        sendResponse(reqId, 'ok');
+        sendFinalResponse(reqId, 'ok');
         return false;
     }
     if (method === '') {

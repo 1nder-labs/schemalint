@@ -25,6 +25,8 @@ import tempfile
 from pathlib import Path
 from datetime import datetime
 
+from openai_errors import is_openai_schema_error
+
 # Load .env file from script directory if present
 def _load_env():
     env_path = Path(__file__).resolve().parent / ".env"
@@ -91,12 +93,14 @@ def validate_with_openai(schema_path: str, api_key: str) -> dict:
             }
         )
         return {"rejected": False, "error": None}
-    except Exception as e:
-        err_str = str(e)
+    except Exception as error:
+        err_str = str(error)
         if "401" in err_str or "invalid_api_key" in err_str.lower():
             print(f"FATAL: Authentication error: {err_str[:200]}", file=sys.stderr)
             sys.exit(1)
-        return {"rejected": True, "error": err_str}
+        if not is_openai_schema_error(error):
+            return {"status": "error", "rejected": None, "error": err_str}
+        return {"status": "rejected", "rejected": True, "error": err_str}
 
 
 def compare_one(schema_path: str, api_result: dict = None, api_key: str = None):
@@ -105,16 +109,47 @@ def compare_one(schema_path: str, api_result: dict = None, api_key: str = None):
     schemalint_diags = run_schemalint(schema_path)
 
     if api_result:
-        api_rejected = api_result.get("status") == "rejected"
+        api_status = api_result.get("status")
+        if api_status not in ("accepted", "rejected"):
+            return {
+                "schema": schema_path,
+                "name": name,
+                "verdict": "API_ERROR",
+                "schemalint": {
+                    "issue_count": len(schemalint_diags),
+                    "diagnostics": schemalint_diags
+                },
+                "openai": {
+                    "rejected": None,
+                    "error": api_result.get("api_error")
+                }
+            }
+        api_rejected = api_status == "rejected"
         api_error = api_result.get("api_error")
     elif api_key:
         result = validate_with_openai(schema_path, api_key)
+        if result.get("status") == "error":
+            return {
+                "schema": schema_path,
+                "name": name,
+                "verdict": "API_ERROR",
+                "schemalint": {
+                    "issue_count": len(schemalint_diags),
+                    "diagnostics": schemalint_diags
+                },
+                "openai": {
+                    "rejected": None,
+                    "error": result["error"]
+                }
+            }
         api_rejected = result["rejected"]
         api_error = result["error"]
     else:
         raise ValueError("Need either --api-results or OPENAI_API_KEY")
 
-    schemalint_has_errors = len(schemalint_diags) > 0
+    schemalint_has_errors = any(
+        d.get("severity") == "error" for d in schemalint_diags
+    )
 
     if schemalint_has_errors and not api_rejected:
         verdict = "FALSE_POSITIVE"
@@ -207,9 +242,13 @@ def main():
     fps = sum(1 for r in results if r["verdict"] == "FALSE_POSITIVE")
     fns = sum(1 for r in results if r["verdict"] == "FALSE_NEGATIVE")
     agree = sum(1 for r in results if r["verdict"].startswith("AGREE"))
+    api_errors = sum(1 for r in results if r["verdict"] == "API_ERROR")
     total = len(results)
     print(f"\nSaved to {outpath}", file=sys.stderr)
-    print(f"Total: {total}  |  Agree: {agree}  |  False positives: {fps}  |  False negatives: {fns}", file=sys.stderr)
+    print(
+        f"Total: {total}  |  Agree: {agree}  |  False positives: {fps}  |  False negatives: {fns}  |  API errors: {api_errors}",
+        file=sys.stderr,
+    )
 
     if fps > 0 or fns > 0:
         print(f"\nMISMATCHES:", file=sys.stderr)
@@ -222,6 +261,13 @@ def main():
                     codes = [d.get('code','?') for d in diags[:3]]
                     print(f"    schemalint: {codes}", file=sys.stderr)
                 print(f"    openai: {api_err}", file=sys.stderr)
+
+    if api_errors > 0:
+        print(f"\nAPI ERRORS:", file=sys.stderr)
+        for r in results:
+            if r["verdict"] == "API_ERROR":
+                api_err = (r["openai"].get("error") or "")[:120]
+                print(f"  {r['name']:20s}  {api_err}", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,16 @@
 [
   {
+    "code": "OAI-K-oneOf",
+    "severity": "error",
+    "message": "keyword 'oneOf' is not supported by openai.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_04.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-oneOf"
+  },
+  {
     "code": "OAI-S-object-root",
     "severity": "error",
     "message": "root schema must be an object",

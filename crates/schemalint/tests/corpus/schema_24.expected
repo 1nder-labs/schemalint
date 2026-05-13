@@ -1,5 +1,16 @@
 [
   {
+    "code": "OAI-K-not",
+    "severity": "error",
+    "message": "keyword 'not' is not supported by openai.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_24.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-not"
+  },
+  {
     "code": "OAI-K-allOf",
     "severity": "error",
     "message": "keyword 'allOf' is not supported by openai.so.2026-04-30",
@@ -11,15 +22,15 @@
     "seeUrl": "https://schemalint.dev/rules/OAI-K-allOf"
   },
   {
-    "code": "OAI-K-not",
+    "code": "OAI-K-oneOf",
     "severity": "error",
-    "message": "keyword 'not' is not supported by openai.so.2026-04-30",
+    "message": "keyword 'oneOf' is not supported by openai.so.2026-04-30",
     "pointer": "",
     "source": {
       "file": "crates/schemalint/tests/corpus/schema_24.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/OAI-K-not"
+    "seeUrl": "https://schemalint.dev/rules/OAI-K-oneOf"
   },
   {
     "code": "OAI-S-object-root",

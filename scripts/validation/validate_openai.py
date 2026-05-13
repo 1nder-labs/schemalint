@@ -21,6 +21,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from openai_errors import is_openai_schema_error
+
 # Load .env file from script directory if present
 def _load_env():
     env_path = Path(__file__).resolve().parent / ".env"
@@ -105,6 +107,15 @@ def validate_schema(schema_path: str, api_key: Optional[str] = None, model: str 
         }
     except Exception as e:
         error_str = str(e)
+        if not is_openai_schema_error(e):
+            return {
+                "schema_path": schema_path,
+                "model": model_config["id"],
+                "model_key": model,
+                "status": "error",
+                "schema_rejected": False,
+                "api_error": error_str
+            }
         return {
             "schema_path": schema_path,
             "model": model_config["id"],
@@ -186,7 +197,13 @@ Models:
     # Summary
     accepted = sum(1 for r in results if r["status"] == "accepted")
     rejected = sum(1 for r in results if r["status"] == "rejected")
-    print(f"\nSummary: {accepted} accepted, {rejected} rejected (model: {args.model})", file=sys.stderr)
+    errors = sum(1 for r in results if r["status"] == "error")
+    print(
+        f"\nSummary: {accepted} accepted, {rejected} rejected, {errors} transport/API errors (model: {args.model})",
+        file=sys.stderr,
+    )
+    if errors:
+        sys.exit(2)
 
     # If tested against ft model, flag which keywords need a separate profile
     if args.model == "ft":
