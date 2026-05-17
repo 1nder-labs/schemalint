@@ -126,7 +126,7 @@ fn test_emit_json_multi_diag() {
     assert_eq!(d0["source"]["col"], 8);
     assert_eq!(d0["profile"], "openai.so");
     assert_eq!(d0["hint"], "hint text");
-    assert_eq!(d0["seeUrl"], "https://schemalint.dev/rules/OAI-K-allOf");
+    assert_eq!(d0["seeUrl"], "https://1nder-labs.github.io/schemalint/rules/OAI-K-allOf");
     let d1 = &parsed["diagnostics"][1];
     assert_eq!(d1["severity"], "warning");
     assert!(d1.get("hint").is_none() || d1["hint"].is_null());

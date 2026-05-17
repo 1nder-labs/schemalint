@@ -42,15 +42,15 @@ expression: output
       ],
       "tool": {
         "driver": {
-          "informationUri": "https://schemalint.dev",
+          "informationUri": "https://1nder-labs.github.io/schemalint",
           "name": "schemalint",
           "rules": [
             {
-              "helpUri": "https://schemalint.dev/rules/A-K-first",
+              "helpUri": "https://1nder-labs.github.io/schemalint/rules/A-K-first",
               "id": "A-K-first"
             },
             {
-              "helpUri": "https://schemalint.dev/rules/Z-K-last",
+              "helpUri": "https://1nder-labs.github.io/schemalint/rules/Z-K-last",
               "id": "Z-K-last"
             }
           ]

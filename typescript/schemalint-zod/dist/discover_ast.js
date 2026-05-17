@@ -1,12 +1,8 @@
 /**
  * Find top-level `const` declarations that are `z.object({...})` calls.
- * If `zodFormatRefs` is provided, non-exported schemas referenced by
- * zodTextFormat/zodResponseFormat are also included.
  */
-export function findExportedSchemaCalls(sourceFile, tsModule, zodFormatRefs) {
+export function findExportedSchemaCalls(sourceFile, tsModule) {
     const results = [];
-    // Collect all const declarations (both exported and non-exported) for zodFormatRef matching
-    const allConstDeclarations = new Map();
     function walk(node) {
         if (tsModule.isVariableStatement(node) &&
             node.declarationList.declarations.length === 1) {
@@ -19,7 +15,6 @@ export function findExportedSchemaCalls(sourceFile, tsModule, zodFormatRefs) {
                         name: decl.name.text,
                         objectArg: call,
                     };
-                    allConstDeclarations.set(decl.name.text, entry);
                     if (hasExportModifier(node, tsModule)) {
                         results.push(entry);
                     }
@@ -37,50 +32,12 @@ export function findExportedSchemaCalls(sourceFile, tsModule, zodFormatRefs) {
                     objectArg: call,
                 };
                 results.push(entry);
-                allConstDeclarations.set('default', entry);
             }
         }
         tsModule.forEachChild(node, walk);
     }
     tsModule.forEachChild(sourceFile, walk);
-    // Add schemas referenced in zodTextFormat/zodResponseFormat calls that
-    // are not exported but are declared in this file (non-exported schemas
-    // referenced by format helpers).
-    if (zodFormatRefs && zodFormatRefs.size > 0) {
-        for (const name of zodFormatRefs) {
-            const decl = allConstDeclarations.get(name);
-            if (decl && !results.some(r => r.name === name)) {
-                results.push(decl);
-            }
-        }
-    }
     return results;
-}
-/**
- * Scan for zodTextFormat(MySchema, "name") and zodResponseFormat(MySchema, "name")
- * call expressions. Returns the list of schema names referenced as the first argument.
- */
-export function scanZodTextFormatRefs(sourceFile, tsModule) {
-    const refs = [];
-    function walk(node) {
-        if (!tsModule.isCallExpression(node)) {
-            tsModule.forEachChild(node, walk);
-            return;
-        }
-        // Match zodTextFormat(...) or zodResponseFormat(...)
-        if (tsModule.isIdentifier(node.expression)) {
-            const name = node.expression.text;
-            if ((name === 'zodTextFormat' || name === 'zodResponseFormat') &&
-                node.arguments.length >= 1 &&
-                tsModule.isIdentifier(node.arguments[0])) {
-                refs.push(node.arguments[0].text);
-                return; // no need to walk children of this call
-            }
-        }
-        tsModule.forEachChild(node, walk);
-    }
-    tsModule.forEachChild(sourceFile, walk);
-    return refs;
 }
 /**
  * Scan a source file's import declarations for provider SDKs.
@@ -97,13 +54,19 @@ export function scanProviderImports(sourceFile, tsModule) {
         if (mod === 'openai' || mod.startsWith('openai/')) {
             return 'openai';
         }
+        if (mod === '@ai-sdk/openai' || mod.startsWith('@ai-sdk/openai/')) {
+            return 'openai';
+        }
         if (mod === '@anthropic-ai/sdk' || mod.startsWith('@anthropic-ai/')) {
+            return 'anthropic';
+        }
+        if (mod === '@ai-sdk/anthropic' || mod.startsWith('@ai-sdk/anthropic/')) {
             return 'anthropic';
         }
     }
     return undefined;
 }
-function hasExportModifier(node, tsModule) {
+export function hasExportModifier(node, tsModule) {
     if (!tsModule.canHaveModifiers(node))
         return false;
     const modifiers = tsModule.getModifiers(node);
@@ -119,7 +82,7 @@ function hasExportModifier(node, tsModule) {
  * Given a node, if it is `z.object({...})`, return the ObjectLiteralExpression argument.
  * Handles chaining: `z.object({...}).extend({...})` — returns the initial object.
  */
-function findZObjectCall(node, tsModule) {
+export function findZObjectCall(node, tsModule) {
     // Unwrap parenthesized expressions
     while (tsModule.isParenthesizedExpression(node)) {
         node = node.expression;
@@ -200,5 +163,14 @@ export function buildSourceMapFromObjectLiteral(objLit, sourceFile, tsModule) {
         }
     }
     return map;
+}
+export function buildRootSourceMap(node, sourceFile) {
+    const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    return {
+        '': {
+            file: sourceFile.fileName,
+            line: line + 1,
+        },
+    };
 }
 //# sourceMappingURL=discover_ast.js.map

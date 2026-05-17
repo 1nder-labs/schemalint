@@ -144,7 +144,7 @@ error[OAI-K-allOf]: keyword 'allOf' is not supported by openai.so.2026-04-30
      |
      = profile: openai.so.2026-04-30
      = schema path: /
-     = see: https://schemalint.dev/rules/OAI-K-allOf
+     = see: https://1nder-labs.github.io/schemalint/rules/OAI-K-allOf
 
 1 issue found (1 error, 0 warnings) across 1 schema
 ```

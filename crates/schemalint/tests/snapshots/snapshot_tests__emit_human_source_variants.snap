@@ -7,27 +7,27 @@ error[TST-FULL]: full source span with line and col
      |
      = profile: test
      = schema path: /full
-     = see: https://schemalint.dev/rules/TST-FULL
+     = see: https://1nder-labs.github.io/schemalint/rules/TST-FULL
 
 error[TST-LINEONLY]: line only, no column
    --> variants.json:20
      |
      = profile: test
      = schema path: /lineonly
-     = see: https://schemalint.dev/rules/TST-LINEONLY
+     = see: https://1nder-labs.github.io/schemalint/rules/TST-LINEONLY
 
 warning[TST-FILEONLY]: file only, no line or col
    --> variants.json
      |
      = profile: test
      = schema path: /fileonly
-     = see: https://schemalint.dev/rules/TST-FILEONLY
+     = see: https://1nder-labs.github.io/schemalint/rules/TST-FILEONLY
 
 warning[TST-NOSOURCE]: no source span at all — falls back to path
    --> variants.json
      |
      = profile: test
      = schema path: /nosource
-     = see: https://schemalint.dev/rules/TST-NOSOURCE
+     = see: https://1nder-labs.github.io/schemalint/rules/TST-NOSOURCE
 
 4 issues found (2 errors, 2 warnings) across 1 schema in 0ms

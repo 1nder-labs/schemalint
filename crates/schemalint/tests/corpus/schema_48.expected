@@ -9,7 +9,7 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Add every object property to required",
-    "seeUrl": "https://schemalint.dev/rules/OAI-S-all-properties-required"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-all-properties-required"
   },
   {
     "code": "OAI-S-external-refs",
@@ -20,7 +20,7 @@
       "file": "crates/schemalint/tests/corpus/schema_48.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/OAI-S-external-refs"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-external-refs"
   },
   {
     "code": "OAI-S-external-refs",
@@ -31,6 +31,6 @@
       "file": "crates/schemalint/tests/corpus/schema_48.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/OAI-S-external-refs"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-external-refs"
   }
 ]

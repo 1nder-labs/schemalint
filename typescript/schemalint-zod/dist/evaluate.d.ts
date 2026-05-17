@@ -14,4 +14,5 @@
  * Requires `tsx` for JIT compilation of TypeScript imports.
  */
 export declare function evaluateSchema(filePath: string, exportName: string): Promise<Record<string, unknown>>;
+export declare function evaluateSyntheticSchema(source: string, exportName: string, baseFilePath: string): Promise<Record<string, unknown>>;
 //# sourceMappingURL=evaluate.d.ts.map

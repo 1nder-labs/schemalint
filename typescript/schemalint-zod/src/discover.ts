@@ -1,10 +1,10 @@
-import { evaluateSchema } from './evaluate.js';
+import { evaluateSchema, evaluateSyntheticSchema } from './evaluate.js';
 import {
   buildSourceMapFromObjectLiteral,
   findExportedSchemaCalls,
   scanProviderImports,
-  scanZodTextFormatRefs,
 } from './discover_ast.js';
+import { findSchemaTargets, type SchemaTarget } from './targets.js';
 
 export interface SourceMapEntry {
   file: string;
@@ -27,12 +27,6 @@ export interface DiscoverResponse {
   models: DiscoveredModel[];
   warnings: DiscoveryWarning[];
   provider_hint?: string;
-}
-
-interface DiscoveredSchemaLocation {
-  name: string;
-  filePath: string;
-  sourceMap: Record<string, SourceMapEntry>;
 }
 
 /**
@@ -109,12 +103,17 @@ export async function discoverZodSchemas(
 
   // Create program and walk ASTs to discover schemas
   const program = tsModule.createProgram(fileNames, compilerOptions);
+  const fileSet = new Set(fileNames);
+  const selectedSourceFiles = program.getSourceFiles().filter(
+    (sourceFile) =>
+      !sourceFile.isDeclarationFile &&
+      !sourceFile.fileName.includes('node_modules') &&
+      fileSet.has(sourceFile.fileName)
+  );
 
   // Step 0: Scan provider imports for auto-detection
   let providerHint: string | undefined;
-  for (const sourceFile of program.getSourceFiles()) {
-    if (sourceFile.isDeclarationFile || sourceFile.fileName.includes('node_modules')) continue;
-    if (!fileNames.includes(sourceFile.fileName)) continue;
+  for (const sourceFile of selectedSourceFiles) {
     const hint = scanProviderImports(sourceFile, tsModule);
     if (hint) {
       providerHint = hint;
@@ -122,45 +121,36 @@ export async function discoverZodSchemas(
     }
   }
 
-  // Step 1: Collect zodTextFormat / zodResponseFormat references
-  // These point to schemas that should be discovered even if not top-level exported.
-  const zodFormatRefs: string[] = [];
-  for (const sourceFile of program.getSourceFiles()) {
-    if (sourceFile.isDeclarationFile || sourceFile.fileName.includes('node_modules')) continue;
-    if (!fileNames.includes(sourceFile.fileName)) continue;
-    for (const ref of scanZodTextFormatRefs(sourceFile, tsModule)) {
-      zodFormatRefs.push(ref);
-    }
-  }
+  // Step 1: Prefer provider-facing call sites. This catches schemas passed to
+  // AI SDK, OpenAI helpers, and Anthropic helper APIs. Legacy exported-schema
+  // discovery remains as a fallback for simple projects and explicit schema
+  // modules that are not wired to a provider call in the selected source glob.
+  const callsiteTargets = findSchemaTargets(
+    program,
+    fileSet,
+    tsModule,
+    compilerOptions
+  );
+  const discoveredLocations: SchemaTarget[] = [...callsiteTargets];
 
-  // Step 2: AST walk to find z.object() calls and extract source locations
-  const discoveredLocations: DiscoveredSchemaLocation[] = [];
   const nonFatal: DiscoveryWarning[] = [];
-  const zodFormatRefSet = new Set(zodFormatRefs);
 
-  for (const sourceFile of program.getSourceFiles()) {
-    // Skip lib files (e.g., node_modules, TypeScript DOM libs)
-    if (
-      sourceFile.isDeclarationFile ||
-      sourceFile.fileName.includes('node_modules')
-    ) {
-      continue;
-    }
-    // Only walk files in our filtered list
-    if (!fileNames.includes(sourceFile.fileName)) continue;
-
-    const exports = findExportedSchemaCalls(sourceFile, tsModule, zodFormatRefSet);
-    for (const exp of exports) {
-      const sourceMap = buildSourceMapFromObjectLiteral(
-        exp.objectArg,
-        sourceFile,
-        tsModule
-      );
-      discoveredLocations.push({
-        name: exp.name,
-        filePath: sourceFile.fileName,
-        sourceMap,
-      });
+  if (discoveredLocations.length === 0) {
+    for (const sourceFile of selectedSourceFiles) {
+      const exports = findExportedSchemaCalls(sourceFile, tsModule);
+      for (const exp of exports) {
+        const sourceMap = buildSourceMapFromObjectLiteral(
+          exp.objectArg,
+          sourceFile,
+          tsModule
+        );
+        discoveredLocations.push({
+          name: exp.name,
+          filePath: sourceFile.fileName,
+          exportName: exp.name,
+          sourceMap,
+        });
+      }
     }
   }
 
@@ -173,7 +163,13 @@ export async function discoverZodSchemas(
 
   for (const loc of discoveredLocations) {
     try {
-      const schemaJson = await evaluateSchema(loc.filePath, loc.name);
+      const schemaJson = loc.syntheticSource
+        ? await evaluateSyntheticSchema(
+            loc.syntheticSource,
+            loc.exportName,
+            loc.filePath
+          )
+        : await evaluateSchema(loc.filePath, loc.exportName);
       models.push({
         name: loc.name,
         module_path: loc.filePath,

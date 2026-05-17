@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
+use crate::cli::docs_url::{rule_url, DOCS_BASE_URL};
 use crate::rules::registry::DiagnosticSeverity;
 use crate::rules::Diagnostic;
 
@@ -73,7 +74,7 @@ pub fn emit_sarif_to_string(
         .map(|id| {
             json!({
                 "id": id,
-                "helpUri": format!("https://schemalint.dev/rules/{}", id)
+                "helpUri": rule_url(&id)
             })
         })
         .collect();
@@ -86,7 +87,7 @@ pub fn emit_sarif_to_string(
                 "tool": {
                     "driver": {
                         "name": "schemalint",
-                        "informationUri": "https://schemalint.dev",
+                        "informationUri": DOCS_BASE_URL,
                         "rules": rules
                     }
                 },

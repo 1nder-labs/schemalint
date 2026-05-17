@@ -12,12 +12,26 @@ function sendJsonRpc(
   child: ReturnType<typeof spawn>,
   request: object
 ): Promise<string> {
+  return sendLine(child, JSON.stringify(request), 15000);
+}
+
+function sendRaw(
+  child: ReturnType<typeof spawn>,
+  raw: string
+): Promise<string> {
+  return sendLine(child, raw, 5000);
+}
+
+function sendLine(
+  child: ReturnType<typeof spawn>,
+  line: string,
+  timeoutMs: number
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const line = JSON.stringify(request);
     const timeout = setTimeout(() => {
       child.kill();
       reject(new Error('Response timeout'));
-    }, 15000);
+    }, timeoutMs);
 
     let buffer = '';
     const onData = (data: Buffer) => {
@@ -33,33 +47,6 @@ function sendJsonRpc(
 
     child.stdout?.on('data', onData);
     child.stdin?.write(line + '\n');
-  });
-}
-
-function sendRaw(
-  child: ReturnType<typeof spawn>,
-  raw: string
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error('Response timeout'));
-    }, 5000);
-
-    let buffer = '';
-    const onData = (data: Buffer) => {
-      buffer += data.toString();
-      const newlineIndex = buffer.indexOf('\n');
-      if (newlineIndex !== -1) {
-        const response = buffer.slice(0, newlineIndex);
-        clearTimeout(timeout);
-        child.stdout?.removeListener('data', onData);
-        resolve(response);
-      }
-    };
-
-    child.stdout?.on('data', onData);
-    child.stdin?.write(raw + '\n');
   });
 }
 

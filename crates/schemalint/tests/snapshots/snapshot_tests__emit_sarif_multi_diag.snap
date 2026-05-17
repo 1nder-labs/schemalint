@@ -46,15 +46,15 @@ expression: output
       ],
       "tool": {
         "driver": {
-          "informationUri": "https://schemalint.dev",
+          "informationUri": "https://1nder-labs.github.io/schemalint",
           "name": "schemalint",
           "rules": [
             {
-              "helpUri": "https://schemalint.dev/rules/OAI-K-allOf",
+              "helpUri": "https://1nder-labs.github.io/schemalint/rules/OAI-K-allOf",
               "id": "OAI-K-allOf"
             },
             {
-              "helpUri": "https://schemalint.dev/rules/OAI-K-anyOf",
+              "helpUri": "https://1nder-labs.github.io/schemalint/rules/OAI-K-anyOf",
               "id": "OAI-K-anyOf"
             }
           ]

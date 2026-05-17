@@ -6,6 +6,7 @@ use crate::profile::{load, Profile};
 
 pub mod args;
 pub mod discover;
+pub mod docs_url;
 pub mod emit_gha;
 pub mod emit_human;
 pub mod emit_json;

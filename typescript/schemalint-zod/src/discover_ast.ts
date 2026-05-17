@@ -2,25 +2,19 @@ import type * as ts from 'typescript';
 
 import type { SourceMapEntry } from './discover.js';
 
-
-interface ExportedSchemaCall {
+export interface ExportedSchemaCall {
   name: string;
   objectArg: ts.ObjectLiteralExpression;
 }
 
 /**
  * Find top-level `const` declarations that are `z.object({...})` calls.
- * If `zodFormatRefs` is provided, non-exported schemas referenced by
- * zodTextFormat/zodResponseFormat are also included.
  */
 export function findExportedSchemaCalls(
   sourceFile: ts.SourceFile,
-  tsModule: typeof ts,
-  zodFormatRefs?: Set<string>
+  tsModule: typeof ts
 ): ExportedSchemaCall[] {
   const results: ExportedSchemaCall[] = [];
-  // Collect all const declarations (both exported and non-exported) for zodFormatRef matching
-  const allConstDeclarations: Map<string, ExportedSchemaCall> = new Map();
 
   function walk(node: ts.Node): void {
     if (
@@ -38,7 +32,6 @@ export function findExportedSchemaCalls(
             name: decl.name.text,
             objectArg: call,
           };
-          allConstDeclarations.set(decl.name.text, entry);
           if (hasExportModifier(node, tsModule)) {
             results.push(entry);
           }
@@ -59,7 +52,6 @@ export function findExportedSchemaCalls(
           objectArg: call,
         };
         results.push(entry);
-        allConstDeclarations.set('default', entry);
       }
     }
 
@@ -67,54 +59,7 @@ export function findExportedSchemaCalls(
   }
 
   tsModule.forEachChild(sourceFile, walk);
-
-  // Add schemas referenced in zodTextFormat/zodResponseFormat calls that
-  // are not exported but are declared in this file (non-exported schemas
-  // referenced by format helpers).
-  if (zodFormatRefs && zodFormatRefs.size > 0) {
-    for (const name of zodFormatRefs) {
-      const decl = allConstDeclarations.get(name);
-      if (decl && !results.some(r => r.name === name)) {
-        results.push(decl);
-      }
-    }
-  }
-
   return results;
-}
-
-/**
- * Scan for zodTextFormat(MySchema, "name") and zodResponseFormat(MySchema, "name")
- * call expressions. Returns the list of schema names referenced as the first argument.
- */
-export function scanZodTextFormatRefs(
-  sourceFile: ts.SourceFile,
-  tsModule: typeof ts
-): string[] {
-  const refs: string[] = [];
-
-  function walk(node: ts.Node): void {
-    if (!tsModule.isCallExpression(node)) {
-      tsModule.forEachChild(node, walk);
-      return;
-    }
-    // Match zodTextFormat(...) or zodResponseFormat(...)
-    if (tsModule.isIdentifier(node.expression)) {
-      const name = node.expression.text;
-      if (
-        (name === 'zodTextFormat' || name === 'zodResponseFormat') &&
-        node.arguments.length >= 1 &&
-        tsModule.isIdentifier(node.arguments[0])
-      ) {
-        refs.push(node.arguments[0].text);
-        return; // no need to walk children of this call
-      }
-    }
-    tsModule.forEachChild(node, walk);
-  }
-
-  tsModule.forEachChild(sourceFile, walk);
-  return refs;
 }
 
 /**
@@ -133,14 +78,20 @@ export function scanProviderImports(
     if (mod === 'openai' || mod.startsWith('openai/')) {
       return 'openai';
     }
+    if (mod === '@ai-sdk/openai' || mod.startsWith('@ai-sdk/openai/')) {
+      return 'openai';
+    }
     if (mod === '@anthropic-ai/sdk' || mod.startsWith('@anthropic-ai/')) {
+      return 'anthropic';
+    }
+    if (mod === '@ai-sdk/anthropic' || mod.startsWith('@ai-sdk/anthropic/')) {
       return 'anthropic';
     }
   }
   return undefined;
 }
 
-function hasExportModifier(
+export function hasExportModifier(
   node: ts.Node,
   tsModule: typeof ts
 ): boolean {
@@ -157,7 +108,7 @@ function hasExportModifier(
  * Given a node, if it is `z.object({...})`, return the ObjectLiteralExpression argument.
  * Handles chaining: `z.object({...}).extend({...})` — returns the initial object.
  */
-function findZObjectCall(
+export function findZObjectCall(
   node: ts.Node,
   tsModule: typeof ts
 ): ts.ObjectLiteralExpression | null {
@@ -273,4 +224,19 @@ export function buildSourceMapFromObjectLiteral(
   }
 
   return map;
+}
+
+export function buildRootSourceMap(
+  node: ts.Node,
+  sourceFile: ts.SourceFile
+): Record<string, SourceMapEntry> {
+  const { line } = sourceFile.getLineAndCharacterOfPosition(
+    node.getStart(sourceFile)
+  );
+  return {
+    '': {
+      file: sourceFile.fileName,
+      line: line + 1,
+    },
+  };
 }

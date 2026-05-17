@@ -9,6 +9,6 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Consider adding properties or relaxing additionalProperties for provider compatibility",
-    "seeUrl": "https://schemalint.dev/rules/OAI-S-empty-object"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-empty-object"
   }
 ]

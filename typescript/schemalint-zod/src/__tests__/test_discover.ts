@@ -91,4 +91,41 @@ describe('discoverZodSchemas', () => {
       expect(span.line).toBeGreaterThanOrEqual(1);
     }
   });
+
+  it('discovers provider-facing AI SDK call-site schemas', async () => {
+    const result = await discoverZodSchemas('ai-sdk-calls.ts');
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.models).toHaveLength(3);
+    expect(result.models.map((m) => m.name)).toEqual([
+      'generateObject:LocalResult',
+      'streamObject:inline:14',
+      'tool:inline:20',
+    ]);
+  });
+
+  it('discovers imported and tsconfig path-aliased schemas', async () => {
+    const result = await discoverZodSchemas('imported-calls.ts');
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.models).toHaveLength(2);
+    const properties = result.models.map((m) =>
+      Object.keys(m.schema.properties as Record<string, unknown>)
+    );
+    expect(properties).toEqual([['imported'], ['aliased']]);
+    expect(result.models[0].source_map).toHaveProperty('/properties/imported');
+    expect(result.models[1].source_map).toHaveProperty('/properties/aliased');
+  });
+
+  it('discovers OpenAI and Anthropic helper schemas', async () => {
+    const result = await discoverZodSchemas('provider-helpers.ts');
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.models).toHaveLength(3);
+    expect(result.models.map((m) => m.name)).toEqual([
+      'zodTextFormat:response',
+      'zodFunction:lookup',
+      'betaZodTool:search',
+    ]);
+  });
 });

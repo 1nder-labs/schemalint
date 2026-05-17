@@ -8,7 +8,7 @@
       "file": "crates/schemalint/tests/corpus/schema_28.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/OAI-K-maxProperties"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-maxProperties"
   },
   {
     "code": "OAI-K-minProperties",
@@ -19,7 +19,7 @@
       "file": "crates/schemalint/tests/corpus/schema_28.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/OAI-K-minProperties"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-minProperties"
   },
   {
     "code": "OAI-S-all-properties-required",
@@ -31,6 +31,6 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Add every object property to required",
-    "seeUrl": "https://schemalint.dev/rules/OAI-S-all-properties-required"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-all-properties-required"
   }
 ]

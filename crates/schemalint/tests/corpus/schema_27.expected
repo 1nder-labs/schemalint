@@ -9,7 +9,7 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Consider adding properties or relaxing additionalProperties for provider compatibility",
-    "seeUrl": "https://schemalint.dev/rules/OAI-S-empty-object"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-empty-object"
   },
   {
     "code": "OAI-K-propertyNames",
@@ -20,6 +20,6 @@
       "file": "crates/schemalint/tests/corpus/schema_27.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/OAI-K-propertyNames"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-propertyNames"
   }
 ]
