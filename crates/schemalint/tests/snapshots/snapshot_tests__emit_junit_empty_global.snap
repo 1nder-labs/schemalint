@@ -1,0 +1,7 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+</testsuites>

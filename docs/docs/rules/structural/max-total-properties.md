@@ -10,25 +10,20 @@
 
 ## Description
 
-Total number of properties across all objects must not exceed 5000
+Total object properties must not exceed 5000
 
 ## Rationale
 
-openai.so.2026-04-30 limits the total number of object properties across the entire schema to 5000.
+openai.so.2026-04-30 limits the total number of object properties.
 
 ## Bad Example
 
 ```json
-{ "type": "object", "properties": { ...many properties exceeding the limit... } }
+{ "type": "object", "properties": { "...many": {} } }
 ```
 
 ## Good Example
 
 ```json
-{
-  "type": "object",
-  "properties": {
-    "name": { "type": "string" }
-  }
-}
+{ "type": "object", "properties": { "name": { "type": "string" } } }
 ```

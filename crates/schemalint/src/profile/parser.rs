@@ -51,10 +51,15 @@ pub struct StructuralLimits {
     pub require_object_root: bool,
     pub require_additional_properties_false: bool,
     pub require_all_properties_in_required: bool,
+    pub require_array_items: bool,
+    pub forbid_root_any_of: bool,
+    pub forbid_root_enum: bool,
     pub max_object_depth: u32,
     pub max_total_properties: u32,
     pub max_total_enum_values: u32,
     pub max_string_length_total: u32,
+    pub max_optional_properties: u32,
+    pub max_union_properties: u32,
     pub external_refs: bool,
 }
 
@@ -260,6 +265,15 @@ fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, Profi
     {
         limits.require_all_properties_in_required = v;
     }
+    if let Some(v) = t.get("require_array_items").and_then(|v| v.as_bool()) {
+        limits.require_array_items = v;
+    }
+    if let Some(v) = t.get("forbid_root_any_of").and_then(|v| v.as_bool()) {
+        limits.forbid_root_any_of = v;
+    }
+    if let Some(v) = t.get("forbid_root_enum").and_then(|v| v.as_bool()) {
+        limits.forbid_root_enum = v;
+    }
     if let Some(v) = t.get("max_object_depth").and_then(|v| v.as_integer()) {
         limits.max_object_depth = u32::try_from(v).map_err(|_| {
             ProfileError::InvalidSeverity(format!("max_object_depth out of u32 range: {v}"))
@@ -281,6 +295,19 @@ fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, Profi
     {
         limits.max_string_length_total = u32::try_from(v).map_err(|_| {
             ProfileError::InvalidSeverity(format!("max_string_length_total out of u32 range: {v}"))
+        })?;
+    }
+    if let Some(v) = t
+        .get("max_optional_properties")
+        .and_then(|v| v.as_integer())
+    {
+        limits.max_optional_properties = u32::try_from(v).map_err(|_| {
+            ProfileError::InvalidSeverity(format!("max_optional_properties out of u32 range: {v}"))
+        })?;
+    }
+    if let Some(v) = t.get("max_union_properties").and_then(|v| v.as_integer()) {
+        limits.max_union_properties = u32::try_from(v).map_err(|_| {
+            ProfileError::InvalidSeverity(format!("max_union_properties out of u32 range: {v}"))
         })?;
     }
     if let Some(v) = t.get("external_refs").and_then(|v| v.as_bool()) {

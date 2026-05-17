@@ -1,11 +1,12 @@
-target/
-Cargo.lock
-.schemalint/
-.DS_Store
-*.swp
-*.swo
 
+.DS_Store
+.env
+.schemalint/
+*.swo
+*.swp
 # Docusaurus
-docs/build/
+Cargo.lock
 docs/.docusaurus/
+docs/build/
 docs/node_modules/
+target/

@@ -76,6 +76,55 @@ fn anthropic_truth_known_accept() {
 }
 
 #[test]
+fn evaluate_strip_with_expected_transformed() {
+    use schemalint_conformance::TruthResult;
+    let truth = parse_truth(
+        r#"
+[provider]
+name = "test"
+version = "1.0"
+behavior = "strict"
+
+[[keywords]]
+name = "type"
+behavior = "accept"
+test_schema = '''
+{ "type": "object", "properties": {} }
+'''
+
+[[keywords]]
+name = "description"
+behavior = "strip"
+test_schema = '''
+{ "type": "object", "description": "original", "properties": {} }
+'''
+expected_transformed = '''
+"replaced description"
+'''
+"#,
+    )
+    .unwrap();
+    let schema = serde_json::json!({
+        "type": "object",
+        "description": "original",
+        "properties": {}
+    });
+    let result = evaluate(&truth, &schema);
+    assert!(result.is_accepted());
+    if let TruthResult::Accepted { transformed } = &result {
+        let obj = transformed.as_object().unwrap();
+        assert_eq!(
+            obj.get("description"),
+            Some(&serde_json::Value::String(
+                "replaced description".to_string()
+            ))
+        );
+    } else {
+        panic!("expected accepted result");
+    }
+}
+
+#[test]
 fn every_keyword_has_test_schema() {
     let truth = parse_truth(OPENAI_TRUTH).unwrap();
     for kw in &truth.keywords {

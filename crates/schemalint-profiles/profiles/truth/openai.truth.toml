@@ -1,7 +1,7 @@
 [provider]
 name = "openai"
 version = "2026-04-30"
-endpoint = "https://api.openai.com/v1/chat/completions"
+endpoint = "https://api.openai.com/v1/responses"
 model = "gpt-4o-2024-08-06"
 behavior = "strict"
 
@@ -183,10 +183,12 @@ test_schema = '''
 
 [[keywords]]
 name = "uniqueItems"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
 '''
+expected_error = "uniqueItems is not permitted"
+expected_error_path = "/uniqueItems"
 
 # ============================================================================
 # Rejected Keywords
@@ -194,12 +196,10 @@ test_schema = '''
 
 [[keywords]]
 name = "discriminator"
-behavior = "reject"
+behavior = "accept"
 test_schema = '''
-{ "type": "object", "discriminator": { "propertyName": "type" }, "properties": { "type": { "type": "string" } } }
+{ "type": "object", "discriminator": { "propertyName": "type" }, "properties": { "type": { "type": "string" } }, "required": ["type"], "additionalProperties": false }
 '''
-expected_error = "discriminator is not supported by OpenAI"
-expected_error_path = "/discriminator"
 
 [[keywords]]
 name = "allOf"
@@ -271,10 +271,12 @@ expected_error_path = "/dependentSchemas"
 
 [[keywords]]
 name = "contains"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "array", "contains": { "type": "string" } }
 '''
+expected_error = "contains is not permitted"
+expected_error_path = "/contains"
 
 [[keywords]]
 name = "patternProperties"
@@ -285,38 +287,48 @@ test_schema = '''
 
 [[keywords]]
 name = "unevaluatedProperties"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "object", "unevaluatedProperties": false, "properties": {} }
 '''
+expected_error = "unevaluatedProperties is not permitted"
+expected_error_path = "/unevaluatedProperties"
 
 [[keywords]]
 name = "propertyNames"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "object", "propertyNames": { "pattern": "^[a-z]+$" }, "properties": {} }
 '''
+expected_error = "propertyNames is not permitted"
+expected_error_path = "/propertyNames"
 
 [[keywords]]
 name = "minProperties"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "object", "minProperties": 1, "properties": { "x": { "type": "string" } } }
 '''
+expected_error = "minProperties is not permitted"
+expected_error_path = "/minProperties"
 
 [[keywords]]
 name = "maxProperties"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "object", "maxProperties": 10, "properties": { "x": { "type": "string" } } }
 '''
+expected_error = "maxProperties is not permitted"
+expected_error_path = "/maxProperties"
 
 [[keywords]]
 name = "oneOf"
-behavior = "accept"
+behavior = "reject"
 test_schema = '''
 { "type": "object", "oneOf": [ { "properties": { "x": { "type": "string" } } }, { "properties": { "y": { "type": "number" } } } ] }
 '''
+expected_error = "oneOf is not permitted"
+expected_error_path = "/oneOf"
 
 # ============================================================================
 # Restricted Keywords

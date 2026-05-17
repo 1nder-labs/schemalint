@@ -1,8 +1,12 @@
-import type * as ts from 'typescript';
+import { evaluateSchema, evaluateSyntheticSchema } from './evaluate.js';
+import {
+  buildSourceMapFromObjectLiteral,
+  findExportedSchemaCalls,
+  scanProviderImports,
+} from './discover_ast.js';
+import { findSchemaTargets, type SchemaTarget } from './targets.js';
 
-import { evaluateSchema } from './evaluate.js';
-
-interface SourceMapEntry {
+export interface SourceMapEntry {
   file: string;
   line?: number;
 }
@@ -22,12 +26,7 @@ export interface DiscoveryWarning {
 export interface DiscoverResponse {
   models: DiscoveredModel[];
   warnings: DiscoveryWarning[];
-}
-
-interface DiscoveredSchemaLocation {
-  name: string;
-  filePath: string;
-  sourceMap: Record<string, SourceMapEntry>;
+  provider_hint?: string;
 }
 
 /**
@@ -104,34 +103,54 @@ export async function discoverZodSchemas(
 
   // Create program and walk ASTs to discover schemas
   const program = tsModule.createProgram(fileNames, compilerOptions);
+  const fileSet = new Set(fileNames);
+  const selectedSourceFiles = program.getSourceFiles().filter(
+    (sourceFile) =>
+      !sourceFile.isDeclarationFile &&
+      !sourceFile.fileName.includes('node_modules') &&
+      fileSet.has(sourceFile.fileName)
+  );
 
-  // Step 1: AST walk to find z.object() calls and extract source locations
-  const discoveredLocations: DiscoveredSchemaLocation[] = [];
+  // Step 0: Scan provider imports for auto-detection
+  let providerHint: string | undefined;
+  for (const sourceFile of selectedSourceFiles) {
+    const hint = scanProviderImports(sourceFile, tsModule);
+    if (hint) {
+      providerHint = hint;
+      break;
+    }
+  }
+
+  // Step 1: Prefer provider-facing call sites. This catches schemas passed to
+  // AI SDK, OpenAI helpers, and Anthropic helper APIs. Legacy exported-schema
+  // discovery remains as a fallback for simple projects and explicit schema
+  // modules that are not wired to a provider call in the selected source glob.
+  const callsiteTargets = findSchemaTargets(
+    program,
+    fileSet,
+    tsModule,
+    compilerOptions
+  );
+  const discoveredLocations: SchemaTarget[] = [...callsiteTargets];
+
   const nonFatal: DiscoveryWarning[] = [];
 
-  for (const sourceFile of program.getSourceFiles()) {
-    // Skip lib files (e.g., node_modules, TypeScript DOM libs)
-    if (
-      sourceFile.isDeclarationFile ||
-      sourceFile.fileName.includes('node_modules')
-    ) {
-      continue;
-    }
-    // Only walk files in our filtered list
-    if (!fileNames.includes(sourceFile.fileName)) continue;
-
-    const exports = findExportedSchemaCalls(sourceFile, tsModule);
-    for (const exp of exports) {
-      const sourceMap = buildSourceMapFromObjectLiteral(
-        exp.objectArg,
-        sourceFile,
-        tsModule
-      );
-      discoveredLocations.push({
-        name: exp.name,
-        filePath: sourceFile.fileName,
-        sourceMap,
-      });
+  if (discoveredLocations.length === 0) {
+    for (const sourceFile of selectedSourceFiles) {
+      const exports = findExportedSchemaCalls(sourceFile, tsModule);
+      for (const exp of exports) {
+        const sourceMap = buildSourceMapFromObjectLiteral(
+          exp.objectArg,
+          sourceFile,
+          tsModule
+        );
+        discoveredLocations.push({
+          name: exp.name,
+          filePath: sourceFile.fileName,
+          exportName: exp.name,
+          sourceMap,
+        });
+      }
     }
   }
 
@@ -139,12 +158,18 @@ export async function discoverZodSchemas(
     return { models: [], warnings: nonFatal };
   }
 
-  // Step 2: Runtime evaluation — import each file and evaluate schemas
+  // Step 3: Runtime evaluation — import each file and evaluate schemas
   const models: DiscoveredModel[] = [];
 
   for (const loc of discoveredLocations) {
     try {
-      const schemaJson = await evaluateSchema(loc.filePath, loc.name);
+      const schemaJson = loc.syntheticSource
+        ? await evaluateSyntheticSchema(
+            loc.syntheticSource,
+            loc.exportName,
+            loc.filePath
+          )
+        : await evaluateSchema(loc.filePath, loc.exportName);
       models.push({
         name: loc.name,
         module_path: loc.filePath,
@@ -160,201 +185,9 @@ export async function discoverZodSchemas(
     }
   }
 
-  return { models, warnings: nonFatal };
-}
-
-// ---------------------------------------------------------------------------
-// AST walking helpers
-// ---------------------------------------------------------------------------
-
-interface ExportedSchemaCall {
-  name: string;
-  objectArg: ts.ObjectLiteralExpression;
-}
-
-/**
- * Find top-level exported variable declarations that are `z.object({...})` calls.
- */
-function findExportedSchemaCalls(
-  sourceFile: ts.SourceFile,
-  tsModule: typeof ts
-): ExportedSchemaCall[] {
-  const results: ExportedSchemaCall[] = [];
-
-  function walk(node: ts.Node): void {
-    if (
-      tsModule.isVariableStatement(node) &&
-      hasExportModifier(node, tsModule) &&
-      node.declarationList.declarations.length === 1
-    ) {
-      const decl = node.declarationList.declarations[0];
-      if (
-        tsModule.isIdentifier(decl.name) &&
-        decl.initializer
-      ) {
-        const call = findZObjectCall(decl.initializer, tsModule);
-        if (call) {
-          results.push({
-            name: decl.name.text,
-            objectArg: call,
-          });
-        }
-      }
-    }
-
-    // Also handle `export default z.object({...})`
-    if (
-      tsModule.isExportAssignment(node) &&
-      !node.isExportEquals &&
-      tsModule.isCallExpression(node.expression)
-    ) {
-      const call = findZObjectCall(node.expression, tsModule);
-      if (call) {
-        results.push({
-          name: 'default',
-          objectArg: call,
-        });
-      }
-    }
-
-    tsModule.forEachChild(node, walk);
+  const response: DiscoverResponse = { models, warnings: nonFatal };
+  if (providerHint) {
+    response.provider_hint = providerHint;
   }
-
-  tsModule.forEachChild(sourceFile, walk);
-  return results;
-}
-
-function hasExportModifier(
-  node: ts.Node,
-  tsModule: typeof ts
-): boolean {
-  if (!tsModule.canHaveModifiers(node)) return false;
-  const modifiers = tsModule.getModifiers(node);
-  if (!modifiers) return false;
-  for (const mod of modifiers) {
-    if (mod.kind === tsModule.SyntaxKind.ExportKeyword) return true;
-  }
-  return false;
-}
-
-/**
- * Given a node, if it is `z.object({...})`, return the ObjectLiteralExpression argument.
- * Handles chaining: `z.object({...}).extend({...})` — returns the initial object.
- */
-function findZObjectCall(
-  node: ts.Node,
-  tsModule: typeof ts
-): ts.ObjectLiteralExpression | null {
-  // Unwrap parenthesized expressions
-  while (tsModule.isParenthesizedExpression(node)) {
-    node = node.expression;
-  }
-
-  // Handle `export default z.object({...})` wrapped in another call expression
-  // e.g., z.object({...}).extend({...})
-  if (
-    tsModule.isCallExpression(node) &&
-    tsModule.isPropertyAccessExpression(node.expression)
-  ) {
-    // Check if the inner node is a z.object() call
-    const innerNode = node.expression.expression;
-    if (
-      tsModule.isCallExpression(innerNode) &&
-      isZObjectCallExpression(innerNode, tsModule)
-    ) {
-      const prop = innerNode.arguments[0];
-      if (prop && tsModule.isObjectLiteralExpression(prop)) {
-        return prop;
-      }
-    }
-    // Check for .extend() / .merge() / .pick() / .omit() chaining on z.object()
-    if (tsModule.isIdentifier(node.expression.name)) {
-      const methodName = node.expression.name.text;
-      if (
-        methodName === 'extend' ||
-        methodName === 'merge' ||
-        methodName === 'pick' ||
-        methodName === 'omit'
-      ) {
-        return findZObjectCall(node.expression.expression, tsModule);
-      }
-    }
-  }
-
-  // Direct z.object() call
-  if (
-    tsModule.isCallExpression(node) &&
-    isZObjectCallExpression(node, tsModule)
-  ) {
-    const arg = node.arguments[0];
-    if (arg && tsModule.isObjectLiteralExpression(arg)) {
-      return arg;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Check if a CallExpression is `z.object(...)`.
- */
-function isZObjectCallExpression(
-  node: ts.CallExpression,
-  tsModule: typeof ts
-): boolean {
-  const expr = node.expression;
-  if (!tsModule.isPropertyAccessExpression(expr)) return false;
-  return (
-    tsModule.isIdentifier(expr.expression) &&
-    expr.expression.text === 'z' &&
-    tsModule.isIdentifier(expr.name) &&
-    expr.name.text === 'object'
-  );
-}
-
-/**
- * Walk an ObjectLiteralExpression (`{ email: z.string(), ... }`) and build a
- * source map mapping JSON Pointer paths to file:line locations.
- *
- * Handles nested `z.object({...})` by recursing into inner object literals.
- */
-function buildSourceMapFromObjectLiteral(
-  objLit: ts.ObjectLiteralExpression,
-  sourceFile: ts.SourceFile,
-  tsModule: typeof ts
-): Record<string, SourceMapEntry> {
-  const map: Record<string, SourceMapEntry> = {};
-
-  for (const prop of objLit.properties) {
-    if (
-      !tsModule.isPropertyAssignment(prop) ||
-      !tsModule.isIdentifier(prop.name)
-    ) {
-      continue;
-    }
-    const propName = prop.name.text;
-    const { line } = sourceFile.getLineAndCharacterOfPosition(
-      prop.getStart(sourceFile)
-    );
-    const pointer = `/properties/${propName}`;
-    map[pointer] = {
-      file: sourceFile.fileName,
-      line: line + 1, // 1-indexed
-    };
-
-    // Recurse into nested z.object() values
-    const innerCall = findZObjectCall(prop.initializer, tsModule);
-    if (innerCall) {
-      const nested = buildSourceMapFromObjectLiteral(
-        innerCall,
-        sourceFile,
-        tsModule
-      );
-      for (const [nestedPointer, nestedSpan] of Object.entries(nested)) {
-        map[`/properties/${propName}${nestedPointer}`] = nestedSpan;
-      }
-    }
-  }
-
-  return map;
+  return response;
 }

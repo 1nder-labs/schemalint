@@ -9,6 +9,6 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "allowed values: [String(\"date-time\"), String(\"time\"), String(\"date\"), String(\"duration\"), String(\"email\"), String(\"hostname\"), String(\"ipv4\"), String(\"ipv6\"), String(\"uuid\")]",
-    "seeUrl": "https://schemalint.dev/rules/OAI-K-format-restricted"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-format-restricted"
   }
 ]

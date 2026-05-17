@@ -1,1 +1,13 @@
-[]
+[
+  {
+    "code": "OAI-K-unevaluatedProperties",
+    "severity": "error",
+    "message": "keyword 'unevaluatedProperties' is not supported by openai.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_26.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-unevaluatedProperties"
+  }
+]

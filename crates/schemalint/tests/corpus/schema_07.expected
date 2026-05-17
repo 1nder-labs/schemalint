@@ -1,1 +1,37 @@
-[]
+[
+  {
+    "code": "OAI-S-all-properties-required",
+    "severity": "error",
+    "message": "object has 1 property not listed in required: 'items'",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_07.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "Add every object property to required",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-all-properties-required"
+  },
+  {
+    "code": "OAI-K-contains",
+    "severity": "error",
+    "message": "keyword 'contains' is not supported by openai.so.2026-04-30",
+    "pointer": "/properties/items",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_07.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-contains"
+  },
+  {
+    "code": "OAI-S-array-items",
+    "severity": "error",
+    "message": "array schema must declare items",
+    "pointer": "/properties/items",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_07.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "Add an items schema for provider compatibility",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-array-items"
+  }
+]

@@ -8,6 +8,6 @@
       "file": "crates/schemalint/tests/corpus/schema_10.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/OAI-S-additional-properties-false"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-additional-properties-false"
   }
 ]

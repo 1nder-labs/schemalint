@@ -31,7 +31,8 @@ This schema is clean for OpenAI. Now introduce a problem — add a forbidden key
   "additionalProperties": false,
   "properties": {
     "name": { "type": "string" }
-  }
+  },
+  "required": ["name"]
 }
 ```
 

@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "code": "OAI-S-all-properties-required",
+    "severity": "error",
+    "message": "object has 101 properties not listed in required: 'prop_0', 'prop_1', 'prop_10', 'prop_100', 'prop_11', 'prop_12', 'prop_13', 'prop_14'",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_40.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "Add all object properties to required; first 8 shown, 101 total missing",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-all-properties-required"
+  }
+]

@@ -6,18 +6,32 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, 'fixtures');
 const packageRoot = path.join(__dirname, '..', '..');
-const binPath = path.join(packageRoot, 'bin', 'schemalint-zod.js');
+const serverPath = path.join(packageRoot, 'dist', 'main.js');
 
 function sendJsonRpc(
   child: ReturnType<typeof spawn>,
   request: object
 ): Promise<string> {
+  return sendLine(child, JSON.stringify(request), 15000);
+}
+
+function sendRaw(
+  child: ReturnType<typeof spawn>,
+  raw: string
+): Promise<string> {
+  return sendLine(child, raw, 5000);
+}
+
+function sendLine(
+  child: ReturnType<typeof spawn>,
+  line: string,
+  timeoutMs: number
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const line = JSON.stringify(request);
     const timeout = setTimeout(() => {
       child.kill();
       reject(new Error('Response timeout'));
-    }, 15000);
+    }, timeoutMs);
 
     let buffer = '';
     const onData = (data: Buffer) => {
@@ -36,35 +50,8 @@ function sendJsonRpc(
   });
 }
 
-function sendRaw(
-  child: ReturnType<typeof spawn>,
-  raw: string
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error('Response timeout'));
-    }, 5000);
-
-    let buffer = '';
-    const onData = (data: Buffer) => {
-      buffer += data.toString();
-      const newlineIndex = buffer.indexOf('\n');
-      if (newlineIndex !== -1) {
-        const response = buffer.slice(0, newlineIndex);
-        clearTimeout(timeout);
-        child.stdout?.removeListener('data', onData);
-        resolve(response);
-      }
-    };
-
-    child.stdout?.on('data', onData);
-    child.stdin?.write(raw + '\n');
-  });
-}
-
 function spawnServer() {
-  return spawn('npx', ['tsx', binPath], {
+  return spawn('node', [serverPath], {
     cwd: fixturesDir,
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env },
@@ -121,9 +108,6 @@ describe('JSON-RPC server', () => {
         id: 2,
       });
       expect(JSON.parse(shutdownStr).result).toBe('ok');
-
-      // Close stdin so the readline interface unblocks and process exits
-      child.stdin?.end();
 
       const exitCode = await waitForExit(child);
       expect(exitCode).toBe(0);

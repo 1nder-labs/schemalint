@@ -31,7 +31,10 @@ pub fn run_server() {
     for line in stdin.lock().lines() {
         let line = match line {
             Ok(l) => l,
-            Err(_) => break,
+            Err(e) => {
+                eprintln!("error: failed to read line from stdin: {}", e);
+                break;
+            }
         };
 
         if line.len() > MAX_PAYLOAD_BYTES {
@@ -253,7 +256,7 @@ fn handle_check(
     let bytes = serde_json::to_vec(&schema).unwrap_or_default();
     let hash = hash_bytes(&bytes);
 
-    let normalized = match cache.get(hash) {
+    let normalized = match cache.get(hash, &bytes) {
         Some(n) => n,
         None => {
             let n = match normalize(schema) {
@@ -265,7 +268,7 @@ fn handle_check(
                     });
                 }
             };
-            cache.insert(hash, n.clone());
+            cache.insert(hash, bytes, n.clone());
             n
         }
     };

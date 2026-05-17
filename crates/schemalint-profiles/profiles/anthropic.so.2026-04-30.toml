@@ -60,4 +60,6 @@ max_object_depth = 0
 max_total_properties = 0
 max_total_enum_values = 0
 max_string_length_total = 0
+max_optional_properties = 24
+max_union_properties = 16
 external_refs = true

@@ -154,51 +154,68 @@ impl PythonHelper {
             .flush()
             .map_err(|e| PythonError::RequestFailed(format!("flush error: {}", e)))?;
 
-        let line = match self
-            .stdout_rx
-            .recv_timeout(Duration::from_secs(DISCOVER_TIMEOUT_SECS))
-        {
-            Ok(Some(line)) => line,
-            Ok(None) => {
-                return Err(self.augment_error(PythonError::InvalidResponse(
-                    "helper process closed stdout unexpectedly".to_string(),
-                )))
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                return Err(self.augment_error(PythonError::Timeout(DISCOVER_TIMEOUT_SECS)))
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(self.augment_error(PythonError::InvalidResponse(
-                    "stdout reader thread disconnected".to_string(),
-                )))
-            }
-        };
+        const MAX_STALE_DRAIN: usize = 4;
 
-        let response: JsonRpcResponse = serde_json::from_str(&line).map_err(|e| {
-            self.augment_error(PythonError::InvalidResponse(format!(
-                "response parse error: {}",
-                e
-            )))
-        })?;
+        for _ in 0..=MAX_STALE_DRAIN {
+            let line = match self
+                .stdout_rx
+                .recv_timeout(Duration::from_secs(DISCOVER_TIMEOUT_SECS))
+            {
+                Ok(Some(line)) => line,
+                Ok(None) => {
+                    return Err(self.augment_error(PythonError::InvalidResponse(
+                        "helper process closed stdout unexpectedly".to_string(),
+                    )))
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    return Err(self.augment_error(PythonError::Timeout(DISCOVER_TIMEOUT_SECS)))
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(self.augment_error(PythonError::InvalidResponse(
+                        "stdout reader thread disconnected".to_string(),
+                    )))
+                }
+            };
 
-        if let Some(error) = response.error {
-            return Err(self.augment_error(PythonError::DiscoverFailed(error.message)));
+            let response: JsonRpcResponse = serde_json::from_str(&line).map_err(|e| {
+                self.augment_error(PythonError::InvalidResponse(format!(
+                    "response parse error: {}",
+                    e
+                )))
+            })?;
+
+            if response.id != Some(id) {
+                // Stale response from a previous timed-out request — drain and retry.
+                continue;
+            }
+
+            if let Some(error) = response.error {
+                return Err(self.augment_error(PythonError::DiscoverFailed(error.message)));
+            }
+
+            if response.jsonrpc.as_deref() != Some("2.0") {
+                return Err(self.augment_error(PythonError::InvalidResponse(
+                    "response missing or has incorrect jsonrpc version".to_string(),
+                )));
+            }
+
+            let result = response.result.ok_or_else(|| {
+                self.augment_error(PythonError::InvalidResponse(
+                    "response missing result field".to_string(),
+                ))
+            })?;
+
+            return serde_json::from_value(result).map_err(|e| {
+                self.augment_error(PythonError::InvalidResponse(format!(
+                    "result parse error: {}",
+                    e
+                )))
+            });
         }
 
-        if response.jsonrpc.as_deref() != Some("2.0") {
-            return Err(self.augment_error(PythonError::InvalidResponse(
-                "response missing or has incorrect jsonrpc version".to_string(),
-            )));
-        }
-
-        let result = response.result.ok_or_else(|| {
-            self.augment_error(PythonError::InvalidResponse(
-                "response missing result field".to_string(),
-            ))
-        })?;
-
-        serde_json::from_value(result)
-            .map_err(|e| PythonError::InvalidResponse(format!("result parse error: {}", e)))
+        Err(self.augment_error(PythonError::InvalidResponse(
+            "too many stale responses — helper may be in a corrupted state".to_string(),
+        )))
     }
 
     /// Drain captured stderr lines and append them to the error message.
@@ -319,20 +336,44 @@ fn resolve_python(python_path: Option<&str>) -> Result<String, PythonError> {
     }
     let candidates = ["python3", "python"];
     let mut tried = String::new();
+    const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
     for candidate in &candidates {
         if !tried.is_empty() {
             tried.push_str(", ");
         }
         tried.push_str(candidate);
-        if Command::new(candidate)
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok()
-        {
+        if probe_command(candidate, PROBE_TIMEOUT) {
             return Ok(candidate.to_string());
         }
     }
     Err(PythonError::NotInstalled(tried))
+}
+
+/// Check whether a command is available on PATH with a bounded timeout.
+fn probe_command(cmd: &str, timeout: Duration) -> bool {
+    match Command::new(cmd)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(mut child) => {
+            let start = Instant::now();
+            loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => return status.success(),
+                    Ok(None) => {
+                        if Instant::now() - start >= timeout {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            return false;
+                        }
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                    Err(_) => return false,
+                }
+            }
+        }
+        Err(_) => false,
+    }
 }

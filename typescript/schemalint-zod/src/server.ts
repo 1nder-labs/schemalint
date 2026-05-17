@@ -1,8 +1,6 @@
 import type { DiscoverResponse } from './discover.js';
 import { discoverZodSchemas } from './discover.js';
 
-const METHODS = new Set(['discover', 'shutdown']);
-
 interface JsonRpcRequest {
   jsonrpc?: string;
   method?: string;
@@ -13,6 +11,13 @@ interface JsonRpcRequest {
 function sendResponse(id: unknown, result: unknown): void {
   const response = { jsonrpc: '2.0', result, id };
   process.stdout.write(JSON.stringify(response) + '\n');
+}
+
+function sendFinalResponse(id: unknown, result: unknown): void {
+  const response = { jsonrpc: '2.0', result, id };
+  process.stdout.write(JSON.stringify(response) + '\n', () => {
+    process.exit(0);
+  });
 }
 
 function sendError(
@@ -83,7 +88,7 @@ async function processLine(line: string): Promise<boolean> {
   }
 
   if (method === 'shutdown') {
-    sendResponse(reqId, 'ok');
+    sendFinalResponse(reqId, 'ok');
     return false;
   }
 

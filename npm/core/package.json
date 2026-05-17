@@ -1,6 +1,6 @@
 {
   "name": "@schemalint/core",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "schemalint programmatic API — requires schemalint CLI on PATH",
   "repository": {
     "type": "git",

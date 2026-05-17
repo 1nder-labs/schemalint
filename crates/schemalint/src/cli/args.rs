@@ -26,7 +26,7 @@ pub enum Commands {
 
 #[derive(Parser)]
 pub struct CheckArgs {
-    /// Path to the TOML capability profile (may be given multiple times)
+    /// Built-in profile ID or path to a TOML capability profile (may be given multiple times)
     #[arg(short, long = "profile", required = true)]
     pub profiles: Vec<PathBuf>,
 
@@ -51,7 +51,7 @@ pub struct CheckPythonArgs {
     #[arg(short = 'P', long = "package")]
     pub packages: Vec<String>,
 
-    /// Path to TOML capability profile (repeatable; overrides pyproject.toml)
+    /// Built-in profile ID or TOML capability profile path (repeatable; overrides pyproject.toml)
     #[arg(short, long = "profile")]
     pub profiles: Vec<PathBuf>,
 
@@ -78,7 +78,7 @@ pub struct CheckNodeArgs {
     #[arg(short = 'S', long = "source")]
     pub sources: Vec<String>,
 
-    /// Path to TOML capability profile (repeatable; overrides package.json)
+    /// Built-in profile ID or TOML capability profile path (repeatable; overrides package.json)
     #[arg(short, long = "profile")]
     pub profiles: Vec<PathBuf>,
 

@@ -8,6 +8,18 @@
       "file": "crates/schemalint/tests/corpus/schema_27.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/OAI-S-empty-object"
+    "hint": "Consider adding properties or relaxing additionalProperties for provider compatibility",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-empty-object"
+  },
+  {
+    "code": "OAI-K-propertyNames",
+    "severity": "error",
+    "message": "keyword 'propertyNames' is not supported by openai.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_27.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-propertyNames"
   }
 ]

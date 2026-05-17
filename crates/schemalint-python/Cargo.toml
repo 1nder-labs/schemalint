@@ -10,7 +10,7 @@ description = "schemalint CLI packaged as a Python wheel via maturin"
 publish = false
 
 [[bin]]
-name = "schemalint"
+name = "schemalint-python-bin"
 path = "src/main.rs"
 
 [dependencies]

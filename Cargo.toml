@@ -3,7 +3,7 @@ members = ["crates/schemalint", "crates/schemalint-profiles", "crates/schemalint
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["schemalint contributors"]
 license = "MIT OR Apache-2.0"
@@ -19,3 +19,8 @@ codegen-units = 1
 opt-level = 3
 lto = false
 codegen-units = 1
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

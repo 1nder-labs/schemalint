@@ -9,7 +9,7 @@
     },
     "profile": "anthropic.so.2026-04-30",
     "hint": "Consider adding properties or relaxing additionalProperties for provider compatibility",
-    "seeUrl": "https://schemalint.dev/rules/ANT-S-empty-object"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/ANT-S-empty-object"
   },
   {
     "code": "ANT-S-allof-with-ref",
@@ -20,6 +20,6 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_11.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/ANT-S-allof-with-ref"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/ANT-S-allof-with-ref"
   }
 ]
