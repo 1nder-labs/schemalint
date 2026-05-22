@@ -6,9 +6,27 @@ const LocalResult = z.object({
   count: z.number(),
 });
 
+const VariableResult = z.object({
+  variable: z.string(),
+});
+
 generateObject({
   schema: LocalResult,
 });
+
+const generateArgs = {
+  schema: VariableResult,
+};
+
+generateObject(generateArgs);
+
+const conditionalArgs = {
+  schema: z.object({
+    conditional: z.boolean(),
+  }),
+};
+
+generateObject(Math.random() > -1 ? conditionalArgs : { schema: LocalResult });
 
 streamObject({
   schema: z.object({

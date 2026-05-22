@@ -96,12 +96,40 @@ describe('discoverZodSchemas', () => {
     const result = await discoverZodSchemas('ai-sdk-calls.ts');
 
     expect(result.warnings).toHaveLength(0);
-    expect(result.models).toHaveLength(3);
+    expect(result.models).toHaveLength(5);
+    expect(result.models.map((m) => m.name)).toEqual(
+      expect.arrayContaining([
+        'generateObject:LocalResult',
+        'generateObject:VariableResult',
+      ])
+    );
+    expect(result.models.some((m) => m.name.startsWith('streamObject:inline:')))
+      .toBe(true);
+    expect(result.models.some((m) => m.name.startsWith('tool:inline:')))
+      .toBe(true);
+
+    const properties = result.models.flatMap((m) =>
+      Object.keys(m.schema.properties as Record<string, unknown>)
+    );
+    expect(properties).toEqual(
+      expect.arrayContaining(['conditional', 'variable'])
+    );
+  });
+
+  it('discovers schemas passed through provider helper factories', async () => {
+    const result = await discoverZodSchemas('factory-calls.ts');
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.models).toHaveLength(2);
     expect(result.models.map((m) => m.name)).toEqual([
-      'generateObject:LocalResult',
-      'streamObject:inline:14',
-      'tool:inline:20',
+      'generateObject:extractThing',
+      'generateObject:inlineThing',
     ]);
+
+    const properties = result.models.map((m) =>
+      Object.keys(m.schema.properties as Record<string, unknown>)
+    );
+    expect(properties).toEqual([['extracted'], ['inline']]);
   });
 
   it('discovers imported and tsconfig path-aliased schemas', async () => {

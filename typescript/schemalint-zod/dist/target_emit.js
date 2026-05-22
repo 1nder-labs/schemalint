@@ -1,0 +1,102 @@
+import { pathToFileURL } from 'node:url';
+import { buildRootSourceMap, buildSourceMapFromObjectLiteral, findZObjectCall, hasExportModifier, } from './discover_ast.js';
+import { resolveVariableDeclaration, } from './target_resolution.js';
+export function resolveTarget(target, checker, tsModule, compilerOptions) {
+    const expr = skipParens(target.expression, tsModule);
+    const sourceFile = target.sourceFile;
+    const sourceMap = sourceMapForTarget(expr, sourceFile, checker, tsModule);
+    if (tsModule.isIdentifier(expr)) {
+        const exported = resolveExportedIdentifier(expr, checker, tsModule);
+        if (exported) {
+            return {
+                name: target.name,
+                filePath: exported.filePath,
+                exportName: exported.exportName,
+                sourceMap,
+            };
+        }
+    }
+    const exportName = `__schemalint_target_${safeName(target.name)}`;
+    return {
+        name: target.name,
+        filePath: sourceFile.fileName,
+        exportName,
+        sourceMap,
+        syntheticSource: buildSyntheticModule(sourceFile, expr, exportName, tsModule, compilerOptions),
+    };
+}
+function resolveExportedIdentifier(id, checker, tsModule) {
+    const decl = resolveVariableDeclaration(id, checker, tsModule);
+    if (!decl)
+        return undefined;
+    if (tsModule.isIdentifier(decl.name)) {
+        const stmt = decl.parent.parent;
+        if (tsModule.isVariableStatement(stmt) && hasExportModifier(stmt, tsModule)) {
+            return {
+                filePath: decl.getSourceFile().fileName,
+                exportName: decl.name.text,
+            };
+        }
+    }
+    return undefined;
+}
+function buildSyntheticModule(sourceFile, expr, exportName, tsModule, compilerOptions) {
+    const parts = [];
+    for (const stmt of sourceFile.statements) {
+        if (tsModule.isImportDeclaration(stmt)) {
+            parts.push(rewriteImport(stmt, sourceFile, tsModule, compilerOptions));
+            continue;
+        }
+        if (stmt.end <= expr.getStart(sourceFile) && isReusableDeclaration(stmt, tsModule)) {
+            parts.push(stmt.getText(sourceFile));
+        }
+    }
+    parts.push(`export const ${exportName} = ${expr.getText(sourceFile)};`);
+    return parts.join('\n\n');
+}
+function isReusableDeclaration(stmt, tsModule) {
+    return (tsModule.isVariableStatement(stmt) ||
+        tsModule.isFunctionDeclaration(stmt) ||
+        tsModule.isClassDeclaration(stmt) ||
+        tsModule.isEnumDeclaration(stmt) ||
+        tsModule.isInterfaceDeclaration(stmt) ||
+        tsModule.isTypeAliasDeclaration(stmt));
+}
+function rewriteImport(stmt, sourceFile, tsModule, compilerOptions) {
+    const spec = stmt.moduleSpecifier;
+    if (!tsModule.isStringLiteral(spec)) {
+        return stmt.getText(sourceFile);
+    }
+    const resolved = tsModule.resolveModuleName(spec.text, sourceFile.fileName, compilerOptions, tsModule.sys).resolvedModule?.resolvedFileName;
+    if (!resolved)
+        return stmt.getText(sourceFile);
+    if (resolved.includes('/node_modules/') || resolved.endsWith('.d.ts')) {
+        return stmt.getText(sourceFile);
+    }
+    const text = stmt.getText(sourceFile);
+    return text.replace(spec.getText(sourceFile), JSON.stringify(pathToFileURL(resolved).href));
+}
+function sourceMapForExpression(expr, sourceFile, tsModule) {
+    const objectArg = findZObjectCall(expr, tsModule);
+    if (objectArg)
+        return buildSourceMapFromObjectLiteral(objectArg, sourceFile, tsModule);
+    return buildRootSourceMap(expr, sourceFile);
+}
+function sourceMapForTarget(expr, sourceFile, checker, tsModule) {
+    if (tsModule.isIdentifier(expr)) {
+        const decl = resolveVariableDeclaration(expr, checker, tsModule);
+        if (decl?.initializer) {
+            return sourceMapForExpression(decl.initializer, decl.getSourceFile(), tsModule);
+        }
+    }
+    return sourceMapForExpression(expr, sourceFile, tsModule);
+}
+function skipParens(node, tsModule) {
+    while (tsModule.isParenthesizedExpression(node))
+        node = node.expression;
+    return node;
+}
+function safeName(name) {
+    return name.replace(/[^a-zA-Z0-9_]/g, '_');
+}
+//# sourceMappingURL=target_emit.js.map
