@@ -1,7 +1,7 @@
 [
   {
     "code": "OAI-S-empty-object",
-    "severity": "warning",
+    "severity": "error",
     "message": "object schema with additionalProperties: false has no properties",
     "pointer": "",
     "source": {
@@ -9,29 +9,7 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Consider adding properties or relaxing additionalProperties for provider compatibility",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-empty-object"
-  },
-  {
-    "code": "OAI-K-then",
-    "severity": "error",
-    "message": "keyword 'then' is not supported by openai.so.2026-04-30",
-    "pointer": "",
-    "source": {
-      "file": "crates/schemalint/tests/corpus/schema_29.json"
-    },
-    "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-then"
-  },
-  {
-    "code": "OAI-K-if",
-    "severity": "error",
-    "message": "keyword 'if' is not supported by openai.so.2026-04-30",
-    "pointer": "",
-    "source": {
-      "file": "crates/schemalint/tests/corpus/schema_29.json"
-    },
-    "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-if"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/semantic/empty-object"
   },
   {
     "code": "OAI-K-else",
@@ -42,7 +20,29 @@
       "file": "crates/schemalint/tests/corpus/schema_29.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-else"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/else"
+  },
+  {
+    "code": "OAI-K-then",
+    "severity": "error",
+    "message": "keyword 'then' is not supported by openai.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_29.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/then"
+  },
+  {
+    "code": "OAI-K-if",
+    "severity": "error",
+    "message": "keyword 'if' is not supported by openai.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_29.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/if"
   },
   {
     "code": "OAI-S-additional-properties-false",
@@ -53,7 +53,7 @@
       "file": "crates/schemalint/tests/corpus/schema_29.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-additional-properties-false"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/additional-properties-false"
   },
   {
     "code": "OAI-S-all-properties-required",
@@ -65,7 +65,7 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Add every object property to required",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-all-properties-required"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/all-properties-required"
   },
   {
     "code": "OAI-S-additional-properties-false",
@@ -76,7 +76,7 @@
       "file": "crates/schemalint/tests/corpus/schema_29.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-additional-properties-false"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/additional-properties-false"
   },
   {
     "code": "OAI-S-all-properties-required",
@@ -88,7 +88,7 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Add every object property to required",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-all-properties-required"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/all-properties-required"
   },
   {
     "code": "OAI-S-additional-properties-false",
@@ -99,7 +99,7 @@
       "file": "crates/schemalint/tests/corpus/schema_29.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-additional-properties-false"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/additional-properties-false"
   },
   {
     "code": "OAI-S-all-properties-required",
@@ -111,6 +111,6 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Add every object property to required",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-all-properties-required"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/all-properties-required"
   }
 ]

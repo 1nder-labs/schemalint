@@ -54,6 +54,11 @@ pub struct StructuralLimits {
     pub require_array_items: bool,
     pub forbid_root_any_of: bool,
     pub forbid_root_enum: bool,
+    /// Treat an object with `additionalProperties: false` and no usable
+    /// `properties` as an error rather than a warning. OpenAI rejects such
+    /// schemas ("object schema missing properties"); providers that strip or
+    /// tolerate them leave this `false`.
+    pub forbid_empty_object: bool,
     pub max_object_depth: u32,
     pub max_total_properties: u32,
     pub max_total_enum_values: u32,
@@ -273,6 +278,9 @@ fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, Profi
     }
     if let Some(v) = t.get("forbid_root_enum").and_then(|v| v.as_bool()) {
         limits.forbid_root_enum = v;
+    }
+    if let Some(v) = t.get("forbid_empty_object").and_then(|v| v.as_bool()) {
+        limits.forbid_empty_object = v;
     }
     if let Some(v) = t.get("max_object_depth").and_then(|v| v.as_integer()) {
         limits.max_object_depth = u32::try_from(v).map_err(|_| {

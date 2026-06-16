@@ -149,6 +149,7 @@ max_union_properties = 16
             require_array_items: false,
             forbid_root_any_of: false,
             forbid_root_enum: false,
+            forbid_empty_object: false,
         }
     );
 }

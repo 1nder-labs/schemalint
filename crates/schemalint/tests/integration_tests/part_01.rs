@@ -287,7 +287,7 @@ fn cli_builtin_profile_resolution() {
     let schema = dir.path().join("schema.json");
     fs::write(
         &schema,
-        r#"{"type": "object", "properties": {}, "additionalProperties": false}"#,
+        r#"{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false}"#,
     )
     .unwrap();
 

@@ -1,7 +1,7 @@
 [
   {
     "code": "OAI-S-empty-object",
-    "severity": "warning",
+    "severity": "error",
     "message": "object schema with additionalProperties: false has no properties",
     "pointer": "",
     "source": {
@@ -9,6 +9,6 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Consider adding properties or relaxing additionalProperties for provider compatibility",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-empty-object"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/semantic/empty-object"
   }
 ]

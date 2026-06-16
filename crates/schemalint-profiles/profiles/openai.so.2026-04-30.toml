@@ -53,6 +53,7 @@ require_all_properties_in_required = true
 require_array_items = true
 forbid_root_any_of = true
 forbid_root_enum = true
+forbid_empty_object = true
 max_object_depth = 10
 max_total_properties = 5000
 max_total_enum_values = 1000
