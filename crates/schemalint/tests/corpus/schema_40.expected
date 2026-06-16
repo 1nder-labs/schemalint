@@ -9,6 +9,6 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Add all object properties to required; first 8 shown, 101 total missing",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-all-properties-required"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/all-properties-required"
   }
 ]

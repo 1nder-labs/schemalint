@@ -15,7 +15,7 @@ use crate::rules::Diagnostic;
 ///      |
 ///      = profile: openai.so.2026-04-30
 ///      = schema path: /properties/items
-///      = see: https://1nder-labs.github.io/schemalint/rules/OAI-K-allOf
+///      = see: https://1nder-labs.github.io/schemalint/rules/keyword/allOf
 /// ```
 pub fn emit_human_to_string(
     diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)],

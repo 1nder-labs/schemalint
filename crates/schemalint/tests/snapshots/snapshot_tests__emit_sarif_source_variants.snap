@@ -1,5 +1,5 @@
 ---
-source: crates/schemalint/tests/snapshot_tests.rs
+source: crates/schemalint/tests/snapshot_tests/part_02.rs
 expression: output
 ---
 {
@@ -69,15 +69,15 @@ expression: output
           "name": "schemalint",
           "rules": [
             {
-              "helpUri": "https://1nder-labs.github.io/schemalint/rules/TST-FULL",
+              "helpUri": "https://1nder-labs.github.io/schemalint/rules",
               "id": "TST-FULL"
             },
             {
-              "helpUri": "https://1nder-labs.github.io/schemalint/rules/TST-LINEONLY",
+              "helpUri": "https://1nder-labs.github.io/schemalint/rules",
               "id": "TST-LINEONLY"
             },
             {
-              "helpUri": "https://1nder-labs.github.io/schemalint/rules/TST-NOSOURCE",
+              "helpUri": "https://1nder-labs.github.io/schemalint/rules",
               "id": "TST-NOSOURCE"
             }
           ]

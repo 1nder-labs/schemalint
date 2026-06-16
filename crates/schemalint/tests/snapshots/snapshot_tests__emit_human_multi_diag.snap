@@ -1,5 +1,5 @@
 ---
-source: crates/schemalint/tests/snapshot_tests.rs
+source: crates/schemalint/tests/snapshot_tests/part_01.rs
 expression: output
 ---
 error[OAI-K-allOf]: keyword 'allOf' is not supported
@@ -8,20 +8,20 @@ error[OAI-K-allOf]: keyword 'allOf' is not supported
      = profile: openai.so
      = schema path: /allOf
      = hint: remove allOf
-     = see: https://1nder-labs.github.io/schemalint/rules/OAI-K-allOf
+     = see: https://1nder-labs.github.io/schemalint/rules/keyword/allOf
 
 error[OAI-K-anyOf]: keyword 'anyOf' is not supported
    --> schema.json
      |
      = profile: openai.so
      = schema path: /anyOf
-     = see: https://1nder-labs.github.io/schemalint/rules/OAI-K-anyOf
+     = see: https://1nder-labs.github.io/schemalint/rules/keyword/anyOf
 
 warning[OAI-K-uniqueItems]: keyword 'uniqueItems' is discouraged
    --> schema.json:15
      |
      = profile: openai.so
      = schema path: /properties/items
-     = see: https://1nder-labs.github.io/schemalint/rules/OAI-K-uniqueItems
+     = see: https://1nder-labs.github.io/schemalint/rules/keyword/uniqueItems
 
 3 issues found (2 errors, 1 warning) across 1 schema in 123ms

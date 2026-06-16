@@ -1,41 +1,54 @@
 #!/usr/bin/env python3
-"""Generate .expected files for the regression corpus by running the CLI."""
+"""Generate .expected files for the regression corpus by running the CLI.
+
+Covers both corpora: `schema_*` files are linted with the OpenAI profile,
+`ant_schema_*` files with the Anthropic profile.
+"""
 
 import json
 import subprocess
 from pathlib import Path
 
 CORPUS_DIR = Path("crates/schemalint/tests/corpus")
-PROFILE = Path("crates/schemalint-profiles/profiles/openai.so.2026-04-30.toml")
 BIN = Path("target/debug/schemalint")
+PROFILES_DIR = Path("crates/schemalint-profiles/profiles")
 
-schemas = sorted(CORPUS_DIR.glob("schema_*.json"))
-print(f"Generating expected outputs for {len(schemas)} schemas...")
+# (filename prefix, profile path) pairs covering every corpus schema.
+CORPORA = [
+    ("schema_", PROFILES_DIR / "openai.so.2026-04-30.toml"),
+    ("ant_schema_", PROFILES_DIR / "anthropic.so.2026-04-30.toml"),
+]
 
-for schema_path in schemas:
-    expected_path = schema_path.with_suffix(".expected")
-    result = subprocess.run(
-        [str(BIN), "check", "--profile", str(PROFILE), "--format", "json", str(schema_path)],
-        capture_output=True,
-        text=True
-    )
-    # We always expect exit code 0 or 1; any other code is an error
-    if result.returncode not in (0, 1):
-        print(f"ERROR: {schema_path.name} exited {result.returncode}")
-        print(result.stderr)
-        continue
+total = 0
+for prefix, profile in CORPORA:
+    schemas = sorted(CORPUS_DIR.glob(f"{prefix}*.json"))
+    print(f"Generating expected outputs for {len(schemas)} {prefix}* schemas ({profile.name})...")
 
-    try:
-        output = json.loads(result.stdout)
-    except json.JSONDecodeError as e:
-        print(f"ERROR: {schema_path.name} produced invalid JSON: {e}")
-        continue
+    for schema_path in schemas:
+        expected_path = schema_path.with_suffix(".expected")
+        result = subprocess.run(
+            [str(BIN), "check", "--profile", str(profile), "--format", "json", str(schema_path)],
+            capture_output=True,
+            text=True,
+        )
+        # We always expect exit code 0 or 1; any other code is an error
+        if result.returncode not in (0, 1):
+            print(f"ERROR: {schema_path.name} exited {result.returncode}")
+            print(result.stderr)
+            continue
 
-    # Store only the diagnostics array for easier comparison
-    with open(expected_path, "w") as f:
-        json.dump(output["diagnostics"], f, indent=2)
-        f.write("\n")
+        try:
+            output = json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            print(f"ERROR: {schema_path.name} produced invalid JSON: {e}")
+            continue
 
-    print(f"  {schema_path.name} -> {len(output['diagnostics'])} diagnostics")
+        # Store only the diagnostics array for easier comparison
+        with open(expected_path, "w") as f:
+            json.dump(output["diagnostics"], f, indent=2)
+            f.write("\n")
 
-print("Done.")
+        total += 1
+        print(f"  {schema_path.name} -> {len(output['diagnostics'])} diagnostics")
+
+print(f"Done. {total} expected files written.")

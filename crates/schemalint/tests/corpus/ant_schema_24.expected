@@ -8,7 +8,7 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_24.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/ANT-K-dependentSchemas"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/dependentSchemas"
   },
   {
     "code": "ANT-S-additional-properties-false",
@@ -19,6 +19,6 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_24.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/ANT-S-additional-properties-false"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/additional-properties-false"
   }
 ]

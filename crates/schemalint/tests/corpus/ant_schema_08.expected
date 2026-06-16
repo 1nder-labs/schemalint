@@ -8,6 +8,6 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_08.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/ANT-K-contains"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/contains"
   }
 ]

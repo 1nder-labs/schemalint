@@ -1,5 +1,5 @@
 ---
-source: crates/schemalint/tests/snapshot_tests.rs
+source: crates/schemalint/tests/snapshot_tests/part_01.rs
 expression: "normalize_temp_paths(&stdout, dir.path())"
 ---
 {
@@ -28,7 +28,7 @@ expression: "normalize_temp_paths(&stdout, dir.path())"
         "file": "[TEMP_DIR]/a.json"
       },
       "profile": "test",
-      "seeUrl": "https://1nder-labs.github.io/schemalint/rules/TEST-K-allOf"
+      "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/allOf"
     }
   ]
 }

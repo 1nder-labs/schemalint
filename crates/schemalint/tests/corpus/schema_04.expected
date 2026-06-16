@@ -8,7 +8,7 @@
       "file": "crates/schemalint/tests/corpus/schema_04.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-oneOf"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/oneOf"
   },
   {
     "code": "OAI-S-object-root",
@@ -19,6 +19,6 @@
       "file": "crates/schemalint/tests/corpus/schema_04.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-object-root"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/object-root"
   }
 ]

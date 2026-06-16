@@ -9,6 +9,6 @@
     },
     "profile": "anthropic.so.2026-04-30",
     "hint": "allowed values: [Number(0), Number(1)]",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/ANT-K-minItems-restricted"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/restriction/minItems-restricted"
   }
 ]

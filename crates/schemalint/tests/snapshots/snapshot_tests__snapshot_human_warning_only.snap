@@ -1,5 +1,5 @@
 ---
-source: crates/schemalint/tests/snapshot_tests.rs
+source: crates/schemalint/tests/snapshot_tests/part_01.rs
 expression: "normalize_temp_paths(&stdout, dir.path())"
 ---
 warning[TEST-K-uniqueItems]: keyword 'uniqueItems' is not supported by test
@@ -7,6 +7,6 @@ warning[TEST-K-uniqueItems]: keyword 'uniqueItems' is not supported by test
      |
      = profile: test
      = schema path: 
-     = see: https://1nder-labs.github.io/schemalint/rules/TEST-K-uniqueItems
+     = see: https://1nder-labs.github.io/schemalint/rules/keyword/uniqueItems
 
 1 issue found (0 errors, 1 warning) across 1 schema in [DURATION]ms

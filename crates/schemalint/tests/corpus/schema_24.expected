@@ -1,14 +1,14 @@
 [
   {
-    "code": "OAI-K-not",
+    "code": "OAI-K-oneOf",
     "severity": "error",
-    "message": "keyword 'not' is not supported by openai.so.2026-04-30",
+    "message": "keyword 'oneOf' is not supported by openai.so.2026-04-30",
     "pointer": "",
     "source": {
       "file": "crates/schemalint/tests/corpus/schema_24.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-not"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/oneOf"
   },
   {
     "code": "OAI-K-allOf",
@@ -19,18 +19,18 @@
       "file": "crates/schemalint/tests/corpus/schema_24.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-allOf"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/allOf"
   },
   {
-    "code": "OAI-K-oneOf",
+    "code": "OAI-K-not",
     "severity": "error",
-    "message": "keyword 'oneOf' is not supported by openai.so.2026-04-30",
+    "message": "keyword 'not' is not supported by openai.so.2026-04-30",
     "pointer": "",
     "source": {
       "file": "crates/schemalint/tests/corpus/schema_24.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-oneOf"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/not"
   },
   {
     "code": "OAI-S-object-root",
@@ -41,6 +41,6 @@
       "file": "crates/schemalint/tests/corpus/schema_24.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-object-root"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/object-root"
   }
 ]

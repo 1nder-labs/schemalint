@@ -9,7 +9,7 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Add every object property to required",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-all-properties-required"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/all-properties-required"
   },
   {
     "code": "OAI-K-contains",
@@ -20,7 +20,7 @@
       "file": "crates/schemalint/tests/corpus/schema_07.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-K-contains"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/contains"
   },
   {
     "code": "OAI-S-array-items",
@@ -32,6 +32,6 @@
     },
     "profile": "openai.so.2026-04-30",
     "hint": "Add an items schema for provider compatibility",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/OAI-S-array-items"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/array-items"
   }
 ]
