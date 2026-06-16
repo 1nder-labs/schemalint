@@ -41,7 +41,7 @@ _load_env()
 
 
 # Known models with structured outputs support and their keyword differences.
-# Source: https://platform.openai.com/docs/guides/structured-outputs
+# Source: https://developers.openai.com/api/docs/guides/structured-outputs
 MODELS = {
     "gpt-4o": {
         "id": "gpt-4o-2024-08-06",

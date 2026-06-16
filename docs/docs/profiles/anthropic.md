@@ -36,4 +36,4 @@ native Claude API for guaranteed schema conformance.
 
 ## Reference
 
-[Anthropic Structured Outputs documentation](https://docs.anthropic.com/en/docs/build-with-claude/structured-outputs)
+[Anthropic Structured Outputs documentation](https://platform.claude.com/docs/en/docs/build-with-claude/structured-outputs)

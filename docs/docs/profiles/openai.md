@@ -38,4 +38,4 @@ Nested `anyOf` remains supported when each branch is valid for the Structured Ou
 
 ## Reference
 
-[OpenAI Structured Outputs documentation](https://platform.openai.com/docs/guides/structured-outputs)
+[OpenAI Structured Outputs documentation](https://developers.openai.com/api/docs/guides/structured-outputs)
