@@ -1,0 +1,127 @@
+{
+  "depth": [
+    {
+      "levels": 1,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "levels": 2,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "levels": 3,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "levels": 4,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "levels": 5,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "levels": 6,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "levels": 7,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "levels": 8,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "levels": 9,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "levels": 10,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "levels": 11,
+      "status": "rejected",
+      "error": "{'error': {'message': \"Invalid schema for response_format 'p': 11 levels of nesting exceeds limit of 10.\", 'type': 'invalid_request_error', 'param': 'text.forma"
+    },
+    {
+      "levels": 12,
+      "status": "rejected",
+      "error": "{'error': {'message': \"Invalid schema for response_format 'p': 12 levels of nesting exceeds limit of 10.\", 'type': 'invalid_request_error', 'param': 'text.forma"
+    },
+    {
+      "levels": 13,
+      "status": "rejected",
+      "error": "{'error': {'message': \"Invalid schema for response_format 'p': 13 levels of nesting exceeds limit of 10.\", 'type': 'invalid_request_error', 'param': 'text.forma"
+    }
+  ],
+  "enum": [
+    {
+      "label": "250 vals x10c = 2500",
+      "n_values": 250,
+      "val_len": 10,
+      "total_chars": 2500,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "label": "251 vals x10c = 2510",
+      "n_values": 251,
+      "val_len": 10,
+      "total_chars": 2510,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "label": "300 vals x40c = 12000",
+      "n_values": 300,
+      "val_len": 40,
+      "total_chars": 12000,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "label": "300 vals x50c = 15000",
+      "n_values": 300,
+      "val_len": 50,
+      "total_chars": 15000,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "label": "300 vals x60c = 18000",
+      "n_values": 300,
+      "val_len": 60,
+      "total_chars": 18000,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "label": "250 vals x80c = 20000",
+      "n_values": 250,
+      "val_len": 80,
+      "total_chars": 20000,
+      "status": "accepted",
+      "error": null
+    },
+    {
+      "label": "260 vals x60c = 15600",
+      "n_values": 260,
+      "val_len": 60,
+      "total_chars": 15600,
+      "status": "accepted",
+      "error": null
+    }
+  ]
+}
