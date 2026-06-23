@@ -26,22 +26,10 @@ from pathlib import Path
 from datetime import datetime
 
 from openai_errors import is_openai_schema_error
+from _env import load_env
 
 # Load .env file from script directory if present
-def _load_env():
-    env_path = Path(__file__).resolve().parent / ".env"
-    if env_path.exists():
-        try:
-            from dotenv import load_dotenv
-            load_dotenv(env_path)
-        except ImportError:
-            with open(env_path) as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        key, _, val = line.partition("=")
-                        os.environ.setdefault(key.strip(), val.strip().strip('"\''))
-_load_env()
+load_env()
 
 
 def run_schemalint(schema_path: str) -> list:

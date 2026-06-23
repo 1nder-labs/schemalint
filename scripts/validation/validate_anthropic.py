@@ -19,24 +19,9 @@ import time
 from pathlib import Path
 
 
-def _load_env() -> None:
-    env_path = Path(__file__).resolve().parent / ".env"
-    if not env_path.exists():
-        return
-    try:
-        from dotenv import load_dotenv
+from _env import load_env
 
-        load_dotenv(env_path)
-    except ImportError:
-        with open(env_path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, _, val = line.partition("=")
-                    os.environ.setdefault(key.strip(), val.strip().strip('"\''))
-
-
-_load_env()
+load_env()
 
 MODELS = {
     "opus-4.7": {
