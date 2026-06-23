@@ -11,10 +11,7 @@ use crate::rules::registry::Rule;
 pub(crate) use helpers::schema_is_object;
 
 use array::ArrayItemsRule;
-use budget::{
-    MaxDepthRule, MaxOptionalPropertiesRule, MaxStringLengthRule, MaxTotalEnumValuesRule,
-    MaxTotalPropertiesRule, MaxUnionPropertiesRule,
-};
+use budget::{BudgetRule, MaxDepthRule};
 use object::{AdditionalPropertiesFalseRule, AllPropertiesRequiredRule, ObjectRootRule};
 use refs::{AllOfWithRefRule, ExternalRefsRule};
 use root::{RootAnyOfRule, RootEnumRule};
@@ -61,34 +58,34 @@ pub fn generate_class_b_rules(profile: &Profile) -> Vec<Box<dyn Rule>> {
         }));
     }
     if s.max_total_properties > 0 {
-        rules.push(Box::new(MaxTotalPropertiesRule {
-            limit: s.max_total_properties,
-            profile_name: profile.name.clone(),
-        }));
+        rules.push(Box::new(BudgetRule::max_total_properties(
+            s.max_total_properties,
+            profile.name.clone(),
+        )));
     }
     if s.max_total_enum_values > 0 {
-        rules.push(Box::new(MaxTotalEnumValuesRule {
-            limit: s.max_total_enum_values,
-            profile_name: profile.name.clone(),
-        }));
+        rules.push(Box::new(BudgetRule::max_total_enum_values(
+            s.max_total_enum_values,
+            profile.name.clone(),
+        )));
     }
     if s.max_string_length_total > 0 {
-        rules.push(Box::new(MaxStringLengthRule {
-            limit: s.max_string_length_total,
-            profile_name: profile.name.clone(),
-        }));
+        rules.push(Box::new(BudgetRule::max_string_length(
+            s.max_string_length_total,
+            profile.name.clone(),
+        )));
     }
     if s.max_optional_properties > 0 {
-        rules.push(Box::new(MaxOptionalPropertiesRule {
-            limit: s.max_optional_properties,
-            profile_name: profile.name.clone(),
-        }));
+        rules.push(Box::new(BudgetRule::max_optional_properties(
+            s.max_optional_properties,
+            profile.name.clone(),
+        )));
     }
     if s.max_union_properties > 0 {
-        rules.push(Box::new(MaxUnionPropertiesRule {
-            limit: s.max_union_properties,
-            profile_name: profile.name.clone(),
-        }));
+        rules.push(Box::new(BudgetRule::max_union_properties(
+            s.max_union_properties,
+            profile.name.clone(),
+        )));
     }
     if s.external_refs {
         rules.push(Box::new(ExternalRefsRule {
