@@ -14,13 +14,7 @@ fn encode_gha_value(s: &str) -> String {
 }
 
 /// Emit diagnostics as GitHub Actions workflow commands.
-pub fn emit_gha_to_string(
-    diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)],
-    _total_errors: usize,
-    _total_warnings: usize,
-    _profile_names: &[String],
-    _duration_ms: Option<u64>,
-) -> String {
+pub fn emit_gha_to_string(diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)]) -> String {
     let mut out = String::new();
     for (path, diags) in diagnostics {
         for d in diags {

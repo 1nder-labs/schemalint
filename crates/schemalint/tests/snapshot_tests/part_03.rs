@@ -21,20 +21,20 @@ fn test_emit_junit_multi_diag() {
             None,
         ),
     ];
-    let output = emit_junit_to_string(&[(path, diags)], 0, 0, &[], None);
+    let output = emit_junit_to_string(&[(path, diags)]);
     assert_snapshot_stable!(output);
 }
 
 #[test]
 fn test_emit_junit_empty_global() {
-    let output = emit_junit_to_string(&[], 0, 0, &[], None);
+    let output = emit_junit_to_string(&[]);
     assert_snapshot_stable!(output);
 }
 
 #[test]
 fn test_emit_junit_empty_per_file() {
     let path = std::path::PathBuf::from("clean.json");
-    let output = emit_junit_to_string(&[(path, vec![])], 0, 0, &[], None);
+    let output = emit_junit_to_string(&[(path, vec![])]);
     assert_snapshot_stable!(output);
 }
 
@@ -61,7 +61,7 @@ fn test_emit_junit_edge_cases() {
             None,
         ),
     ];
-    let output = emit_junit_to_string(&[(path, diags)], 0, 0, &[], None);
+    let output = emit_junit_to_string(&[(path, diags)]);
     assert_snapshot_stable!(output);
 }
 
@@ -97,7 +97,7 @@ fn test_emit_junit_source_variants() {
             None,
         ),
     ];
-    let output = emit_junit_to_string(&[(path, diags)], 0, 0, &[], None);
+    let output = emit_junit_to_string(&[(path, diags)]);
     assert_snapshot_stable!(output);
 }
 
@@ -128,7 +128,7 @@ fn test_emit_sarif_rule_ids_sorted() {
             None,
         ),
     ];
-    let output = emit_sarif_to_string(&[(path, diags)], 0, 0, &[], None);
+    let output = emit_sarif_to_string(&[(path, diags)]);
     // Verify alphabetical ordering of ruleIds in the driver rules.
     let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
     let rules = parsed["runs"][0]["tool"]["driver"]["rules"]
@@ -166,13 +166,13 @@ fn test_emit_gha_multi_diag() {
             None,
         ),
     ];
-    let output = emit_gha_to_string(&[(path, diags)], 0, 0, &[], None);
+    let output = emit_gha_to_string(&[(path, diags)]);
     assert_snapshot_stable!(output);
 }
 
 #[test]
 fn test_emit_gha_empty() {
-    let output = emit_gha_to_string(&[], 0, 0, &[], None);
+    let output = emit_gha_to_string(&[]);
     assert_snapshot_stable!(output);
 }
 
@@ -217,7 +217,7 @@ fn test_emit_gha_edge_cases() {
             None,
         ),
     ];
-    let output = emit_gha_to_string(&[(path, diags)], 0, 0, &[], None);
+    let output = emit_gha_to_string(&[(path, diags)]);
     assert_snapshot_stable!(output);
 }
 
@@ -253,6 +253,6 @@ fn test_emit_gha_source_variants() {
             None,
         ),
     ];
-    let output = emit_gha_to_string(&[(path, diags)], 0, 0, &[], None);
+    let output = emit_gha_to_string(&[(path, diags)]);
     assert_snapshot_stable!(output);
 }

@@ -6,13 +6,7 @@ use crate::rules::registry::DiagnosticSeverity;
 use crate::rules::Diagnostic;
 
 /// Emit diagnostics as SARIF v2.1.0 JSON.
-pub fn emit_sarif_to_string(
-    diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)],
-    _total_errors: usize,
-    _total_warnings: usize,
-    _profile_names: &[String],
-    _duration_ms: Option<u64>,
-) -> String {
+pub fn emit_sarif_to_string(diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)]) -> String {
     let mut results = Vec::new();
     let mut rule_ids = HashSet::new();
 

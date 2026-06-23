@@ -238,13 +238,13 @@ fn test_emit_sarif_multi_diag() {
             None,
         ),
     ];
-    let output = emit_sarif_to_string(&[(path, diags)], 0, 0, &[], None);
+    let output = emit_sarif_to_string(&[(path, diags)]);
     assert_snapshot_stable!(output);
 }
 
 #[test]
 fn test_emit_sarif_empty() {
-    let output = emit_sarif_to_string(&[], 0, 0, &[], None);
+    let output = emit_sarif_to_string(&[]);
     assert_snapshot_stable!(output);
 }
 
@@ -271,7 +271,7 @@ fn test_emit_sarif_edge_cases() {
             None,
         ),
     ];
-    let output = emit_sarif_to_string(&[(path, diags)], 0, 0, &[], None);
+    let output = emit_sarif_to_string(&[(path, diags)]);
     assert_snapshot_stable!(output);
 }
 
@@ -307,7 +307,7 @@ fn test_emit_sarif_source_variants() {
             None,
         ),
     ];
-    let output = emit_sarif_to_string(&[(path, diags)], 0, 0, &[], None);
+    let output = emit_sarif_to_string(&[(path, diags)]);
     assert_snapshot_stable!(output);
 }
 

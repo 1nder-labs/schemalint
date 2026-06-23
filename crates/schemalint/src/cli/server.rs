@@ -8,7 +8,8 @@ use serde_json::{json, Value};
 
 use crate::cache::{hash_bytes, DiskCache};
 use crate::cli::args::OutputFormat;
-use crate::cli::{check_rulesets, emit_gha, emit_human, emit_json, emit_junit, emit_sarif};
+use crate::cli::check_rulesets;
+use crate::cli::pipeline::render_output;
 use crate::normalize::normalize;
 use crate::profile::load;
 use crate::rules::{Diagnostic, DiagnosticSeverity, RuleSet};
@@ -295,42 +296,14 @@ fn handle_check(
 
     let duration_ms = Some(start.elapsed().as_millis() as u64);
 
-    let output_text = match format {
-        OutputFormat::Human => emit_human::emit_human_to_string(
-            &all_diagnostics,
-            total_errors,
-            total_warnings,
-            duration_ms,
-        ),
-        OutputFormat::Json => emit_json::emit_json_to_string(
-            &all_diagnostics,
-            total_errors,
-            total_warnings,
-            &profile_names,
-            duration_ms,
-        ),
-        OutputFormat::Sarif => emit_sarif::emit_sarif_to_string(
-            &all_diagnostics,
-            total_errors,
-            total_warnings,
-            &profile_names,
-            duration_ms,
-        ),
-        OutputFormat::Gha => emit_gha::emit_gha_to_string(
-            &all_diagnostics,
-            total_errors,
-            total_warnings,
-            &profile_names,
-            duration_ms,
-        ),
-        OutputFormat::Junit => emit_junit::emit_junit_to_string(
-            &all_diagnostics,
-            total_errors,
-            total_warnings,
-            &profile_names,
-            duration_ms,
-        ),
-    };
+    let output_text = render_output(
+        format,
+        &all_diagnostics,
+        total_errors,
+        total_warnings,
+        &profile_names,
+        duration_ms,
+    );
 
     json!({
         "success": true,

@@ -80,15 +80,7 @@ pub fn resolve_builtin_profile(path_or_id: &str) -> Result<Vec<u8>, String> {
             path_or_id
         ));
     }
-    match path_or_id {
-        "openai.so.2026-04-30" => Ok(schemalint_profiles::OPENAI_SO_2026_04_30
-            .as_bytes()
-            .to_vec()),
-        "anthropic.so.2026-04-30" => Ok(schemalint_profiles::ANTHROPIC_SO_2026_04_30
-            .as_bytes()
-            .to_vec()),
-        other => Err(format!("unknown built-in profile '{other}'")),
-    }
+    resolve_profile(path_or_id)
 }
 
 pub(super) fn load_profiles_from_ids(profile_args: &[String]) -> Result<Vec<Profile>, String> {

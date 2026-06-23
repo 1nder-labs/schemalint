@@ -87,16 +87,21 @@ pub(crate) fn aggregate_results(
     (all_diagnostics, total_errors, total_warnings)
 }
 
-pub(crate) fn emit_output(
+/// Render diagnostics to a String in the requested output format.
+///
+/// This is the single source of truth for format dispatch. Both `emit_output`
+/// (which writes to stdout or a file) and the JSON-RPC server handler (which
+/// embeds the result in a response object) call this function so the formatting
+/// logic is never duplicated.
+pub fn render_output(
     format: OutputFormat,
     all_diagnostics: &[(PathBuf, Vec<Diagnostic>)],
     total_errors: usize,
     total_warnings: usize,
     profile_names: &[String],
     duration_ms: Option<u64>,
-    output: Option<&Path>,
-) -> Result<(), i32> {
-    let output_text = match format {
+) -> String {
+    match format {
         OutputFormat::Human => emit_human::emit_human_to_string(
             all_diagnostics,
             total_errors,
@@ -110,28 +115,29 @@ pub(crate) fn emit_output(
             profile_names,
             duration_ms,
         ),
-        OutputFormat::Sarif => emit_sarif::emit_sarif_to_string(
-            all_diagnostics,
-            total_errors,
-            total_warnings,
-            profile_names,
-            duration_ms,
-        ),
-        OutputFormat::Gha => emit_gha::emit_gha_to_string(
-            all_diagnostics,
-            total_errors,
-            total_warnings,
-            profile_names,
-            duration_ms,
-        ),
-        OutputFormat::Junit => emit_junit::emit_junit_to_string(
-            all_diagnostics,
-            total_errors,
-            total_warnings,
-            profile_names,
-            duration_ms,
-        ),
-    };
+        OutputFormat::Sarif => emit_sarif::emit_sarif_to_string(all_diagnostics),
+        OutputFormat::Gha => emit_gha::emit_gha_to_string(all_diagnostics),
+        OutputFormat::Junit => emit_junit::emit_junit_to_string(all_diagnostics),
+    }
+}
+
+pub(crate) fn emit_output(
+    format: OutputFormat,
+    all_diagnostics: &[(PathBuf, Vec<Diagnostic>)],
+    total_errors: usize,
+    total_warnings: usize,
+    profile_names: &[String],
+    duration_ms: Option<u64>,
+    output: Option<&Path>,
+) -> Result<(), i32> {
+    let output_text = render_output(
+        format,
+        all_diagnostics,
+        total_errors,
+        total_warnings,
+        profile_names,
+        duration_ms,
+    );
 
     if let Some(out_path) = output {
         if let Err(e) = std::fs::write(out_path, &output_text) {
