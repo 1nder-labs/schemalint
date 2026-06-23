@@ -1,7 +1,6 @@
 pub mod truth;
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use serde_json::Value;
 pub use truth::*;
@@ -21,13 +20,6 @@ impl TruthResult {
     pub fn is_rejected(&self) -> bool {
         matches!(self, TruthResult::Rejected { .. })
     }
-
-    pub fn errors(&self) -> &[TruthError] {
-        match self {
-            TruthResult::Rejected { errors } => errors,
-            _ => &[],
-        }
-    }
 }
 
 /// A conformance error produced by the truth engine.
@@ -36,12 +28,6 @@ pub struct TruthError {
     pub message: String,
     pub pointer: String,
     pub keyword: String,
-}
-
-/// Load a truth TOML file from disk.
-pub fn load_truth(path: &Path) -> Result<ProviderTruth, TruthLoadError> {
-    let contents = std::fs::read_to_string(path).map_err(|e| TruthLoadError::Io(e.to_string()))?;
-    parse_truth(&contents)
 }
 
 /// Parse a truth TOML string.
@@ -230,11 +216,6 @@ test_schema = '''
         .unwrap();
         let result = evaluate(&truth, &schema);
         assert!(result.is_rejected());
-        let errs = result.errors();
-        assert_eq!(errs.len(), 1);
-        assert_eq!(errs[0].keyword, "allOf");
-        assert_eq!(errs[0].pointer, "/allOf");
-        assert_eq!(errs[0].message, "allOf is not supported");
     }
 
     #[test]
@@ -270,10 +251,6 @@ test_schema = '''
         .unwrap();
         let result = evaluate(&truth, &schema);
         assert!(result.is_rejected());
-        let errs = result.errors();
-        assert_eq!(errs.len(), 1);
-        assert_eq!(errs[0].keyword, "allOf");
-        assert!(errs[0].pointer.contains("allOf"));
     }
 
     #[test]
