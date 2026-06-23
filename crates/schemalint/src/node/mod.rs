@@ -1,19 +1,11 @@
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
-
-use serde::Deserialize;
+use std::process::{Command, Stdio};
 
 use crate::ingest::DiscoverResponse;
+use crate::subprocess::{SubprocessClient, SubprocessError};
 
 mod resolve;
 
 use resolve::{resolve_compiled_helper_path, resolve_helper_path, resolve_tsx_cmd};
-
-const DISCOVER_TIMEOUT_SECS: u64 = 60;
-const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 
 /// Errors produced by Node helper operations.
 #[derive(Debug, thiserror::Error)]
@@ -32,32 +24,12 @@ pub enum NodeError {
     DiscoverFailed(String),
 }
 
-#[derive(Debug, Deserialize)]
-struct JsonRpcResponse {
-    #[serde(default)]
-    jsonrpc: Option<String>,
-    result: Option<serde_json::Value>,
-    error: Option<JsonRpcError>,
-    id: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct JsonRpcError {
-    #[allow(dead_code)]
-    code: i64,
-    message: String,
-}
-
 /// Manages a Node subprocess running the `schemalint-zod` JSON-RPC server.
 ///
-/// The helper is intentionally not `Sync` — it owns a `Child` with piped I/O
-/// and should be used sequentially before any parallel processing phase.
+/// The helper is intentionally not `Sync` — it owns a `SubprocessClient` with
+/// piped I/O and should be used sequentially before any parallel processing phase.
 pub struct NodeHelper {
-    child: Child,
-    stdin: ChildStdin,
-    request_id: u64,
-    stdout_rx: mpsc::Receiver<Option<String>>,
-    stderr_lines: Arc<Mutex<Vec<String>>>,
+    client: SubprocessClient,
 }
 
 impl NodeHelper {
@@ -96,7 +68,7 @@ impl NodeHelper {
 
         let mut cmd = Command::new(&runner);
         cmd.args(&args);
-        let mut child = cmd
+        let child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -109,62 +81,14 @@ impl NodeHelper {
                 ))
             })?;
 
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| NodeError::SpawnFailed("no stdout pipe available".to_string()))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| NodeError::SpawnFailed("no stderr pipe available".to_string()))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| NodeError::SpawnFailed("no stdin pipe available".to_string()))?;
+        // Node does not echo stderr lines unconditionally (user project stderr
+        // may contain secrets); pass echo_prefix = None.
+        let client = SubprocessClient::from_child(child, None, "node").map_err(|e| match e {
+            SubprocessError::SpawnFailed(msg) => NodeError::SpawnFailed(msg),
+            _ => unreachable!("from_child only returns SpawnFailed"),
+        })?;
 
-        // Drain stderr continuously to prevent pipe-buffer deadlock.
-        // Lines are captured for error diagnostics only — not echoed
-        // unconditionally (user project stderr may contain secrets).
-        let stderr_lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let stderr_capture = Arc::clone(&stderr_lines);
-        thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines() {
-                match line {
-                    Ok(l) => {
-                        if let Ok(mut lines) = stderr_capture.lock() {
-                            lines.push(l);
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-
-        // Reader thread for stdout with line-delimited JSON delivery.
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines() {
-                match line {
-                    Ok(l) => {
-                        if tx.send(Some(l)).is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            let _ = tx.send(None);
-        });
-
-        Ok(NodeHelper {
-            child,
-            stdin,
-            request_id: 1,
-            stdout_rx: rx,
-            stderr_lines,
-        })
+        Ok(NodeHelper { client })
     }
 
     /// Send a `discover` request for the given source glob and return discovered models.
@@ -174,94 +98,26 @@ impl NodeHelper {
     /// After `MAX_STALE_DRAIN` mismatches, an error is returned to prevent
     /// infinite loops in a corrupted protocol state.
     pub fn discover(&mut self, source: &str) -> Result<DiscoverResponse, NodeError> {
-        let id = self.request_id;
-        self.request_id += 1;
-
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "discover",
-            "params": { "source": source },
-            "id": id,
-        });
-        let request_str = serde_json::to_string(&request)
-            .map_err(|e| NodeError::RequestFailed(format!("serialize error: {}", e)))?;
-
-        writeln!(self.stdin, "{}", request_str)
-            .map_err(|e| NodeError::RequestFailed(format!("write error: {}", e)))?;
-        self.stdin
-            .flush()
-            .map_err(|e| NodeError::RequestFailed(format!("flush error: {}", e)))?;
-
-        const MAX_STALE_DRAIN: usize = 4;
-
-        for _ in 0..=MAX_STALE_DRAIN {
-            let line = match self
-                .stdout_rx
-                .recv_timeout(Duration::from_secs(DISCOVER_TIMEOUT_SECS))
-            {
-                Ok(Some(line)) => line,
-                Ok(None) => {
-                    return Err(self.augment_error(NodeError::InvalidResponse(
-                        "helper process closed stdout unexpectedly".to_string(),
-                    )))
-                }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    return Err(self.augment_error(NodeError::Timeout(DISCOVER_TIMEOUT_SECS)))
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    return Err(self.augment_error(NodeError::InvalidResponse(
-                        "stdout reader thread disconnected".to_string(),
-                    )))
-                }
-            };
-
-            let response: JsonRpcResponse = serde_json::from_str(&line).map_err(|e| {
-                self.augment_error(NodeError::InvalidResponse(format!(
-                    "response parse error: {}",
-                    e
-                )))
-            })?;
-
-            if response.id != Some(id) {
-                // Stale response from a previous timed-out request — drain and retry.
-                continue;
+        let params = serde_json::json!({ "source": source });
+        let result = self.client.send_discover(params);
+        result.map_err(|e| match e {
+            // serialize/write/flush: no stderr augmentation
+            SubprocessError::RequestFailed(msg) => NodeError::RequestFailed(msg),
+            // in-loop errors: augment with stderr context
+            SubprocessError::Timeout(secs) => self.augment_error(NodeError::Timeout(secs)),
+            SubprocessError::InvalidResponse(msg) => {
+                self.augment_error(NodeError::InvalidResponse(msg))
             }
-
-            if let Some(error) = response.error {
-                return Err(self.augment_error(NodeError::DiscoverFailed(error.message)));
+            SubprocessError::DiscoverFailed(msg) => {
+                self.augment_error(NodeError::DiscoverFailed(msg))
             }
-
-            if response.jsonrpc.as_deref() != Some("2.0") {
-                return Err(self.augment_error(NodeError::InvalidResponse(
-                    "response missing or has incorrect jsonrpc version".to_string(),
-                )));
-            }
-
-            let result = response.result.ok_or_else(|| {
-                self.augment_error(NodeError::InvalidResponse(
-                    "response missing result field".to_string(),
-                ))
-            })?;
-
-            return serde_json::from_value(result).map_err(|e| {
-                self.augment_error(NodeError::InvalidResponse(format!(
-                    "result parse error: {}",
-                    e
-                )))
-            });
-        }
-
-        Err(self.augment_error(NodeError::InvalidResponse(
-            "too many stale responses — helper may be in a corrupted state".to_string(),
-        )))
+            SubprocessError::SpawnFailed(msg) => NodeError::SpawnFailed(msg),
+        })
     }
 
     /// Drain captured stderr lines and append them to the error message.
     fn augment_error(&self, err: NodeError) -> NodeError {
-        let lines: Vec<String> = {
-            let mut guard = self.stderr_lines.lock().unwrap_or_else(|e| e.into_inner());
-            std::mem::take(&mut *guard)
-        };
+        let lines = self.client.take_stderr();
         if lines.is_empty() {
             return err;
         }
@@ -305,77 +161,6 @@ impl NodeHelper {
 
     /// Send a `shutdown` request and wait for the child process to exit.
     pub fn shutdown(&mut self) {
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "shutdown",
-            "id": self.request_id,
-        });
-        if let Ok(req) = serde_json::to_string(&request) {
-            let _ = writeln!(self.stdin, "{}", req);
-            let _ = self.stdin.flush();
-        }
-
-        let deadline = Instant::now() + Duration::from_secs(SHUTDOWN_TIMEOUT_SECS);
-        loop {
-            match self.child.try_wait() {
-                Ok(Some(_)) => return,
-                Ok(None) => {
-                    if Instant::now() >= deadline {
-                        let _ = self.child.kill();
-                        let _ = self.child.wait();
-                        return;
-                    }
-                    thread::sleep(Duration::from_millis(100));
-                }
-                Err(_) => {
-                    let _ = self.child.kill();
-                    let _ = self.child.wait();
-                    return;
-                }
-            }
-        }
-    }
-}
-
-impl Drop for NodeHelper {
-    fn drop(&mut self) {
-        match self.child.try_wait() {
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                eprintln!("warning: node helper still running, attempting shutdown");
-                let request = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "method": "shutdown",
-                    "id": self.request_id,
-                });
-                if let Ok(req) = serde_json::to_string(&request) {
-                    let _ = writeln!(self.stdin, "{}", req);
-                    let _ = self.stdin.flush();
-                }
-                let deadline = Instant::now() + Duration::from_secs(2);
-                loop {
-                    match self.child.try_wait() {
-                        Ok(Some(_)) => return,
-                        Ok(None) => {
-                            if Instant::now() >= deadline {
-                                let _ = self.child.kill();
-                                let _ = self.child.wait();
-                                return;
-                            }
-                            thread::sleep(Duration::from_millis(100));
-                        }
-                        Err(_) => {
-                            let _ = self.child.kill();
-                            let _ = self.child.wait();
-                            return;
-                        }
-                    }
-                }
-            }
-            Err(_) => {
-                let _ = self.child.kill();
-                let _ = self.child.wait();
-            }
-        }
+        self.client.shutdown();
     }
 }

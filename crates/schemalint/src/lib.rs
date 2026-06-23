@@ -9,6 +9,7 @@ pub mod normalize;
 pub mod profile;
 pub mod python;
 pub mod rules;
+pub(crate) mod subprocess;
 
 pub use cache::Cache;
 pub use ir::{Arena, Node, NodeId, NodeKind};

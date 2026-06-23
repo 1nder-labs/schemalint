@@ -1,9 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::NodeError;
+use crate::subprocess::probe_command;
 
 /// Resolve the `tsx` runner command.
 ///
@@ -71,33 +70,4 @@ fn workspace_root() -> Result<PathBuf, NodeError> {
                 manifest_dir.display()
             ))
         })
-}
-
-/// Check whether a command is available on PATH with a bounded timeout.
-fn probe_command(cmd: &str, timeout: Duration) -> bool {
-    match Command::new(cmd)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-    {
-        Ok(mut child) => {
-            let start = Instant::now();
-            loop {
-                match child.try_wait() {
-                    Ok(Some(status)) => return status.success(),
-                    Ok(None) => {
-                        if Instant::now() - start >= timeout {
-                            let _ = child.kill();
-                            let _ = child.wait();
-                            return false;
-                        }
-                        thread::sleep(Duration::from_millis(50));
-                    }
-                    Err(_) => return false,
-                }
-            }
-        }
-        Err(_) => false,
-    }
 }
