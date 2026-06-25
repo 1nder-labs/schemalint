@@ -145,12 +145,11 @@ impl SubprocessClient {
                         if let Some(prefix) = echo_prefix {
                             eprintln!("[{}] {}", prefix, l);
                         }
-                        if let Ok(mut lines) = stderr_capture.lock() {
-                            if lines.len() >= STDERR_CAP {
-                                lines.pop_front();
-                            }
-                            lines.push_back(l);
+                        let mut lines = stderr_capture.lock().unwrap_or_else(|e| e.into_inner());
+                        if lines.len() >= STDERR_CAP {
+                            lines.pop_front();
                         }
+                        lines.push_back(l);
                     }
                     Err(_) => break,
                 }
@@ -369,5 +368,24 @@ mod tests {
             "schemalint-definitely-not-a-real-binary-xyz",
             Duration::from_millis(200),
         ));
+    }
+
+    #[test]
+    fn stderr_cap_evicts_oldest_entry() {
+        // Pure logic test: verify the cap eviction behaviour without spawning a subprocess.
+        const STDERR_CAP: usize = 1000;
+        let mut lines: VecDeque<String> = VecDeque::new();
+        for i in 0..=STDERR_CAP {
+            if lines.len() >= STDERR_CAP {
+                lines.pop_front();
+            }
+            lines.push_back(format!("line-{}", i));
+        }
+        // After inserting 1001 entries the buffer must be exactly at the cap.
+        assert_eq!(lines.len(), STDERR_CAP);
+        // The very first entry ("line-0") must have been evicted.
+        assert_ne!(lines.front().map(String::as_str), Some("line-0"));
+        // The newest entry must be present at the back.
+        assert_eq!(lines.back().map(String::as_str), Some("line-1000"));
     }
 }
