@@ -12,6 +12,19 @@ require_object_root = false
     )
 }
 
+fn forbid_empty_object_profile() -> schemalint::profile::Profile {
+    load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+forbid_empty_object = true
+"##,
+    )
+}
+
 fn anthropic_test_profile() -> schemalint::profile::Profile {
     load_test_profile(
         r##"
@@ -46,6 +59,35 @@ fn empty_object_rule_fires() {
         diagnostics
     );
     assert_eq!(hits[0].severity, DiagnosticSeverity::Warning);
+}
+
+#[test]
+fn empty_object_rule_error_when_forbid_empty_object() {
+    // When profile.structural.forbid_empty_object == true the rule must emit
+    // DiagnosticSeverity::Error instead of Warning.
+    let profile = forbid_empty_object_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "object",
+        "additionalProperties": false
+    }));
+    let ruleset = RuleSet::from_profile(&profile);
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-empty-object")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected exactly one empty-object diagnostic, got {:?}",
+        diagnostics
+    );
+    assert_eq!(
+        hits[0].severity,
+        DiagnosticSeverity::Error,
+        "expected Error severity when forbid_empty_object = true, got {:?}",
+        hits[0].severity
+    );
 }
 
 #[test]

@@ -43,6 +43,33 @@ fn rule_path(code: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Drift guard: asserts that SEMANTIC_RULES exactly matches the set of rule
+    /// names whose RuleMetadata::category == RuleCategory::Semantic in the live
+    /// RULES registry.  Adding a semantic rule without updating SEMANTIC_RULES
+    /// will cause this test to fail.
+    #[test]
+    fn semantic_rules_list_matches_registry() {
+        use crate::rules::metadata::RuleCategory;
+        use crate::rules::registry::RULES;
+        use std::collections::BTreeSet;
+
+        let from_registry: BTreeSet<String> = RULES
+            .iter()
+            .filter_map(|r| r.metadata())
+            .filter(|m| m.category == RuleCategory::Semantic)
+            .map(|m| m.name)
+            .collect();
+
+        let from_const: BTreeSet<String> = SEMANTIC_RULES.iter().map(|s| s.to_string()).collect();
+
+        assert_eq!(
+            from_registry, from_const,
+            "SEMANTIC_RULES const in docs_url.rs is out of sync with the Semantic \
+             rules registered in RULES.  Update SEMANTIC_RULES to match: {:?}",
+            from_registry
+        );
+    }
+
     #[test]
     fn keyword_code_maps_to_keyword_page() {
         assert_eq!(
