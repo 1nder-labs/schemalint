@@ -33,6 +33,16 @@ jobs:
         run: npm ci
         working-directory: typescript/schemalint-zod
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install schemalint-pydantic sidecar
+        run: |
+          pip install pydantic
+          pip install ./python/schemalint-pydantic
+
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
 
@@ -115,6 +125,16 @@ jobs:
       - name: Install schemalint-zod dependencies
         run: npm ci
         working-directory: typescript/schemalint-zod
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install schemalint-pydantic sidecar
+        run: |
+          pip install pydantic
+          pip install ./python/schemalint-pydantic
 
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2

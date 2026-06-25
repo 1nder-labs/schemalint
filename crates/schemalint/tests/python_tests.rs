@@ -16,3 +16,4 @@ use schemalint::python::PythonError;
 include!("python_tests/part_01.rs");
 include!("python_tests/part_02.rs");
 include!("python_tests/part_03.rs");
+include!("python_tests/part_04.rs");
