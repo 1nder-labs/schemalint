@@ -33,3 +33,4 @@ fn send_request(child: &mut std::process::Child, request: &str) -> serde_json::V
 
 include!("server_tests/part_01.rs");
 include!("server_tests/part_02.rs");
+include!("server_tests/part_03.rs");

@@ -17,6 +17,20 @@ use crate::rules::{Diagnostic, DiagnosticSeverity, RuleSet};
 const MAX_PAYLOAD_BYTES: usize = 10_000_000;
 const MAX_CHECK_SECONDS: u64 = 30;
 
+// DoS input bounds: reject pathological schemas before any expensive work.
+// A real-world JSON Schema is almost always under 100 KiB, a few thousand
+// nodes, and fewer than 50 levels deep. These limits are generous enough to
+// never affect legitimate usage while preventing CPU/memory exhaustion from
+// crafted inputs.
+const MAX_SCHEMA_BYTES: usize = 5 * 1024 * 1024; // 5 MiB serialized
+const MAX_SCHEMA_NODES: usize = 200_000; // recursive object/array/value count
+                                         // Depth guard: a chain like {"a":{"a":...}} 200k levels deep is only ~1.2 MiB
+                                         // and ~200k nodes, so it passes both guards above — but then causes a stack
+                                         // overflow in count_nodes_bounded itself and in normalize/traverse, crashing
+                                         // the server. Bounding depth here prevents that: once rejected, neither the
+                                         // counter nor any downstream recursive walk ever receives an over-deep tree.
+const MAX_SCHEMA_DEPTH: usize = 1_000; // real schemas are always well under 50
+
 /// Run the JSON-RPC 2.0 server over stdin/stdout.
 ///
 /// Reads one JSON-RPC request per line, dispatches to the appropriate
@@ -190,7 +204,10 @@ fn handle_check(
     // Load profiles (cached across requests)
     let mut loaded_profiles = Vec::new();
     {
-        let mut cache_guard = profile_cache.lock().unwrap();
+        // Use unwrap_or_else to recover from a poisoned lock (a prior request
+        // panicked while holding it). The inner data is still valid — we just
+        // clear the poison flag and continue rather than taking down the server.
+        let mut cache_guard = profile_cache.lock().unwrap_or_else(|e| e.into_inner());
         for &profile_id in &profiles {
             let profile = if let Some(cached) = cache_guard.get(profile_id) {
                 cached.clone()
@@ -231,33 +248,67 @@ fn handle_check(
 
     let profile_names: Vec<String> = loaded_profiles.iter().map(|p| p.name.clone()).collect();
 
-    // OOM guard: count nodes in the raw schema before normalizing.
-    // Reject schemas exceeding a reasonable size to prevent server OOM.
-    fn count_nodes(value: &Value) -> usize {
-        match value {
-            Value::Array(arr) => 1 + arr.iter().map(count_nodes).sum::<usize>(),
-            Value::Object(map) => 1 + map.values().map(count_nodes).sum::<usize>(),
-            _ => 1,
-        }
-    }
-    const MAX_SCHEMA_NODES: usize = 100_000;
-    if count_nodes(&schema) > MAX_SCHEMA_NODES {
+    // --- Input bounds: primary DoS protection ---
+    // These checks run before normalize/check_rulesets so a crafted schema
+    // cannot consume unbounded CPU or memory. The 30 s elapsed check below
+    // remains as a secondary backstop for unforeseen edge cases.
+
+    // 1. Byte-length guard on the serialized schema value.
+    let schema_bytes = serde_json::to_vec(&schema).unwrap_or_default();
+    if schema_bytes.len() > MAX_SCHEMA_BYTES {
         return json!({
             "success": false,
             "error": format!(
-                "Schema exceeds {} node limit; rejected to prevent OOM",
-                MAX_SCHEMA_NODES
+                "Schema serialized size ({} bytes) exceeds the {} byte limit",
+                schema_bytes.len(),
+                MAX_SCHEMA_BYTES
+            )
+        });
+    }
+
+    // 2. JSON node-count + depth guard with early exit.
+    // count_nodes_bounded tracks both a shared node budget and the current
+    // nesting depth. It returns false as soon as either limit is hit, so the
+    // counter itself is O(min(actual_nodes, MAX_SCHEMA_NODES)) work and can
+    // never recurse more than MAX_SCHEMA_DEPTH frames — no overflow while
+    // validating. Subsequent normalize/traverse calls therefore also never
+    // receive an over-deep tree.
+    fn count_nodes_bounded(value: &Value, remaining: &mut usize, depth: usize) -> bool {
+        if depth > MAX_SCHEMA_DEPTH {
+            return false;
+        }
+        if *remaining == 0 {
+            return false;
+        }
+        *remaining -= 1;
+        match value {
+            Value::Array(arr) => arr
+                .iter()
+                .all(|v| count_nodes_bounded(v, remaining, depth + 1)),
+            Value::Object(map) => map
+                .values()
+                .all(|v| count_nodes_bounded(v, remaining, depth + 1)),
+            _ => true,
+        }
+    }
+    let mut budget = MAX_SCHEMA_NODES;
+    if !count_nodes_bounded(&schema, &mut budget, 0) {
+        return json!({
+            "success": false,
+            "error": format!(
+                "Schema exceeds complexity limits (max depth {MAX_SCHEMA_DEPTH}, \
+                 max nodes {MAX_SCHEMA_NODES}); rejected to prevent resource exhaustion"
             )
         });
     }
 
     let start = Instant::now();
 
-    // Normalize schema
-    let bytes = serde_json::to_vec(&schema).unwrap_or_default();
-    let hash = hash_bytes(&bytes);
+    // Normalize schema. Reuse schema_bytes already produced by the byte-length
+    // guard above — no need to re-serialize.
+    let hash = hash_bytes(&schema_bytes);
 
-    let normalized = match cache.get(hash, &bytes) {
+    let normalized = match cache.get(hash, &schema_bytes) {
         Some(n) => n,
         None => {
             let n = match normalize(schema) {
@@ -269,7 +320,7 @@ fn handle_check(
                     });
                 }
             };
-            cache.insert(hash, bytes, n.clone());
+            cache.insert(hash, schema_bytes.clone(), n.clone());
             n
         }
     };
