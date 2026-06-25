@@ -8,9 +8,11 @@
 #   end_of_record        — end of the record
 #
 # Only files under crates/schemalint/src/ are counted toward the threshold.
-# Node/Python subprocess modules implicitly have lower coverage because they
-# require external runtimes (Node, Python, Pydantic) — they are excluded
-# from the target.
+# The filter is a positive path match: only source files whose SF: path
+# contains */crates/schemalint/src/* contribute to LF/LH totals.
+# Everything else (helper scripts, integration tests, other crates) is
+# silently skipped — not because it is explicitly excluded, but because
+# it does not match the path prefix.
 #
 # The 78% floor prevents erosion of the core crate's line coverage.
 # The target for core logic (emitters, normalizer, parser, rules) is 90%+.

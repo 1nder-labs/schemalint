@@ -10,3 +10,4 @@ docs/.docusaurus/
 docs/build/
 docs/node_modules/
 target/
+scripts/validation/results/

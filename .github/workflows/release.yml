@@ -250,6 +250,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -294,6 +296,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
@@ -316,7 +320,7 @@ jobs:
           echo "$VERSION_OUTPUT"
           echo "Running: schemalint check (minimal schema)"
           echo '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}' > test-schema.json
-          ./schemalint check test-schema.json --profile openai
+          ./schemalint check test-schema.json --profile openai.so.2026-04-30
 
       - name: Extract and smoke-test binary (Windows)
         if: ${{ matrix.os == 'windows-latest' }}
@@ -331,7 +335,7 @@ jobs:
           Write-Host $versionOutput
           Write-Host "Running: schemalint check (minimal schema)"
           '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}' | Out-File -Encoding ascii test-schema.json
-          & ./schemalint.exe check test-schema.json --profile openai
+          & ./schemalint.exe check test-schema.json --profile openai.so.2026-04-30
 
       - name: Download wheel artifact (for wheel smoke test)
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -348,7 +352,7 @@ jobs:
           pip install dist/*.whl
           schemalint --version
           echo '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}' > test-schema.json
-          schemalint check test-schema.json --profile openai
+          schemalint check test-schema.json --profile openai.so.2026-04-30
 
   # Publish Rust crates to crates.io
   publish-crates:
@@ -359,6 +363,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -370,6 +376,7 @@ jobs:
         run: |
           published=false
           for i in 1 2 3; do
+            # --no-verify: deps are verified in CI; skip re-verify to avoid crates.io index-propagation races on the ordered workspace publish
             out=$(cargo publish -p schemalint-profiles --no-verify 2>&1) && { published=true; echo "$out"; break; }
             echo "$out"
             if echo "$out" | grep -qiE "already (uploaded|exists)"; then
@@ -390,6 +397,7 @@ jobs:
         run: |
           published=false
           for i in 1 2 3; do
+            # --no-verify: deps are verified in CI; skip re-verify to avoid crates.io index-propagation races on the ordered workspace publish
             out=$(cargo publish -p schemalint --no-verify 2>&1) && { published=true; echo "$out"; break; }
             echo "$out"
             if echo "$out" | grep -qiE "already (uploaded|exists)"; then
@@ -440,9 +448,11 @@ jobs:
       - publish-pypi
     if: ${{ always() && needs.smoke-test.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Download all dist artifacts
@@ -521,6 +531,8 @@ jobs:
       SCHEMALINT_CACHE_DIR: ${{ runner.temp }}/schemalint-cache
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -541,7 +553,7 @@ jobs:
         run: |
           schemalint --version
           echo '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}' > test-schema.json
-          schemalint check test-schema.json --profile openai
+          schemalint check test-schema.json --profile openai.so.2026-04-30
 
   # Publish all npm packages
   publish-npm:
@@ -555,6 +567,8 @@ jobs:
       url: https://www.npmjs.com/package/@schemalint/cli
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
