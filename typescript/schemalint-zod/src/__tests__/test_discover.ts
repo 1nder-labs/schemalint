@@ -156,4 +156,25 @@ describe('discoverZodSchemas', () => {
       'betaZodTool:search',
     ]);
   });
+
+  it('sets provider_hint to "openai" when source imports from openai SDK', async () => {
+    const result = await discoverZodSchemas('provider-helpers.ts');
+
+    // provider-helpers.ts imports from 'openai/helpers/zod' (before @anthropic-ai/),
+    // so the first-match wins and the hint should be "openai".
+    expect(result.provider_hint).toBe('openai');
+  });
+
+  it('sets provider_hint to "anthropic" when source imports only from @anthropic-ai SDK', async () => {
+    const result = await discoverZodSchemas('anthropic-only.ts');
+
+    expect(result.provider_hint).toBe('anthropic');
+  });
+
+  it('leaves provider_hint undefined when source has no provider SDK imports', async () => {
+    const result = await discoverZodSchemas('simple.ts');
+
+    // simple.ts only imports from 'zod' — no provider SDK present.
+    expect(result.provider_hint).toBeUndefined();
+  });
 });

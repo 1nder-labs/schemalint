@@ -90,9 +90,11 @@ async function linkNodeModules(dir: string, baseFilePath: string): Promise<void>
 
   try {
     await symlink(nodeModules, join(dir, 'node_modules'), 'dir');
-  } catch {
+  } catch (err) {
     // Bare imports may still be rewritten to file URLs. A symlink failure should
     // not prevent evaluating schemas that do not need package resolution.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[schemalint-zod] Could not symlink node_modules into temp dir: ${msg}`);
   }
 }
 
