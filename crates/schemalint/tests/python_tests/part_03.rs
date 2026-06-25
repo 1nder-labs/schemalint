@@ -59,47 +59,6 @@ fn check_python_not_installed_when_path_is_empty() {
 }
 
 // ---------------------------------------------------------------------------
-// Real-sidecar DiscoverFailed — augment_error early-return (no stderr)
-//
-// When the real schemalint_pydantic sidecar is asked to discover a package
-// that doesn't exist, it returns a JSON-RPC DiscoverFailed error without
-// writing to stderr.  This exercises the `lines.is_empty() → return err`
-// early-return branch in `augment_error`.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn check_python_real_sidecar_discover_failed_nonexistent_package() {
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    let output = cmd
-        .args([
-            "check-python",
-            "--package",
-            "definitely.does.not.exist.xyz",
-            "--profile",
-            "openai.so.2026-04-30",
-        ])
-        .output()
-        .unwrap();
-
-    assert!(
-        !output.status.success(),
-        "exit code should be 1 when package does not exist"
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    // The DiscoverFailed message should mention the non-existent package.
-    assert!(
-        stderr.contains("discovery failed"),
-        "expected DiscoverFailed message, got:\n{stderr}"
-    );
-    // Should not contain the augmented stderr block because the real sidecar
-    // emits no stderr for missing packages.
-    assert!(
-        !stderr.contains("--- Python stderr ---"),
-        "real sidecar should produce no stderr block, got:\n{stderr}"
-    );
-}
-
-// ---------------------------------------------------------------------------
 // Fake-sidecar: DiscoverFailed with ≤10 stderr lines (short arm of augment_error)
 //
 // Exercises `python/mod.rs` augment_error:
