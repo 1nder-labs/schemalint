@@ -73,3 +73,28 @@ max_object_depth = -1
         other => panic!("unexpected error for negative limit: {:?}", other),
     }
 }
+
+// ---------------------------------------------------------------------------
+// P4: Unknown keys inside [structural] are silently ignored (no deny_unknown_fields)
+// ---------------------------------------------------------------------------
+
+/// Guard that StructuralLimits deserialization does NOT use `deny_unknown_fields`.
+/// Adding new fields to the struct (or third-party profiles that use keys we
+/// don't yet recognise) must not break profile loading.
+#[test]
+fn structural_unknown_key_is_ignored() {
+    let toml = r#"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+some_future_key_not_yet_known = true
+another_unknown_integer = 42
+"#;
+
+    // Must succeed — unknown keys must be silently ignored, not rejected.
+    let profile = load(toml.as_bytes()).unwrap();
+    // Known fields still deserialize correctly.
+    assert_eq!(profile.structural.require_object_root, false);
+}

@@ -4,6 +4,8 @@ use schemalint::rules::registry::{DiagnosticSeverity, Rule, RuleSet, RULES};
 
 #[path = "rules_tests/class_a.rs"]
 mod class_a;
+#[path = "rules_tests/class_b.rs"]
+mod class_b;
 #[path = "rules_tests/metadata.rs"]
 mod metadata;
 #[path = "rules_tests/semantic.rs"]

@@ -92,7 +92,7 @@ pub fn generate_class_b_rules(profile: &Profile) -> Vec<Box<dyn Rule>> {
             profile_name: profile.name.clone(),
         }));
     }
-    if profile.code_prefix == "ANT" {
+    if s.forbid_allof_with_ref {
         rules.push(Box::new(AllOfWithRefRule {
             profile_name: profile.name.clone(),
         }));

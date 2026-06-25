@@ -35,6 +35,20 @@ allOf = "allow"
 
 [structural]
 require_object_root = false
+forbid_allof_with_ref = true
+"##,
+    )
+}
+
+fn external_refs_test_profile() -> schemalint::profile::Profile {
+    load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+external_refs = true
 "##,
     )
 }
@@ -335,6 +349,122 @@ fn allof_with_ref_rule_negative_no_ref() {
     assert!(
         hits.is_empty(),
         "expected no allof-with-ref error without $ref, got {:?}",
+        diagnostics
+    );
+}
+
+// ---------------------------------------------------------------------------
+// P1: ExternalRefsRule — extended coverage for non-HTTP external refs
+// ---------------------------------------------------------------------------
+
+#[test]
+fn external_refs_file_scheme_flagged() {
+    let profile = external_refs_test_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$ref": "file:///schemas/foo.json"
+    }));
+    let ruleset = RuleSet::from_profile(&profile);
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-external-refs")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected file:// ref to be flagged as external, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn external_refs_relative_same_dir_flagged() {
+    let profile = external_refs_test_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$ref": "./models/user.json"
+    }));
+    let ruleset = RuleSet::from_profile(&profile);
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-external-refs")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected ./rel.json ref to be flagged as external, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn external_refs_relative_parent_dir_flagged() {
+    let profile = external_refs_test_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$ref": "../common/base.json"
+    }));
+    let ruleset = RuleSet::from_profile(&profile);
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-external-refs")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected ../rel.json ref to be flagged as external, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn external_refs_fragment_not_flagged() {
+    let profile = external_refs_test_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$defs": { "Foo": { "type": "string" } },
+        "properties": { "x": { "$ref": "#/$defs/Foo" } }
+    }));
+    let ruleset = RuleSet::from_profile(&profile);
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-external-refs")
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "expected fragment ref '#/$defs/Foo' NOT to be flagged, got {:?}",
+        diagnostics
+    );
+}
+
+// ---------------------------------------------------------------------------
+// P3: AnyOfObjectsHint — root suppression is intentional; pin that behavior.
+// ---------------------------------------------------------------------------
+
+/// AnyOfObjectsHint suppresses at the root (`parent.is_none()`).
+/// Root-level anyOf is the domain of RootAnyOfRule (when enabled by the
+/// profile).  AnyOfObjectsHint is a nested-only compatibility hint and
+/// deliberately does not fire at the schema root — this test pins that.
+#[test]
+fn anyof_objects_hint_suppressed_at_root() {
+    let profile = semantic_test_profile();
+    // Root node with anyOf containing only object branches — the hint must
+    // NOT fire here (root is handled by RootAnyOfRule, not by this hint).
+    let schema = normalize_schema(serde_json::json!({
+        "anyOf": [
+            { "type": "object", "properties": { "a": { "type": "string" } } },
+            { "type": "object", "properties": { "b": { "type": "number" } } }
+        ]
+    }));
+    let ruleset = RuleSet::from_profile(&profile);
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-anyof-objects")
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "AnyOfObjectsHint must not fire at the schema root (root is covered by RootAnyOfRule), got {:?}",
         diagnostics
     );
 }

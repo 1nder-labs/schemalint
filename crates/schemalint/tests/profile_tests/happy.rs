@@ -150,6 +150,7 @@ max_union_properties = 16
             forbid_root_any_of: false,
             forbid_root_enum: false,
             forbid_empty_object: false,
+            forbid_allof_with_ref: false,
         }
     );
 }

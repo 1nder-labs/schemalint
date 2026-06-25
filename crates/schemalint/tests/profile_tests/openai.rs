@@ -98,3 +98,16 @@ fn openai_profile_corrections() {
         Some(&Severity::Allow)
     );
 }
+
+/// P2 guard: OpenAI profile must NOT enable AllOfWithRefRule.
+/// The flag defaults to false and the OpenAI profile does not set it.
+#[test]
+fn openai_profile_does_not_forbid_allof_with_ref() {
+    let bytes = schemalint_profiles::OPENAI_SO_2026_04_30.as_bytes();
+    let profile = load(bytes).unwrap();
+
+    assert_eq!(
+        profile.structural.forbid_allof_with_ref, false,
+        "OpenAI profile must not enable forbid_allof_with_ref"
+    );
+}

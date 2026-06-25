@@ -67,6 +67,10 @@ pub struct StructuralLimits {
     pub max_optional_properties: u32,
     pub max_union_properties: u32,
     pub external_refs: bool,
+    /// When `true`, schemas that combine `allOf` with a `$ref` inside its
+    /// branches are rejected.  Currently used by the Anthropic profile, which
+    /// does not support that pattern in Structured Outputs.
+    pub forbid_allof_with_ref: bool,
 }
 
 /// Errors that can occur when loading a profile.

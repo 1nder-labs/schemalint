@@ -26,6 +26,7 @@ fn anthropic_profile_values() {
     assert_eq!(profile.structural.max_optional_properties, 24);
     assert_eq!(profile.structural.max_union_properties, 16);
     assert_eq!(profile.structural.external_refs, true);
+    assert_eq!(profile.structural.forbid_allof_with_ref, true);
 }
 
 #[test]

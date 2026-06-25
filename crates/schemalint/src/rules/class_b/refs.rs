@@ -89,7 +89,11 @@ impl Rule for AllOfWithRefRule {
 }
 
 fn is_external_ref(ref_str: &str) -> bool {
-    ref_str.starts_with("http://") || ref_str.starts_with("https://") || ref_str.starts_with('/')
+    // A $ref is internal only when it is a pure JSON Pointer fragment (starts
+    // with '#').  Everything else — http://, https://, file://, /, ./foo.json,
+    // ../foo.json, bare foo.json — is treated as external and flagged when the
+    // profile enables this rule.
+    !ref_str.starts_with('#')
 }
 
 fn contains_ref(value: &Value) -> bool {
