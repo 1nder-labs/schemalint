@@ -14,6 +14,16 @@ if (!VERSION) {
 }
 const REPO = '1nder-labs/schemalint';
 
+// [P0 — supply chain] Allowlist of hosts permitted for downloads and redirects.
+// Only GitHub release delivery hosts are trusted; any other host (including
+// same-registrable-domain lookalikes) is rejected before a connection is made.
+const ALLOWED_HOSTS = new Set([
+  'github.com',
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'codeload.github.com',
+]);
+
 const TARGET_MAP = {
   'darwin-x64': 'x86_64-apple-darwin',
   'darwin-arm64': 'aarch64-apple-darwin',
@@ -63,21 +73,55 @@ function sha256File(filePath) {
   });
 }
 
+/**
+ * [P0 — supply chain] Assert that a URL's hostname is in the allowed set.
+ * Parses with the WHATWG URL API so scheme, port, and hostname are all
+ * properly separated — substring/endsWith matching on the raw string is
+ * deliberately avoided to prevent `github.com.evil.com`-style bypasses.
+ * Throws for unparseable URLs or relative Location headers (fail closed).
+ */
+function assertAllowedHost(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Refusing download: could not parse URL: ${url}`);
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`Refusing non-HTTPS URL: ${url}`);
+  }
+  if (!ALLOWED_HOSTS.has(parsed.hostname)) {
+    throw new Error(
+      `Refusing download from disallowed host "${parsed.hostname}". ` +
+      `Allowed hosts: ${[...ALLOWED_HOSTS].join(', ')}`
+    );
+  }
+}
+
 function downloadFile(url, destPath, depth = 0) {
+  // [P0 — supply chain] Validate initial URL and every redirect target before
+  // opening a connection. assertAllowedHost also enforces HTTPS, making the
+  // old ternary that conditionally required 'http' unnecessary.
+  assertAllowedHost(url);
+
   return new Promise((resolve, reject) => {
-    const protocol = url.startsWith('https:') ? https : require('http');
-    const request = protocol.get(url, (response) => {
+    const request = https.get(url, (response) => {
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
         if (depth > 5) {
           reject(new Error('too many redirects'));
           return;
         }
-        if (!response.headers.location.startsWith('https:')) {
-          reject(new Error(`refusing insecure redirect to non-HTTPS URL: ${response.headers.location}`));
-          return;
+        // assertAllowedHost is called at the top of the recursive call, which
+        // covers both the https-only and host-allowlist checks for the redirect.
+        // The try/catch converts any synchronous throw (e.g. disallowed host,
+        // unparseable Location) into a rejection rather than an uncaught exception
+        // escaping the response callback.
+        try {
+          downloadFile(response.headers.location, destPath, depth + 1).then(resolve).catch(reject);
+        } catch (e) {
+          reject(e);
         }
-        downloadFile(response.headers.location, destPath, depth + 1).then(resolve).catch(reject);
         return;
       }
       if (response.statusCode !== 200) {
@@ -120,11 +164,34 @@ async function ensureBinary() {
   const binPath = getBinaryPath();
   const sentinelPath = binPath + '.verified';
 
+  // [P0 — integrity] Cache-hit path: re-verify the cached binary against the
+  // SHA-256 recorded in the sentinel on every invocation. An empty, unreadable,
+  // or malformed sentinel is treated as a mismatch and triggers a fresh
+  // download+verify cycle.
   if (fs.existsSync(binPath) && fs.existsSync(sentinelPath)) {
-    return binPath;
+    let recordedHash = '';
+    try {
+      recordedHash = fs.readFileSync(sentinelPath, 'utf8').trim();
+    } catch {
+      // Unreadable sentinel — treat as mismatch; fall through.
+    }
+    if (/^[0-9a-f]{64}$/.test(recordedHash)) {
+      let actualHash = '';
+      try {
+        actualHash = await sha256File(binPath);
+      } catch {
+        // Unreadable binary — fall through to fresh download.
+      }
+      if (actualHash === recordedHash) {
+        return binPath;
+      }
+      // Hash mismatch or unreadable binary: wipe both so the clean-slate
+      // unlinks below complete a tidy state before re-downloading.
+    }
+    // Sentinel absent, empty, malformed, or hash mismatch — fall through.
   }
 
-  // Cache miss or incomplete extraction — clean slate.
+  // Cache miss or failed integrity check — clean slate.
   try { fs.unlinkSync(sentinelPath); } catch {}
   try { fs.unlinkSync(binPath); } catch {}
 
@@ -239,13 +306,43 @@ async function ensureBinary() {
     throw new Error(`Binary not found at ${binPath} after extraction`);
   }
 
+  // [P0 — path traversal] Verify the extracted binary is inside cacheDir.
+  // Both sides are resolved through realpathSync so that symlinks (e.g. macOS
+  // /tmp → /private/tmp) do not cause false rejections. The archive is already
+  // checksum-verified at this point, but we still guard defensively because
+  // Tar-Slip / Zip-Slip attacks target the extraction step.
+  // Note: GNU tar `--no-absolute-filenames` is deliberately NOT used because
+  // macOS ships bsdtar, which does not recognise that long option and would
+  // break every macOS install. The realpath containment check is the portable
+  // guard for both tar and Expand-Archive paths.
+  try {
+    const realBin = fs.realpathSync(binPath);
+    const realCacheDir = fs.realpathSync(cacheDir);
+    if (!realBin.startsWith(realCacheDir + path.sep)) {
+      try { fs.unlinkSync(binPath); } catch {}
+      try { fs.unlinkSync(sentinelPath); } catch {}
+      throw new Error(
+        `Path traversal detected: extracted binary "${realBin}" escapes cache directory "${realCacheDir}"`
+      );
+    }
+  } catch (e) {
+    if (e.message.startsWith('Path traversal')) throw e;
+    // realpathSync can fail if binPath disappeared between existsSync and here —
+    // treat as a missing-binary error so the outer handler surfaces a clear message.
+    throw new Error(`Binary not accessible after extraction: ${e.message}`);
+  }
+
   // Make executable on Unix.
   if (process.platform !== 'win32') {
     fs.chmodSync(binPath, 0o755);
   }
 
-  // Write sentinel to mark successful extraction.
-  fs.writeFileSync(sentinelPath, 'verified');
+  // [P0 — integrity] Write the SHA-256 of the extracted binary (not the archive)
+  // into the sentinel. On future cache hits this hash is re-verified against the
+  // live binary before the cached path is returned, ensuring a tampered binary is
+  // caught on the very next invocation.
+  const binaryHash = await sha256File(binPath);
+  fs.writeFileSync(sentinelPath, binaryHash);
 
   return binPath;
 }

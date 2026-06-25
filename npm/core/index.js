@@ -32,4 +32,64 @@ function lint(schemaPath, options = {}) {
   }
 }
 
-module.exports = { lint };
+function lintNode(projectPath, options = {}) {
+  const args = ['check-node', '--format', 'json'];
+  if (options.profile) {
+    if (Array.isArray(options.profile)) {
+      options.profile.forEach((p) => args.push('--profile', p));
+    } else {
+      args.push('--profile', options.profile);
+    }
+  }
+  args.push('--source', projectPath);
+
+  const result = spawnSync('schemalint', args, { encoding: 'utf-8' });
+
+  if (result.error && result.error.code === 'ENOENT') {
+    throw new Error(
+      'schemalint CLI not found on PATH. Install via: npm install -g @schemalint/cli'
+    );
+  }
+
+  if (result.status !== 0 && result.status !== 1) {
+    return { issues: [], error: result.stderr || 'schemalint process error' };
+  }
+
+  try {
+    return JSON.parse(result.stdout || '{}');
+  } catch {
+    return { issues: [], error: result.stderr || 'failed to parse output' };
+  }
+}
+
+function lintPython(projectPath, options = {}) {
+  const args = ['check-python', '--format', 'json'];
+  if (options.profile) {
+    if (Array.isArray(options.profile)) {
+      options.profile.forEach((p) => args.push('--profile', p));
+    } else {
+      args.push('--profile', options.profile);
+    }
+  }
+  args.push('--package', projectPath);
+
+  const result = spawnSync('schemalint', args, { encoding: 'utf-8' });
+
+  if (result.error && result.error.code === 'ENOENT') {
+    throw new Error(
+      'schemalint CLI not found on PATH. Install via: npm install -g @schemalint/cli'
+    );
+  }
+
+  if (result.status !== 0 && result.status !== 1) {
+    return { issues: [], error: result.stderr || 'schemalint process error' };
+  }
+
+  try {
+    return JSON.parse(result.stdout || '{}');
+  } catch {
+    return { issues: [], error: result.stderr || 'failed to parse output' };
+  }
+}
+
+module.exports = { lint, lintNode, lintPython };
