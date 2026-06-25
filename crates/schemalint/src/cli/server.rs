@@ -9,7 +9,9 @@ use serde_json::{json, Value};
 use crate::cache::{hash_bytes, DiskCache};
 use crate::cli::args::OutputFormat;
 use crate::cli::check_rulesets;
-use crate::cli::pipeline::render_output;
+use crate::cli::pipeline::{
+    aggregate_results, attach_source_spans, process_schemas, render_output,
+};
 use crate::normalize::normalize;
 use crate::profile::load;
 use crate::rules::{Diagnostic, DiagnosticSeverity, RuleSet};
@@ -108,6 +110,30 @@ pub fn run_server() {
             "check" => {
                 let params = request.get("params").cloned().unwrap_or(json!({}));
                 let result = handle_check(params, &cache, &profile_cache);
+                let response = json!({
+                    "jsonrpc": "2.0",
+                    "result": result,
+                    "id": id
+                });
+                if writeln!(stdout_lock, "{}", response).is_err() {
+                    break;
+                }
+            }
+            "checkNode" => {
+                let params = request.get("params").cloned().unwrap_or(json!({}));
+                let result = handle_check_node(params, &profile_cache);
+                let response = json!({
+                    "jsonrpc": "2.0",
+                    "result": result,
+                    "id": id
+                });
+                if writeln!(stdout_lock, "{}", response).is_err() {
+                    break;
+                }
+            }
+            "checkPython" => {
+                let params = request.get("params").cloned().unwrap_or(json!({}));
+                let result = handle_check_python(params, &profile_cache);
                 let response = json!({
                     "jsonrpc": "2.0",
                     "result": result,
@@ -346,6 +372,432 @@ fn handle_check(
     }
 
     let duration_ms = Some(start.elapsed().as_millis() as u64);
+
+    let output_text = render_output(
+        format,
+        &all_diagnostics,
+        total_errors,
+        total_warnings,
+        &profile_names,
+        duration_ms,
+    );
+
+    json!({
+        "success": true,
+        "output": output_text,
+        "total_errors": total_errors,
+        "total_warnings": total_warnings,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// checkNode — JSON contract
+//
+// Request params:
+//   {
+//     "sources":  ["src/**/*.ts", ...]   // required; TypeScript source globs
+//     "profiles": ["openai.so.2026-04-30", ...]  // required; built-in profile IDs only
+//     "format":   "json" | "human" | "sarif" | "gha" | "junit"  // optional, default "json"
+//   }
+//
+// Success response result:
+//   { "success": true, "output": "<rendered text>",
+//     "total_errors": N, "total_warnings": N }
+//
+// Failure response result:
+//   { "success": false, "error": "<message>" }
+//
+// Lifecycle: per-request spawn → discover-loop → shutdown → process pipeline.
+// No pooled/long-lived helper. Only built-in profile IDs are accepted
+// (resolve_builtin_profile rejects filesystem paths).
+// ---------------------------------------------------------------------------
+fn handle_check_node(
+    params: Value,
+    profile_cache: &Arc<Mutex<HashMap<String, crate::profile::Profile>>>,
+) -> Value {
+    // --- 1. Parse params ---
+    let sources = match params.get("sources").and_then(|v| v.as_array()) {
+        Some(arr) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect::<Vec<_>>(),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing 'sources' parameter (expected array of glob strings)"
+            });
+        }
+    };
+    if sources.is_empty() {
+        return json!({
+            "success": false,
+            "error": "Empty 'sources' array; at least one source glob is required"
+        });
+    }
+
+    let profiles = match params.get("profiles").and_then(|v| v.as_array()) {
+        Some(arr) => arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing 'profiles' parameter (expected array of built-in profile IDs)"
+            });
+        }
+    };
+
+    let format_str = params
+        .get("format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("json");
+    let format = match format_str {
+        "human" => OutputFormat::Human,
+        "json" => OutputFormat::Json,
+        "sarif" => OutputFormat::Sarif,
+        "gha" => OutputFormat::Gha,
+        "junit" => OutputFormat::Junit,
+        other => {
+            return json!({
+                "success": false,
+                "error": format!("Unknown format '{}'; expected one of: human, json, sarif, gha, junit", other)
+            });
+        }
+    };
+
+    // --- 2. Load profiles (cached) ---
+    let mut loaded_profiles = Vec::new();
+    {
+        let mut cache_guard = profile_cache.lock().unwrap_or_else(|e| e.into_inner());
+        for &profile_id in &profiles {
+            let profile = if let Some(cached) = cache_guard.get(profile_id) {
+                cached.clone()
+            } else {
+                let bytes = match crate::cli::resolve_builtin_profile(profile_id) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        return json!({
+                            "success": false,
+                            "error": format!("Failed to resolve profile '{profile_id}': {e}")
+                        });
+                    }
+                };
+                let profile = match load(&bytes) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return json!({
+                            "success": false,
+                            "error": format!("Failed to load profile '{profile_id}': {e}")
+                        });
+                    }
+                };
+                cache_guard.insert(profile_id.to_string(), profile.clone());
+                profile
+            };
+            loaded_profiles.push(profile);
+        }
+    }
+    loaded_profiles.sort_by(|a, b| a.name.cmp(&b.name));
+    loaded_profiles.dedup_by_key(|p| p.name.clone());
+
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = loaded_profiles
+        .iter()
+        .map(|p| (p, RuleSet::from_profile(p)))
+        .collect();
+    let profile_names: Vec<String> = loaded_profiles.iter().map(|p| p.name.clone()).collect();
+
+    let start = Instant::now();
+
+    // --- 3. Spawn Node helper ---
+    let mut helper = match crate::node::NodeHelper::spawn(None) {
+        Ok(h) => h,
+        Err(e) => {
+            return json!({
+                "success": false,
+                "error": format!("Failed to spawn Node helper: {e}")
+            });
+        }
+    };
+
+    // --- 4. Discover schemas from each source glob ---
+    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
+    let mut discovery_errors: Vec<String> = Vec::new();
+
+    for source in &sources {
+        match helper.discover(source) {
+            Ok(resp) => {
+                for model in resp.models {
+                    discovered_models.push(model);
+                }
+                // Log discovery warnings to stderr (doesn't corrupt the JSON-RPC stream)
+                for warning in &resp.warnings {
+                    eprintln!(
+                        "[checkNode] warning: discovery warning for '{}' in source '{}': {}",
+                        warning.model, source, warning.message
+                    );
+                }
+            }
+            Err(e) => {
+                discovery_errors.push(format!("discovery failed for source '{}': {}", source, e));
+            }
+        }
+    }
+
+    // Unconditionally shut down the helper before any failure handling.
+    helper.shutdown();
+
+    if discovered_models.is_empty() && !discovery_errors.is_empty() {
+        return json!({
+            "success": false,
+            "error": discovery_errors.join("; ")
+        });
+    }
+
+    if discovered_models.is_empty() {
+        // No models found, no failures — return clean empty result.
+        let output_text = render_output(format, &[], 0, 0, &profile_names, Some(0));
+        return json!({
+            "success": true,
+            "output": output_text,
+            "total_errors": 0,
+            "total_warnings": 0,
+        });
+    }
+
+    // --- 5. Run the normalize → check → aggregate pipeline ---
+    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovered_models
+        .iter()
+        .map(|m| {
+            (
+                PathBuf::from(&m.module_path),
+                m.name.clone(),
+                m.schema.clone(),
+            )
+        })
+        .collect();
+
+    let results = process_schemas(schema_entries, &profile_rulesets);
+    let results_with_spans = attach_source_spans(results, &discovered_models);
+    let (all_diagnostics, total_errors, total_warnings, fatal_errors) =
+        aggregate_results(results_with_spans);
+
+    let duration_ms = Some(start.elapsed().as_millis() as u64);
+
+    if fatal_errors > 0 || (!discovery_errors.is_empty() && discovered_models.is_empty()) {
+        return json!({
+            "success": false,
+            "error": format!("{} schema(s) failed normalization/checking", fatal_errors)
+        });
+    }
+
+    let output_text = render_output(
+        format,
+        &all_diagnostics,
+        total_errors,
+        total_warnings,
+        &profile_names,
+        duration_ms,
+    );
+
+    json!({
+        "success": true,
+        "output": output_text,
+        "total_errors": total_errors,
+        "total_warnings": total_warnings,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// checkPython — JSON contract
+//
+// Request params:
+//   {
+//     "packages": ["my_package", ...]   // required; Python package names to discover Pydantic models from
+//     "profiles": ["openai.so.2026-04-30", ...]  // required; built-in profile IDs only
+//     "format":   "json" | "human" | "sarif" | "gha" | "junit"  // optional, default "json"
+//   }
+//
+// Success response result:
+//   { "success": true, "output": "<rendered text>",
+//     "total_errors": N, "total_warnings": N }
+//
+// Failure response result:
+//   { "success": false, "error": "<message>" }
+//
+// Lifecycle: per-request spawn → discover-loop → shutdown → process pipeline.
+// No pooled/long-lived helper. Only built-in profile IDs are accepted
+// (resolve_builtin_profile rejects filesystem paths).
+// If the Python interpreter or pydantic module is not available the helper
+// spawn or discovery will fail and a structured {"success":false,"error":"..."}
+// is returned — no panic.
+// ---------------------------------------------------------------------------
+fn handle_check_python(
+    params: Value,
+    profile_cache: &Arc<Mutex<HashMap<String, crate::profile::Profile>>>,
+) -> Value {
+    // --- 1. Parse params ---
+    let packages = match params.get("packages").and_then(|v| v.as_array()) {
+        Some(arr) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect::<Vec<_>>(),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing 'packages' parameter (expected array of Python package names)"
+            });
+        }
+    };
+    if packages.is_empty() {
+        return json!({
+            "success": false,
+            "error": "Empty 'packages' array; at least one package name is required"
+        });
+    }
+
+    let profiles = match params.get("profiles").and_then(|v| v.as_array()) {
+        Some(arr) => arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing 'profiles' parameter (expected array of built-in profile IDs)"
+            });
+        }
+    };
+
+    let format_str = params
+        .get("format")
+        .and_then(|v| v.as_str())
+        .unwrap_or("json");
+    let format = match format_str {
+        "human" => OutputFormat::Human,
+        "json" => OutputFormat::Json,
+        "sarif" => OutputFormat::Sarif,
+        "gha" => OutputFormat::Gha,
+        "junit" => OutputFormat::Junit,
+        other => {
+            return json!({
+                "success": false,
+                "error": format!("Unknown format '{}'; expected one of: human, json, sarif, gha, junit", other)
+            });
+        }
+    };
+
+    // --- 2. Load profiles (cached) ---
+    let mut loaded_profiles = Vec::new();
+    {
+        let mut cache_guard = profile_cache.lock().unwrap_or_else(|e| e.into_inner());
+        for &profile_id in &profiles {
+            let profile = if let Some(cached) = cache_guard.get(profile_id) {
+                cached.clone()
+            } else {
+                let bytes = match crate::cli::resolve_builtin_profile(profile_id) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        return json!({
+                            "success": false,
+                            "error": format!("Failed to resolve profile '{profile_id}': {e}")
+                        });
+                    }
+                };
+                let profile = match load(&bytes) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return json!({
+                            "success": false,
+                            "error": format!("Failed to load profile '{profile_id}': {e}")
+                        });
+                    }
+                };
+                cache_guard.insert(profile_id.to_string(), profile.clone());
+                profile
+            };
+            loaded_profiles.push(profile);
+        }
+    }
+    loaded_profiles.sort_by(|a, b| a.name.cmp(&b.name));
+    loaded_profiles.dedup_by_key(|p| p.name.clone());
+
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = loaded_profiles
+        .iter()
+        .map(|p| (p, RuleSet::from_profile(p)))
+        .collect();
+    let profile_names: Vec<String> = loaded_profiles.iter().map(|p| p.name.clone()).collect();
+
+    let start = Instant::now();
+
+    // --- 3. Spawn Python helper ---
+    let mut helper = match crate::python::PythonHelper::spawn(None) {
+        Ok(h) => h,
+        Err(e) => {
+            return json!({
+                "success": false,
+                "error": format!("Failed to spawn Python helper: {e}")
+            });
+        }
+    };
+
+    // --- 4. Discover models from each package ---
+    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
+    let mut discovery_errors: Vec<String> = Vec::new();
+
+    for package in &packages {
+        match helper.discover(package) {
+            Ok(resp) => {
+                for model in resp.models {
+                    discovered_models.push(model);
+                }
+            }
+            Err(e) => {
+                discovery_errors.push(format!("discovery failed for package '{}': {}", package, e));
+            }
+        }
+    }
+
+    // Unconditionally shut down the helper before any failure handling.
+    helper.shutdown();
+
+    if discovered_models.is_empty() && !discovery_errors.is_empty() {
+        return json!({
+            "success": false,
+            "error": discovery_errors.join("; ")
+        });
+    }
+
+    if discovered_models.is_empty() {
+        // No models found, no failures — return clean empty result.
+        let output_text = render_output(format, &[], 0, 0, &profile_names, Some(0));
+        return json!({
+            "success": true,
+            "output": output_text,
+            "total_errors": 0,
+            "total_warnings": 0,
+        });
+    }
+
+    // --- 5. Run the normalize → check → aggregate pipeline ---
+    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovered_models
+        .iter()
+        .map(|m| {
+            (
+                PathBuf::from(&m.module_path),
+                m.name.clone(),
+                m.schema.clone(),
+            )
+        })
+        .collect();
+
+    let results = process_schemas(schema_entries, &profile_rulesets);
+    let results_with_spans = attach_source_spans(results, &discovered_models);
+    let (all_diagnostics, total_errors, total_warnings, fatal_errors) =
+        aggregate_results(results_with_spans);
+
+    let duration_ms = Some(start.elapsed().as_millis() as u64);
+
+    if fatal_errors > 0 && discovered_models.is_empty() {
+        return json!({
+            "success": false,
+            "error": format!("{} schema(s) failed normalization/checking", fatal_errors)
+        });
+    }
 
     let output_text = render_output(
         format,

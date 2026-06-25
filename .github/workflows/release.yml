@@ -360,7 +360,8 @@ jobs:
       - smoke-test
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Two real verify-builds + up to 5 min index poll; allow headroom.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -376,8 +377,7 @@ jobs:
         run: |
           published=false
           for i in 1 2 3; do
-            # --no-verify: deps are verified in CI; skip re-verify to avoid crates.io index-propagation races on the ordered workspace publish
-            out=$(cargo publish -p schemalint-profiles --no-verify 2>&1) && { published=true; echo "$out"; break; }
+            out=$(cargo publish -p schemalint-profiles 2>&1) && { published=true; echo "$out"; break; }
             echo "$out"
             if echo "$out" | grep -qiE "already (uploaded|exists)"; then
               echo "crate version already published; treating as success"
@@ -393,12 +393,36 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+      - name: Wait for schemalint-profiles to appear on the crates.io sparse index
+        # Replaces the old --no-verify propagation workaround: cargo publish -p schemalint
+        # verifies against the real crates.io index (schemalint depends on schemalint-profiles
+        # by path + version), so the dependency must be indexed before we publish the parent.
+        # Sparse index URL: first2/next2/crate-name (https://doc.rust-lang.org/cargo/reference/registry-index.html)
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG_NAME#v}"
+          echo "Waiting for schemalint-profiles@${VERSION} to appear on the crates.io sparse index..."
+          found=false
+          for i in $(seq 1 30); do
+            if curl -sf "https://index.crates.io/sc/he/schemalint-profiles" 2>/dev/null | grep -q "\"vers\":\"${VERSION}\""; then
+              echo "schemalint-profiles@${VERSION} is available on the index."
+              found=true
+              break
+            fi
+            echo "attempt ${i}/30: not yet indexed, waiting 10s..."
+            sleep 10
+          done
+          if [ "$found" != true ]; then
+            echo "::error::schemalint-profiles@${VERSION} did not appear on the crates.io sparse index after 5 minutes"
+            exit 1
+          fi
+
       - name: Publish schemalint
         run: |
           published=false
           for i in 1 2 3; do
-            # --no-verify: deps are verified in CI; skip re-verify to avoid crates.io index-propagation races on the ordered workspace publish
-            out=$(cargo publish -p schemalint --no-verify 2>&1) && { published=true; echo "$out"; break; }
+            out=$(cargo publish -p schemalint 2>&1) && { published=true; echo "$out"; break; }
             echo "$out"
             if echo "$out" | grep -qiE "already (uploaded|exists)"; then
               echo "crate version already published; treating as success"
