@@ -86,7 +86,16 @@ export async function discoverZodSchemas(
   // Filter files against the source glob.
   // tsconfig resolves absolute paths, but glob patterns match relative paths.
   // Convert each file to a path relative to the project root before matching.
-  const isMatch = pm.default(sourceGlob, { dot: true }) as (
+  const picomatch =
+    typeof pm.default === 'function' ? pm.default : (pm as unknown as typeof pm.default);
+  if (typeof picomatch !== 'function') {
+    throw new Error(
+      'Failed to load picomatch: expected a function but got ' +
+        typeof picomatch +
+        '. Check that picomatch is correctly installed.'
+    );
+  }
+  const isMatch = picomatch(sourceGlob, { dot: true }) as (
     input: string
   ) => boolean;
   const projectRoot = process.cwd();

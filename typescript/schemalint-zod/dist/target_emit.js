@@ -42,12 +42,19 @@ function resolveExportedIdentifier(id, checker, tsModule) {
 }
 function buildSyntheticModule(sourceFile, expr, exportName, tsModule, compilerOptions) {
     const parts = [];
+    // Identify the top-level statement that directly contains the target
+    // expression so we can skip it (we replace it with the export below).
+    const containingStmt = sourceFile.statements.find((stmt) => stmt.getStart(sourceFile) <= expr.getStart(sourceFile) &&
+        expr.getEnd() <= stmt.getEnd());
     for (const stmt of sourceFile.statements) {
         if (tsModule.isImportDeclaration(stmt)) {
             parts.push(rewriteImport(stmt, sourceFile, tsModule, compilerOptions));
             continue;
         }
-        if (stmt.end <= expr.getStart(sourceFile) && isReusableDeclaration(stmt, tsModule)) {
+        // Include all reusable declarations except the one containing the target
+        // expression. This allows the target to reference helpers declared either
+        // before or after it in source order without a ReferenceError.
+        if (stmt !== containingStmt && isReusableDeclaration(stmt, tsModule)) {
             parts.push(stmt.getText(sourceFile));
         }
     }

@@ -177,4 +177,19 @@ describe('discoverZodSchemas', () => {
     // simple.ts only imports from 'zod' — no provider SDK present.
     expect(result.provider_hint).toBeUndefined();
   });
+
+  it('discovers inline schema referencing a helper declared after the call site', async () => {
+    // Regression: the synthetic module must include all module-level
+    // declarations, not just the ones that appear before the target expression.
+    // Previously, `makeField()` — declared after the call site — was omitted,
+    // causing a ReferenceError during evaluation.
+    const result = await discoverZodSchemas('forward-ref-helper.ts');
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.models).toHaveLength(1);
+    expect(result.models[0].schema).toHaveProperty('type', 'object');
+    expect(result.models[0].schema).toHaveProperty('properties');
+    const props = result.models[0].schema.properties as Record<string, unknown>;
+    expect(Object.keys(props)).toContain('value');
+  });
 });
