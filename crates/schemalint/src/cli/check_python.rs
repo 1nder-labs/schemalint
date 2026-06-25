@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::args::{CheckPythonArgs, OutputFormat};
 use crate::cli::pipeline::{aggregate_results, attach_source_spans, emit_output, process_schemas};
-use crate::cli::{emit_json, pyproject};
+use crate::cli::pyproject;
 use crate::rules::registry::RuleSet;
 
 use super::load_profiles_from_ids;
@@ -132,11 +132,16 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
         }
         if format == OutputFormat::Human {
             println!("0 issues found (0 errors, 0 warnings) across 0 schemas");
-        } else {
-            print!(
-                "{}",
-                emit_json::emit_json_to_string(&[], 0, 0, &profile_names, Some(0))
-            );
+        } else if let Err(exit_code) = emit_output(
+            format,
+            &[],
+            0,
+            0,
+            &profile_names,
+            Some(0),
+            args.output.as_deref(),
+        ) {
+            return exit_code;
         }
         return 0;
     }

@@ -4,6 +4,11 @@ use std::process;
 use crate::cli::args::{Cli, Commands};
 use crate::profile::{load, Profile};
 
+/// Built-in profile IDs. Shared between `resolve_profile` and the auto-detect
+/// block in `check_node` so the strings are defined exactly once.
+pub(super) const OPENAI_PROFILE_ID: &str = "openai.so.2026-04-30";
+pub(super) const ANTHROPIC_PROFILE_ID: &str = "anthropic.so.2026-04-30";
+
 pub mod args;
 pub mod discover;
 pub mod docs_url;
@@ -57,10 +62,10 @@ pub fn resolve_profile(path_or_id: &str) -> Result<Vec<u8>, String> {
         fs::read(path_or_id).map_err(|e| format!("{e}"))
     } else {
         match path_or_id {
-            "openai.so.2026-04-30" => Ok(schemalint_profiles::OPENAI_SO_2026_04_30
+            OPENAI_PROFILE_ID => Ok(schemalint_profiles::OPENAI_SO_2026_04_30
                 .as_bytes()
                 .to_vec()),
-            "anthropic.so.2026-04-30" => Ok(schemalint_profiles::ANTHROPIC_SO_2026_04_30
+            ANTHROPIC_PROFILE_ID => Ok(schemalint_profiles::ANTHROPIC_SO_2026_04_30
                 .as_bytes()
                 .to_vec()),
             other => Err(format!("unknown built-in profile '{other}'")),

@@ -6,8 +6,8 @@ use rayon::prelude::*;
 
 use crate::cache::{hash_bytes, Cache};
 use crate::cli::args::{CheckArgs, OutputFormat};
+use crate::cli::discover;
 use crate::cli::pipeline::{check_rulesets, emit_output};
-use crate::cli::{discover, emit_json};
 use crate::normalize::normalize;
 use crate::rules::registry::{Diagnostic, DiagnosticSeverity, RuleSet};
 
@@ -57,11 +57,16 @@ pub(super) fn run_check(args: CheckArgs) -> i32 {
     if files.is_empty() {
         if format == OutputFormat::Human {
             println!("0 issues found (0 errors, 0 warnings) across 0 schemas");
-        } else {
-            print!(
-                "{}",
-                emit_json::emit_json_to_string(&[], 0, 0, &profile_names, Some(0))
-            );
+        } else if let Err(exit_code) = emit_output(
+            format,
+            &[],
+            0,
+            0,
+            &profile_names,
+            Some(0),
+            args.output.as_deref(),
+        ) {
+            return exit_code;
         }
         return 0;
     }

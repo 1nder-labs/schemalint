@@ -6,7 +6,7 @@ use crate::cli::node_config;
 use crate::cli::pipeline::{aggregate_results, attach_source_spans, emit_output, process_schemas};
 use crate::rules::registry::RuleSet;
 
-use super::load_profiles_from_ids;
+use super::{load_profiles_from_ids, ANTHROPIC_PROFILE_ID, OPENAI_PROFILE_ID};
 
 pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     let start = std::time::Instant::now();
@@ -173,8 +173,8 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     if profile_args.is_empty() {
         if let Some(ref hint) = provider_hint {
             let resolved = match hint.as_str() {
-                "openai" => "openai.so.2026-04-30".to_string(),
-                "anthropic" => "anthropic.so.2026-04-30".to_string(),
+                "openai" => OPENAI_PROFILE_ID.to_string(),
+                "anthropic" => ANTHROPIC_PROFILE_ID.to_string(),
                 other => {
                     eprintln!("error: unknown provider hint '{}' from source files", other);
                     return 1;
@@ -264,20 +264,41 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
 /// Handles `*` (match anything within a single path segment except `/`)
 /// and `**` (match across path segments — handled by caller via `trim_start_matches`/`strip_suffix`).
 /// `?` is not supported; use `*` instead.
+///
+/// The matcher is **unanchored** (substring-style): a pattern with no `*` uses
+/// `path.contains(pattern)`, and the first `*` may match an arbitrary prefix.
+/// This is intentional — the caller strips `**/` and `/**`/`/*` and then calls
+/// this function expecting that e.g. core `"node_modules"` still matches
+/// `"pkg/node_modules/foo"`.
+///
+/// A `*` MUST NOT cross a `/` boundary.  A trailing bare `*` (last split-part
+/// is empty) does not cross segments in practice because the caller strips the
+/// trailing `/**` or `/*`; the limitation is noted but not fixed here.
 fn glob_match(pattern: &str, path: &str) -> bool {
     // Split on *, match each literal segment in order.
     let parts: Vec<&str> = pattern.split('*').collect();
     if parts.len() == 1 {
+        // No wildcard — substring match (unanchored).
         return path.contains(parts[0]);
     }
 
     let mut pos = 0usize;
+    let mut first_non_empty = true;
     for part in &parts {
         if part.is_empty() {
             continue;
         }
-        match path[pos..].find(part) {
+        let remaining = &path[pos..];
+        match remaining.find(part) {
             Some(offset) => {
+                // For every literal part after the first, the gap consumed by
+                // the preceding `*` must not contain a `/` (i.e. `*` is
+                // segment-local).  The first part may be preceded by any prefix
+                // (unanchored substring semantics).
+                if !first_non_empty && remaining[..offset].contains('/') {
+                    return false;
+                }
+                first_non_empty = false;
                 pos += offset + part.len();
             }
             None => return false,
@@ -286,4 +307,88 @@ fn glob_match(pattern: &str, path: &str) -> bool {
 
     let last_part = parts.last().copied().unwrap_or("");
     last_part.is_empty() || path.ends_with(last_part)
+}
+
+#[cfg(test)]
+mod glob_tests {
+    use super::glob_match;
+
+    // -----------------------------------------------------------------------
+    // Contract-pinning tests: current-correct behavior BEFORE any logic change.
+    // These must remain green after the fix — they document the intended
+    // unanchored/substring semantics the caller depends on.
+    // -----------------------------------------------------------------------
+
+    /// No-wildcard core: must substring-match anywhere in the path.
+    #[test]
+    fn no_wildcard_substring_match() {
+        assert!(glob_match("node_modules", "a/node_modules/b"));
+        assert!(glob_match("node_modules", "node_modules"));
+        assert!(glob_match("foo", "x/foo/y"));
+        assert!(!glob_match("foo", "bar"));
+        // "foo" IS a substring of "foobar" — substring semantics means this is true.
+        assert!(glob_match("foo", "foobar"));
+    }
+
+    /// `*.ts` with a leading `*`: the star may consume the cross-segment prefix
+    /// (because it's the FIRST wildcard — unanchored), but the literal after it
+    /// must not be separated by another `/`.
+    #[test]
+    fn leading_star_ts_single_level() {
+        // Leading `*` is unanchored — may span the prefix.
+        assert!(glob_match("*.ts", "src/a/types.ts"));
+        assert!(glob_match("*.ts", "types.ts"));
+        // Multi-segment path still matches when the filename ends in .ts.
+        assert!(glob_match("*.ts", "src/a/b/types.ts"));
+    }
+
+    /// A no-wildcard pattern is a raw substring match — even if the literal is
+    /// embedded inside a longer word the match is true (unanchored semantics).
+    #[test]
+    fn no_wildcard_negative() {
+        // "node_modules" IS a substring of "notnode_modules_here" — true.
+        assert!(glob_match("node_modules", "notnode_modules_here/foo"));
+        // Only false when the literal is genuinely absent.
+        assert!(!glob_match("node_modules", "vendor/lodash/index.js"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Bug-fix tests: `src/*/types.ts` must not cross `/` between literal parts.
+    // -----------------------------------------------------------------------
+
+    /// `src/*/types.ts` should match exactly one segment between `src/` and `/types.ts`.
+    #[test]
+    fn star_does_not_cross_slash_positive() {
+        // One segment between src/ and /types.ts — should match.
+        assert!(glob_match("src/*/types.ts", "src/a/types.ts"));
+        assert!(glob_match("src/*/types.ts", "src/models/types.ts"));
+    }
+
+    #[test]
+    fn star_does_not_cross_slash_negative() {
+        // Two segments between src/ and /types.ts — must NOT match.
+        assert!(!glob_match("src/*/types.ts", "src/a/b/types.ts"));
+        assert!(!glob_match("src/*/types.ts", "src/a/b/c/types.ts"));
+    }
+
+    /// `node_modules` core (no wildcard) still matches mid-path.
+    #[test]
+    fn node_modules_substring_still_works() {
+        assert!(glob_match("node_modules", "pkg/node_modules/foo"));
+        assert!(glob_match(
+            "node_modules",
+            "very/deep/pkg/node_modules/lodash/index.js"
+        ));
+    }
+
+    /// `*.spec.ts` — leading star, two literal segments after it.
+    #[test]
+    fn star_spec_ts() {
+        assert!(glob_match("*.spec.ts", "foo.spec.ts"));
+        assert!(glob_match("*.spec.ts", "src/foo.spec.ts"));
+        // The second literal `.ts` follows `.spec` with no `/` — OK.
+        assert!(glob_match("*.spec.ts", "deep/a/b/foo.spec.ts"));
+        // A slash between .spec and .ts would be weird but let's be explicit:
+        assert!(!glob_match("*.spec.ts", "deep/foo.spec/bar.ts"));
+    }
 }
