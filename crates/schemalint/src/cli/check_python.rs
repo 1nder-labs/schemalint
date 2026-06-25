@@ -159,7 +159,8 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     // -------------------------------------------------------------------
     // 8. Aggregate results
     // -------------------------------------------------------------------
-    let (all_diagnostics, total_errors, total_warnings) = aggregate_results(all_diagnostics);
+    let (all_diagnostics, total_errors, total_warnings, fatal_errors) =
+        aggregate_results(all_diagnostics);
 
     // -------------------------------------------------------------------
     // 9. Emit output
@@ -177,7 +178,7 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
         return exit_code;
     }
 
-    if total_errors > 0 || discovery_failures > 0 {
+    if total_errors > 0 || fatal_errors > 0 || discovery_failures > 0 {
         1
     } else {
         0

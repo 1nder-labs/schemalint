@@ -7,9 +7,9 @@ use rayon::prelude::*;
 use crate::cache::{hash_bytes, Cache};
 use crate::cli::args::{CheckArgs, OutputFormat};
 use crate::cli::discover;
-use crate::cli::pipeline::{check_rulesets, emit_empty_output, emit_output};
+use crate::cli::pipeline::{aggregate_results, check_rulesets, emit_empty_output, emit_output};
 use crate::normalize::normalize;
-use crate::rules::registry::{Diagnostic, DiagnosticSeverity, RuleSet};
+use crate::rules::registry::{Diagnostic, RuleSet};
 
 use super::load_profiles_from_ids;
 
@@ -100,34 +100,12 @@ pub(super) fn run_check(args: CheckArgs) -> i32 {
     // -----------------------------------------------------------------------
     // Aggregate results
     // -----------------------------------------------------------------------
-    let mut all_diagnostics: Vec<(PathBuf, Vec<Diagnostic>)> = Vec::new();
-    let mut total_errors = 0usize;
-    let mut total_warnings = 0usize;
-    let mut fatal_errors = 0usize;
-
-    for (path, result) in results {
-        match result {
-            Ok(diags) => {
-                for d in &diags {
-                    match d.severity {
-                        DiagnosticSeverity::Error => total_errors += 1,
-                        DiagnosticSeverity::Warning => total_warnings += 1,
-                    }
-                }
-                all_diagnostics.push((path, diags));
-            }
-            Err(msg) => {
-                eprintln!("error: {}: {}", path.display(), msg);
-                fatal_errors += 1;
-            }
-        }
-    }
-
-    // Sort by path, then by profile name for deterministic output
-    all_diagnostics.sort_by(|a, b| a.0.cmp(&b.0));
-    for (_, diags) in &mut all_diagnostics {
-        diags.sort_by(|a, b| a.profile.cmp(&b.profile));
-    }
+    let (all_diagnostics, total_errors, total_warnings, fatal_errors) = aggregate_results(
+        results
+            .into_iter()
+            .map(|(p, r)| (p, String::new(), r))
+            .collect(),
+    );
 
     // -----------------------------------------------------------------------
     // Emit output

@@ -24,6 +24,7 @@ pub mod server;
 mod check;
 mod check_node;
 mod check_python;
+mod glob;
 mod pipeline;
 
 pub(crate) use pipeline::check_rulesets;

@@ -57,10 +57,16 @@ pub(crate) fn aggregate_results(
         String,
         Result<Vec<crate::rules::Diagnostic>, String>,
     )>,
-) -> (Vec<(PathBuf, Vec<crate::rules::Diagnostic>)>, usize, usize) {
+) -> (
+    Vec<(PathBuf, Vec<crate::rules::Diagnostic>)>,
+    usize,
+    usize,
+    usize,
+) {
     let mut all_diagnostics: Vec<(PathBuf, Vec<crate::rules::Diagnostic>)> = Vec::new();
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;
+    let mut fatal_errors = 0usize;
 
     for (path, _model_name, result) in results {
         match result {
@@ -75,6 +81,7 @@ pub(crate) fn aggregate_results(
             }
             Err(msg) => {
                 eprintln!("error: {}: {}", path.display(), msg);
+                fatal_errors += 1;
             }
         }
     }
@@ -84,7 +91,7 @@ pub(crate) fn aggregate_results(
         diags.sort_by(|a, b| a.profile.cmp(&b.profile));
     }
 
-    (all_diagnostics, total_errors, total_warnings)
+    (all_diagnostics, total_errors, total_warnings, fatal_errors)
 }
 
 /// Render diagnostics to a String in the requested output format.
@@ -160,7 +167,7 @@ pub(crate) fn emit_output(
                 out_path.display(),
                 e
             );
-            return Err(2);
+            return Err(1);
         }
     } else {
         print!("{}", output_text);
