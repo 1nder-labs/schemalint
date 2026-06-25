@@ -15,6 +15,8 @@ Usage:
     # If drift detected, exit code 1 (for CI gating).
 """
 
+from __future__ import annotations
+
 import json
 import sys
 from pathlib import Path

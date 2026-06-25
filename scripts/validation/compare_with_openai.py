@@ -80,7 +80,7 @@ def validate_with_openai(schema_path: str, api_key: str) -> dict:
                 }
             }
         )
-        return {"rejected": False, "error": None}
+        return {"status": "accepted", "rejected": False, "error": None}
     except Exception as error:
         err_str = str(error)
         if "401" in err_str or "invalid_api_key" in err_str.lower():
