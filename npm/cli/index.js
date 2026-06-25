@@ -63,17 +63,21 @@ function sha256File(filePath) {
   });
 }
 
-function downloadFile(url, destPath) {
+function downloadFile(url, destPath, depth = 0) {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https:') ? https : require('http');
     const request = protocol.get(url, (response) => {
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
+        if (depth > 5) {
+          reject(new Error('too many redirects'));
+          return;
+        }
         if (!response.headers.location.startsWith('https:')) {
           reject(new Error(`refusing insecure redirect to non-HTTPS URL: ${response.headers.location}`));
           return;
         }
-        downloadFile(response.headers.location, destPath).then(resolve).catch(reject);
+        downloadFile(response.headers.location, destPath, depth + 1).then(resolve).catch(reject);
         return;
       }
       if (response.statusCode !== 200) {
@@ -163,19 +167,40 @@ async function ensureBinary() {
   const checksumUrl = `${url}.sha256`;
   const checksumPath = archivePath + '.sha256';
   try {
-    await downloadFile(checksumUrl, checksumPath);
+    // Download checksum with retry (same backoff shape as archive download).
+    let checksumLastError = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await downloadFile(checksumUrl, checksumPath);
+        checksumLastError = null;
+        break;
+      } catch (e) {
+        checksumLastError = e.message;
+        if (attempt < 3) {
+          try { fs.unlinkSync(checksumPath); } catch {}
+          const delayMs = Math.pow(2, attempt) * 1000;
+          await sleep(delayMs);
+        }
+      }
+    }
+    if (checksumLastError !== null) {
+      throw new Error(
+        `Failed to download checksum from ${checksumUrl}: ${checksumLastError}`
+      );
+    }
+
     const checksumContent = fs.readFileSync(checksumPath, 'utf8');
     // Handles both bare-hash and "hash  filename" formats.
     const expectedHash = checksumContent.trim().split(/\s+/)[0].toLowerCase();
     const actualHash = await sha256File(archivePath);
     if (actualHash !== expectedHash) {
-      try { fs.unlinkSync(archivePath); } catch {}
       throw new Error(
         `SHA-256 mismatch for ${archiveName}: expected ${expectedHash}, got ${actualHash}`
       );
     }
   } catch (e) {
-    try { fs.unlinkSync(checksumPath); } catch {}
+    // Clean up stale archive so a failed verify doesn't leave it on disk.
+    try { fs.unlinkSync(archivePath); } catch {}
     // Re-throw integrity failures unconditionally (fail closed).
     throw e;
   } finally {
