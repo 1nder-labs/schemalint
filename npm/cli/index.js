@@ -2,6 +2,7 @@
 'use strict';
 
 const { spawnSync } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const https = require('https');
 const os = require('os');
@@ -49,12 +50,29 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Compute the SHA-256 hash of a file and return it as a lowercase hex string.
+ */
+function sha256File(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
 function downloadFile(url, destPath) {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https:') ? https : require('http');
     const request = protocol.get(url, (response) => {
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
+        if (!response.headers.location.startsWith('https:')) {
+          reject(new Error(`refusing insecure redirect to non-HTTPS URL: ${response.headers.location}`));
+          return;
+        }
         downloadFile(response.headers.location, destPath).then(resolve).catch(reject);
         return;
       }
@@ -137,6 +155,31 @@ async function ensureBinary() {
       `Failed to download schemalint binary from ${url}: ${lastError}. ` +
       `Make sure the GitHub Release for v${VERSION} exists.`
     );
+  }
+
+  // Verify archive integrity against the published per-artifact SHA-256 checksum.
+  // cargo-dist (v0.31.0) emits a <archive>.sha256 sidecar for every archive and
+  // uploads it alongside the archive in the GitHub Release.
+  const checksumUrl = `${url}.sha256`;
+  const checksumPath = archivePath + '.sha256';
+  try {
+    await downloadFile(checksumUrl, checksumPath);
+    const checksumContent = fs.readFileSync(checksumPath, 'utf8');
+    // Handles both bare-hash and "hash  filename" formats.
+    const expectedHash = checksumContent.trim().split(/\s+/)[0].toLowerCase();
+    const actualHash = await sha256File(archivePath);
+    if (actualHash !== expectedHash) {
+      try { fs.unlinkSync(archivePath); } catch {}
+      throw new Error(
+        `SHA-256 mismatch for ${archiveName}: expected ${expectedHash}, got ${actualHash}`
+      );
+    }
+  } catch (e) {
+    try { fs.unlinkSync(checksumPath); } catch {}
+    // Re-throw integrity failures unconditionally (fail closed).
+    throw e;
+  } finally {
+    try { fs.unlinkSync(checksumPath); } catch {}
   }
 
   // Extract based on platform.
