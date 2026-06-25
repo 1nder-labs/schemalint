@@ -368,21 +368,31 @@ jobs:
 
       - name: Publish schemalint-profiles (dependency first)
         run: |
+          published=false
           for i in 1 2 3; do
-            cargo publish -p schemalint-profiles --no-verify && break
+            if cargo publish -p schemalint-profiles --no-verify; then published=true; break; fi
             echo "cargo publish attempt $i failed, retrying in 10s..."
             sleep 10
           done
+          if [ "$published" != true ]; then
+            echo "::error::cargo publish failed after 3 attempts"
+            exit 1
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Publish schemalint
         run: |
+          published=false
           for i in 1 2 3; do
-            cargo publish -p schemalint --no-verify && break
+            if cargo publish -p schemalint --no-verify; then published=true; break; fi
             echo "cargo publish attempt $i failed, retrying in 10s..."
             sleep 10
           done
+          if [ "$published" != true ]; then
+            echo "::error::cargo publish failed after 3 attempts"
+            exit 1
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
@@ -550,33 +560,48 @@ jobs:
 
       - name: Publish @schemalint/cli
         run: |
+          published=false
           for i in 1 2 3; do
-            npm publish --access public && break
+            if npm publish --access public; then published=true; break; fi
             echo "npm publish attempt $i failed, retrying in 10s..."
             sleep 10
           done
+          if [ "$published" != true ]; then
+            echo "::error::npm publish failed after 3 attempts"
+            exit 1
+          fi
         working-directory: npm/cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @schemalint/core
         run: |
+          published=false
           for i in 1 2 3; do
-            npm publish --access public && break
+            if npm publish --access public; then published=true; break; fi
             echo "npm publish attempt $i failed, retrying in 10s..."
             sleep 10
           done
+          if [ "$published" != true ]; then
+            echo "::error::npm publish failed after 3 attempts"
+            exit 1
+          fi
         working-directory: npm/core
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @schemalint/zod
         run: |
+          published=false
           for i in 1 2 3; do
-            npm publish --access public && break
+            if npm publish --access public; then published=true; break; fi
             echo "npm publish attempt $i failed, retrying in 10s..."
             sleep 10
           done
+          if [ "$published" != true ]; then
+            echo "::error::npm publish failed after 3 attempts"
+            exit 1
+          fi
         working-directory: typescript/schemalint-zod
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
