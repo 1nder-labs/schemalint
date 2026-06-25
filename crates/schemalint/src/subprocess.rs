@@ -10,6 +10,7 @@
 //!   the common request/discover/shutdown lifecycle. Thin wrappers (`NodeHelper`,
 //!   `PythonHelper`) supply command-resolution and error-type mapping.
 
+use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
@@ -103,7 +104,7 @@ pub(crate) struct SubprocessClient {
     pub stdin: ChildStdin,
     pub request_id: u64,
     pub stdout_rx: mpsc::Receiver<Option<String>>,
-    pub stderr_lines: Arc<Mutex<Vec<String>>>,
+    pub stderr_lines: Arc<Mutex<VecDeque<String>>>,
     /// Human-readable name used in the `Drop` warning message ("node" / "python").
     name: &'static str,
 }
@@ -132,7 +133,9 @@ impl SubprocessClient {
             .ok_or_else(|| SubprocessError::SpawnFailed("no stdin pipe available".to_string()))?;
 
         // Drain stderr continuously to prevent pipe-buffer deadlock.
-        let stderr_lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        // ponytail: keep last 1000 stderr lines; raise if a helper legitimately needs more
+        const STDERR_CAP: usize = 1000;
+        let stderr_lines: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
         let stderr_capture = Arc::clone(&stderr_lines);
         thread::spawn(move || {
             let reader = BufReader::new(stderr);
@@ -143,7 +146,10 @@ impl SubprocessClient {
                             eprintln!("[{}] {}", prefix, l);
                         }
                         if let Ok(mut lines) = stderr_capture.lock() {
-                            lines.push(l);
+                            if lines.len() >= STDERR_CAP {
+                                lines.pop_front();
+                            }
+                            lines.push_back(l);
                         }
                     }
                     Err(_) => break,
@@ -178,10 +184,10 @@ impl SubprocessClient {
         })
     }
 
-    /// Drain captured stderr lines and return them (clears the buffer).
+    /// Drain captured stderr lines and return them in order (clears the buffer).
     pub(crate) fn take_stderr(&self) -> Vec<String> {
         let mut guard = self.stderr_lines.lock().unwrap_or_else(|e| e.into_inner());
-        std::mem::take(&mut *guard)
+        std::mem::take(&mut *guard).into()
     }
 
     /// Send a JSON-RPC `discover` request and return the raw parsed response.
@@ -349,5 +355,19 @@ impl Drop for SubprocessClient {
                 let _ = self.child.wait();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn probe_command_returns_false_for_absent_binary() {
+        // A guaranteed-absent binary name — must not exist on any real PATH.
+        assert!(!probe_command(
+            "schemalint-definitely-not-a-real-binary-xyz",
+            Duration::from_millis(200),
+        ));
     }
 }
