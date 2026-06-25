@@ -121,6 +121,20 @@ pub fn render_output(
     }
 }
 
+/// Emit the empty-results output for the given format and return the process exit code.
+pub(crate) fn emit_empty_output(
+    format: OutputFormat,
+    profile_names: &[String],
+    output: Option<&Path>,
+) -> i32 {
+    if format == OutputFormat::Human {
+        println!("0 issues found (0 errors, 0 warnings) across 0 schemas");
+    } else if let Err(exit_code) = emit_output(format, &[], 0, 0, profile_names, Some(0), output) {
+        return exit_code;
+    }
+    0
+}
+
 pub(crate) fn emit_output(
     format: OutputFormat,
     all_diagnostics: &[(PathBuf, Vec<Diagnostic>)],

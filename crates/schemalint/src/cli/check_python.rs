@@ -2,7 +2,9 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::cli::args::{CheckPythonArgs, OutputFormat};
-use crate::cli::pipeline::{aggregate_results, attach_source_spans, emit_output, process_schemas};
+use crate::cli::pipeline::{
+    aggregate_results, attach_source_spans, emit_empty_output, emit_output, process_schemas,
+};
 use crate::cli::pyproject;
 use crate::rules::registry::RuleSet;
 
@@ -130,20 +132,7 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
             );
             return 1;
         }
-        if format == OutputFormat::Human {
-            println!("0 issues found (0 errors, 0 warnings) across 0 schemas");
-        } else if let Err(exit_code) = emit_output(
-            format,
-            &[],
-            0,
-            0,
-            &profile_names,
-            Some(0),
-            args.output.as_deref(),
-        ) {
-            return exit_code;
-        }
-        return 0;
+        return emit_empty_output(format, &profile_names, args.output.as_deref());
     }
 
     // -------------------------------------------------------------------
