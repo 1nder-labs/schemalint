@@ -11,3 +11,6 @@ docs/build/
 docs/node_modules/
 target/
 scripts/validation/results/
+# Python bytecode
+__pycache__/
+*.py[cod]

@@ -18,8 +18,7 @@ import json
 import os
 import sys
 import time
-from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 from openai_errors import is_openai_schema_error
 from _env import load_env
@@ -55,10 +54,10 @@ def resolve_model(model_key: str) -> dict:
     return {"id": model_key, "desc": model_key}
 
 
-def validate_schema(schema_path: str, api_key: Optional[str] = None, model: str = "gpt-4o") -> dict:
+def validate_schema(schema_path: str, api_key: Optional[str] = None, model: str = "gpt-4o") -> Dict[str, object]:
     """Validate a single schema against OpenAI's API."""
     try:
-        from openai import OpenAI
+        from openai import OpenAI, OpenAIError
     except ImportError:
         print("Error: openai package not installed. Run: pip install openai")
         sys.exit(1)
@@ -93,7 +92,7 @@ def validate_schema(schema_path: str, api_key: Optional[str] = None, model: str 
             "schema_rejected": False,
             "api_error": None
         }
-    except Exception as e:
+    except OpenAIError as e:
         error_str = str(e)
         if not is_openai_schema_error(e):
             return {

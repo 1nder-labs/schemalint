@@ -16,8 +16,7 @@ import json
 import os
 import sys
 import time
-from pathlib import Path
-
+from typing import Dict
 
 from _env import load_env
 
@@ -64,10 +63,12 @@ def is_schema_error(error: Exception) -> bool:
 def validate_schema(
     schema_path: str,
     client,
-    model_config: dict,
+    model_config: Dict[str, object],
     model_key: str,
     surface: str = "output",
-) -> dict:
+) -> Dict[str, object]:
+    from anthropic import APIError as AnthropicAPIError
+
     with open(schema_path) as f:
         schema = json.load(f)
 
@@ -108,7 +109,7 @@ def validate_schema(
             "schema_rejected": False,
             "api_error": None,
         }
-    except Exception as error:
+    except AnthropicAPIError as error:
         if not is_schema_error(error):
             return {
                 "schema_path": schema_path,

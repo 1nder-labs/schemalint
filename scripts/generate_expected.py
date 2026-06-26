@@ -6,12 +6,21 @@ Covers both corpora: `schema_*` files are linted with the OpenAI profile,
 """
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
-CORPUS_DIR = Path("crates/schemalint/tests/corpus")
-BIN = Path("target/debug/schemalint")
-PROFILES_DIR = Path("crates/schemalint-profiles/profiles")
+# Resolve paths relative to this script's location so the script works
+# regardless of the current working directory.
+_WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
+
+CORPUS_DIR = _WORKSPACE_ROOT / "crates/schemalint/tests/corpus"
+PROFILES_DIR = _WORKSPACE_ROOT / "crates/schemalint-profiles/profiles"
+
+# Allow callers to override the binary via SCHEMALINT_BIN (e.g. for a release
+# build or a custom install path).  Defaults to the debug build under target/.
+_default_bin = _WORKSPACE_ROOT / "target/debug/schemalint"
+BIN = Path(os.environ.get("SCHEMALINT_BIN", str(_default_bin)))
 
 # (filename prefix, profile path) pairs covering every corpus schema.
 CORPORA = [

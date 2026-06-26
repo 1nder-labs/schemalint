@@ -21,9 +21,9 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
 
 from openai_errors import is_openai_schema_error
 from _env import load_env
@@ -32,29 +32,41 @@ from _env import load_env
 load_env()
 
 
-def run_schemalint(schema_path: str) -> list:
+def run_schemalint(schema_path: str) -> List[Dict]:
     """Run schemalint and return the predicted diagnostics."""
-    profile = Path("crates/schemalint-profiles/profiles/openai.so.2026-04-30.toml")
+    workspace_root = Path(__file__).resolve().parent.parent.parent
+    profile = workspace_root / "crates/schemalint-profiles/profiles/openai.so.2026-04-30.toml"
 
     result = subprocess.run(
         ["cargo", "run", "-p", "schemalint", "--", "check", "--profile", str(profile), "--format", "json", schema_path],
         capture_output=True,
         text=True,
-        cwd=Path(__file__).parent.parent.parent
+        cwd=workspace_root,
     )
+
+    # Exit codes 0 (no issues) and 1 (issues found) both produce valid JSON.
+    # Any other code indicates a crash or usage error — don't parse garbage.
+    if result.returncode not in (0, 1):
+        print(
+            f"schemalint exited with code {result.returncode} for {schema_path}",
+            file=sys.stderr,
+        )
+        if result.stderr:
+            print(result.stderr.rstrip(), file=sys.stderr)
+        return []
 
     try:
         output = json.loads(result.stdout)
         return output.get("diagnostics", [])
     except json.JSONDecodeError:
-        print(f"Failed to parse schemalint output: {result.stdout}", file=sys.stderr)
+        print(f"Failed to parse schemalint output: {result.stdout!r}", file=sys.stderr)
         return []
 
 
-def validate_with_openai(schema_path: str, api_key: str) -> dict:
+def validate_with_openai(schema_path: str, api_key: str) -> Dict[str, object]:
     """Submit schema to OpenAI and capture the result. Makes an API call."""
     try:
-        from openai import OpenAI
+        from openai import OpenAI, OpenAIError
     except ImportError:
         print("Error: openai package not installed. Run: pip install openai")
         sys.exit(1)
@@ -81,7 +93,7 @@ def validate_with_openai(schema_path: str, api_key: str) -> dict:
             }
         )
         return {"status": "accepted", "rejected": False, "error": None}
-    except Exception as error:
+    except OpenAIError as error:
         err_str = str(error)
         if "401" in err_str or "invalid_api_key" in err_str.lower():
             print(f"FATAL: Authentication error: {err_str[:200]}", file=sys.stderr)
@@ -91,7 +103,11 @@ def validate_with_openai(schema_path: str, api_key: str) -> dict:
         return {"status": "rejected", "rejected": True, "error": err_str}
 
 
-def compare_one(schema_path: str, api_result: dict = None, api_key: str = None):
+def compare_one(
+    schema_path: str,
+    api_result: Optional[Dict] = None,
+    api_key: Optional[str] = None,
+) -> Dict[str, object]:
     """Compare schemalint vs API for a single schema."""
     name = Path(schema_path).name
     schemalint_diags = run_schemalint(schema_path)
@@ -173,7 +189,8 @@ def main():
     args = parser.parse_args()
 
     if args.all:
-        corpus_dir = Path("crates/schemalint/tests/corpus")
+        workspace_root = Path(__file__).resolve().parent.parent.parent
+        corpus_dir = workspace_root / "crates/schemalint/tests/corpus"
         schemas = sorted(corpus_dir.glob("schema_*.json"), key=lambda p: int(p.stem.split("_")[1]))
         args.schemas = [str(s) for s in schemas]
 
