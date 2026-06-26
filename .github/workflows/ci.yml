@@ -148,8 +148,14 @@ jobs:
         run: |
           cargo llvm-cov --workspace --exclude schemalint-python --lcov --output-path lcov.info
 
+      # Coverage gate is the measured floor of the core crate (currently ~87.6%).
+      # The Phase-6 plan's 90% target is partially unmet: the residual gap is the
+      # subprocess/sidecar layer (node/python helpers, stdout/stderr I/O caps),
+      # whose failure branches need a process-spawning failure-injection harness.
+      # That harness is deferred post-v1.0 to avoid flaky integration tests; the
+      # gate is set to the honestly-achieved floor and ratcheted up as it rises.
       - name: Check coverage threshold
-        run: bash scripts/check-coverage.sh lcov.info 85.00
+        run: bash scripts/check-coverage.sh lcov.info 86.00
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4

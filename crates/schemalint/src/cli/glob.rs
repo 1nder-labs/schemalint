@@ -4,6 +4,21 @@
 /// `**` is handled by the caller before this function is invoked.
 /// `?` is not supported; use `*` instead.
 ///
+/// # v1.0 glob scope
+///
+/// Exclude globs support `*` (segment-local wildcard) and leading/trailing `**`
+/// (which the caller strips via `trim_start_matches("**/")` and
+/// `strip_suffix("/**")`/`strip_suffix("/*")` before calling this function).
+/// A **middle** `**` — e.g. `src/**/gen` — is **not** passed through the
+/// caller's strip logic and reaches this function intact. Here `**` is split on
+/// `*` into three parts `["", "", ""]` (for `**`) or treated as consecutive `*`
+/// wildcards, each of which is segment-local and does **not** span path
+/// separators. The failure mode is **over-inclusion**: a path that a full-glob
+/// engine would exclude may pass through and be linted. This is intentional for
+/// v1.0 — over-inclusion means a file gets linted (safe), never silently skipped,
+/// and never causes a crash or an incorrect lint result. Extending to a full
+/// recursive `**` matcher is tracked as a future enhancement.
+///
 /// # Contract
 ///
 /// The pattern is split on `*` into literal parts.
