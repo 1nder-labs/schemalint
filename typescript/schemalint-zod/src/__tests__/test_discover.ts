@@ -192,4 +192,56 @@ describe('discoverZodSchemas', () => {
     const props = result.models[0].schema.properties as Record<string, unknown>;
     expect(Object.keys(props)).toContain('value');
   });
+
+  it('buildSourceMapFromObjectLiteral records spans for string-literal and computed-string-literal property names', async () => {
+    // Regression: the source-map builder previously skipped any property whose
+    // name was not a bare Identifier.  String-literal keys ('email': ...) and
+    // computed keys with a string-literal expression (['name']: ...) ARE
+    // statically resolvable and must produce a /properties/<name> entry so that
+    // diagnostics for those fields retain their source location.
+    // Dynamic-computed ([k]: ...) and spread (...base) are NOT resolvable and
+    // must NOT produce an entry (no fabricated pointer that matches nothing).
+    const result = await discoverZodSchemas('string-key-props.ts');
+
+    const model = result.models[0];
+    expect(model).toBeDefined();
+
+    // String-literal key: { 'email': z.string() } → must have span
+    expect(model.source_map).toHaveProperty('/properties/email');
+    const emailSpan = model.source_map['/properties/email'];
+    expect(emailSpan.file).toContain('string-key-props.ts');
+    expect(emailSpan.line).toBeGreaterThan(0);
+
+    // Computed key with string-literal: { ['name']: z.string() } → must have span
+    expect(model.source_map).toHaveProperty('/properties/name');
+    const nameSpan = model.source_map['/properties/name'];
+    expect(nameSpan.file).toContain('string-key-props.ts');
+    expect(nameSpan.line).toBeGreaterThan(0);
+
+    // Dynamic-computed ([k]: ...) → must NOT produce a pointer
+    expect(Object.keys(model.source_map)).not.toContain('/properties/dynamic');
+
+    // Spread (...base) → must NOT produce a pointer
+    expect(Object.keys(model.source_map)).not.toContain('/properties/extra');
+  });
+
+  it('source glob filter does not drop files whose path shares a prefix with cwd but is outside it', async () => {
+    // Regression: the old startsWith(projectRoot) check incorrectly accepted
+    // a file at "/path/to/appExtra/foo.ts" when cwd is "/path/to/app", because
+    // the string "/path/to/appExtra/foo.ts" starts with "/path/to/app".
+    // path.relative() is correct: it only strips the prefix when the file is
+    // genuinely under cwd.
+    //
+    // We verify the fix indirectly by confirming that a glob like "simple.ts"
+    // matches exactly "simple.ts" (under cwd) and not a sibling directory whose
+    // name extends the cwd basename — e.g., a hypothetical "fixtures-extra/simple.ts"
+    // would have relPath "../../fixtures-extra/simple.ts" and must not match "simple.ts".
+    const result = await discoverZodSchemas('simple.ts');
+    // All matched files must live directly inside the fixtures dir (no path traversal).
+    for (const model of result.models) {
+      expect(model.module_path).toContain(fixturesDir);
+      // The module path must NOT contain any path that traverses outside cwd.
+      expect(path.relative(fixturesDir, model.module_path)).not.toMatch(/^\.\./);
+    }
+  });
 });

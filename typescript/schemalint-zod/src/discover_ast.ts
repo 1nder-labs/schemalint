@@ -193,13 +193,31 @@ export function buildSourceMapFromObjectLiteral(
   const map: Record<string, SourceMapEntry> = {};
 
   for (const prop of objLit.properties) {
-    if (
-      !tsModule.isPropertyAssignment(prop) ||
-      !tsModule.isIdentifier(prop.name)
-    ) {
+    if (!tsModule.isPropertyAssignment(prop)) {
+      // SpreadAssignment and ShorthandPropertyAssignment have no static key
+      // that maps to a JSON Pointer — skip them.
       continue;
     }
-    const propName = prop.name.text;
+
+    // Resolve a static property name.
+    // - Identifier:             { email: ... }          → prop.name.text
+    // - StringLiteral:          { 'email': ... }        → prop.name.text
+    // - ComputedPropertyName with string literal:
+    //                           { ['email']: ... }      → inner text
+    // - ComputedPropertyName with dynamic expression:
+    //                           { [k]: ... }            → skip (not statically known)
+    let propName: string | undefined;
+    if (tsModule.isIdentifier(prop.name) || tsModule.isStringLiteral(prop.name)) {
+      propName = prop.name.text;
+    } else if (
+      tsModule.isComputedPropertyName(prop.name) &&
+      tsModule.isStringLiteral(prop.name.expression)
+    ) {
+      propName = prop.name.expression.text;
+    }
+    if (propName === undefined) {
+      continue;
+    }
     const { line } = sourceFile.getLineAndCharacterOfPosition(
       prop.getStart(sourceFile)
     );

@@ -11,6 +11,10 @@
   "publishConfig": {
     "access": "public"
   },
+  "files": [
+    "dist/",
+    "bin/"
+  ],
   "type": "module",
   "bin": {
     "schemalint-zod": "./bin/schemalint-zod.js"

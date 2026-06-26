@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { evaluateSchema, evaluateSyntheticSchema } from './evaluate.js';
 import { buildSourceMapFromObjectLiteral, findExportedSchemaCalls, scanProviderImports, } from './discover_ast.js';
 import { findSchemaTargets } from './targets.js';
@@ -43,9 +44,13 @@ export async function discoverZodSchemas(sourceGlob) {
     const isMatch = picomatch(sourceGlob, { dot: true });
     const projectRoot = process.cwd();
     fileNames = fileNames.filter((f) => {
-        const relPath = f.startsWith(projectRoot)
-            ? f.slice(projectRoot.length + 1)
-            : f;
+        // Use path.relative so that:
+        //  1. Files exactly under projectRoot get a clean relative path ("src/foo.ts")
+        //     without the boundary bug where startsWith("/repo/app") also matches
+        //     "/repo/application/foo.ts".
+        //  2. Files outside projectRoot (monorepo tsconfig referencing "../shared/…")
+        //     get a "../"-prefixed path that the caller's glob can match if desired.
+        const relPath = path.relative(projectRoot, f);
         return isMatch(relPath);
     });
     if (fileNames.length === 0) {
