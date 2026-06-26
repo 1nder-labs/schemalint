@@ -652,3 +652,130 @@ export const Foo = z.object({ x: z.string() }).strict();
     let status = child.wait().expect("should exit cleanly");
     assert!(status.success());
 }
+
+// ---------------------------------------------------------------------------
+// checkNode — empty sources array returns structured error (no sidecar needed)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn server_check_node_empty_sources_returns_error() {
+    let mut child = cmd()
+        .arg("server")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("should spawn server");
+
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "checkNode",
+        "params": {
+            "sources": [],
+            "profiles": ["openai.so.2026-04-30"]
+        },
+        "id": 60
+    });
+
+    let response = send_request(&mut child, &request.to_string());
+    assert_eq!(
+        response["result"]["success"].as_bool(),
+        Some(false),
+        "empty sources array must yield success:false; got: {response}"
+    );
+    let err = response["result"]["error"].as_str().unwrap_or("");
+    assert!(
+        err.contains("sources") || err.contains("source"),
+        "error must mention 'sources'; got: {err}"
+    );
+
+    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 61});
+    let _ = send_request(&mut child, &shutdown.to_string());
+    let status = child.wait().expect("should exit cleanly");
+    assert!(status.success());
+}
+
+// ---------------------------------------------------------------------------
+// checkPython — empty packages array returns structured error (no sidecar needed)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn server_check_python_empty_packages_returns_error() {
+    let mut child = cmd()
+        .arg("server")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("should spawn server");
+
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "checkPython",
+        "params": {
+            "packages": [],
+            "profiles": ["openai.so.2026-04-30"]
+        },
+        "id": 62
+    });
+
+    let response = send_request(&mut child, &request.to_string());
+    assert_eq!(
+        response["result"]["success"].as_bool(),
+        Some(false),
+        "empty packages array must yield success:false; got: {response}"
+    );
+    let err = response["result"]["error"].as_str().unwrap_or("");
+    assert!(
+        err.contains("packages") || err.contains("package"),
+        "error must mention 'packages'; got: {err}"
+    );
+
+    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 63});
+    let _ = send_request(&mut child, &shutdown.to_string());
+    let status = child.wait().expect("should exit cleanly");
+    assert!(status.success());
+}
+
+// ---------------------------------------------------------------------------
+// checkPython — invalid format returns structured error before any sidecar spawn
+// ---------------------------------------------------------------------------
+
+#[test]
+fn server_check_python_invalid_format_returns_error() {
+    let mut child = cmd()
+        .arg("server")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("should spawn server");
+
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "checkPython",
+        "params": {
+            "packages": ["my_package"],
+            "profiles": ["openai.so.2026-04-30"],
+            "format": "xml"
+        },
+        "id": 64
+    });
+
+    let response = send_request(&mut child, &request.to_string());
+    assert_eq!(
+        response["result"]["success"].as_bool(),
+        Some(false),
+        "invalid format must yield success:false; got: {response}"
+    );
+    let err = response["result"]["error"].as_str().unwrap_or("");
+    assert!(
+        err.contains("Unknown format"),
+        "error must mention 'Unknown format'; got: {err}"
+    );
+
+    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 65});
+    let _ = send_request(&mut child, &shutdown.to_string());
+    let status = child.wait().expect("should exit cleanly");
+    assert!(status.success());
+}

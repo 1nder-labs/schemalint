@@ -829,7 +829,7 @@ fn handle_check_python(
 
     let duration_ms = Some(start.elapsed().as_millis() as u64);
 
-    if fatal_errors > 0 && discovered_models.is_empty() {
+    if fatal_errors > 0 || (!discovery_errors.is_empty() && discovered_models.is_empty()) {
         return json!({
             "success": false,
             "error": format!("{} schema(s) failed normalization/checking", fatal_errors)
