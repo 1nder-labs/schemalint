@@ -23,64 +23,100 @@
 ///
 /// Because the first literal is unanchored and `*` is segment-local, the matcher
 /// **backtracks**: it tries every occurrence of each literal, not just the first,
-/// so a valid match at a later position is never missed.
+/// so a valid match at a later position is never missed.  Memoization prevents the
+/// exponential blowup from pathological patterns like `a*a*a*…*a` against long
+/// repeated strings — worst-case work is O(P × N²) where P is the number of parts
+/// and N is the path length.
 pub(crate) fn glob_match(pattern: &str, path: &str) -> bool {
     let parts: Vec<&str> = pattern.split('*').collect();
     if parts.len() == 1 {
         // No wildcard — substring match (unanchored).
         return path.contains(parts[0]);
     }
-    // Recursive backtracking matcher.  `slash_free` is false only for the
+    // Memoized backtracking matcher.  `slash_free` is false only for the
     // gap before the very first non-empty literal (unanchored start).
-    match_parts(&parts, path, false)
+    let mut memo = std::collections::HashMap::new();
+    match_parts(&parts, path, 0, 0, false, &mut memo)
 }
 
-/// Recursive backtracking helper for [`glob_match`].
+/// Memoized backtracking helper for [`glob_match`].
 ///
-/// `parts` is the remaining slice of literals split from the pattern on `*`.
-/// `path`  is the remaining suffix of the original path being matched.
-/// `slash_free` is `true` when the gap between the previous literal and the
-/// next must not contain a `/` (i.e. after the first non-empty literal has
-/// been consumed).
-fn match_parts(parts: &[&str], path: &str, slash_free: bool) -> bool {
-    if parts.len() == 1 {
-        // Base case: last literal must end-anchor the path.
-        let last = parts[0];
+/// Parameters are expressed as stable integer indices into the original slices
+/// so that sub-problem keys are cheap and unambiguous:
+///
+/// - `parts_idx`   — index of the current literal in the `parts` array.
+/// - `path_offset` — byte offset into `path` of the remaining suffix to match.
+/// - `slash_free`  — `true` when the gap from `path_offset` to the next literal
+///   must contain no `/` (i.e. after at least one real literal has been matched).
+///
+/// **Why `slash_free` is part of the memo key:**
+/// The same `(parts_idx, path_offset)` can be reached with both `slash_free=false`
+/// (through an empty/leading `*` that skips real literals) and `slash_free=true`
+/// (after anchoring on a real literal).  These two states yield different matching
+/// outcomes — `slash_free=false` allows `/` in the gap while `slash_free=true`
+/// forbids it — so caching only `(parts_idx, path_offset)` would cause incorrect
+/// results.  Including all three components in the key is required for correctness.
+fn match_parts(
+    parts: &[&str],
+    path: &str,
+    parts_idx: usize,
+    path_offset: usize,
+    slash_free: bool,
+    memo: &mut std::collections::HashMap<(usize, usize, bool), bool>,
+) -> bool {
+    let key = (parts_idx, path_offset, slash_free);
+    if let Some(&cached) = memo.get(&key) {
+        return cached;
+    }
+
+    let result = if parts_idx == parts.len() - 1 {
+        // Base case: last literal must end-anchor the remaining path suffix.
+        let last = parts[parts_idx];
         if last.is_empty() {
-            return true; // trailing '*' — no end anchor required
+            true // trailing '*' — no end anchor required
+        } else {
+            match path[path_offset..].strip_suffix(last) {
+                // The prefix between path_offset and the final literal must not
+                // contain a '/' if the previous gap was segment-local.
+                Some(pre) => !slash_free || !pre.contains('/'),
+                None => false,
+            }
         }
-        return match path.strip_suffix(last) {
-            // The prefix between where we are and the final literal must not
-            // contain a '/' if the previous gap was segment-local.
-            Some(pre) => !slash_free || !pre.contains('/'),
-            None => false,
-        };
-    }
+    } else {
+        let part = parts[parts_idx];
+        if part.is_empty() {
+            // Leading or consecutive '*' — skip this empty part and continue.
+            // The slash_free constraint only activates after a real literal, so
+            // keep the current flag when the star is merely vacuous.
+            match_parts(parts, path, parts_idx + 1, path_offset, slash_free, memo)
+        } else {
+            // Try every occurrence of `part` in the remaining path suffix.
+            // We must backtrack rather than greedily anchoring on the first hit,
+            // because a later occurrence may be the one that satisfies the
+            // remaining constraints.  `match_indices` yields offsets relative to
+            // the suffix, so we add `path_offset` to get absolute byte offsets
+            // (stable as memo keys and correct for slash-gap checks).
+            let mut matched = false;
+            for (rel_off, _) in path[path_offset..].match_indices(part) {
+                let abs_off = path_offset + rel_off;
+                if slash_free && path[path_offset..abs_off].contains('/') {
+                    // All later occurrences will have even more '/' in the gap,
+                    // so we can stop early.
+                    break;
+                }
+                let after = abs_off + part.len();
+                // After consuming this literal the next gap is segment-local.
+                if match_parts(parts, path, parts_idx + 1, after, true, memo) {
+                    matched = true;
+                    break;
+                }
+            }
+            matched
+        }
+    };
 
-    let part = parts[0];
-    if part.is_empty() {
-        // Leading or consecutive '*' — skip this empty part and continue.
-        // The slash_free constraint only activates after a real literal, so
-        // keep the current flag when the star is merely vacuous.
-        return match_parts(&parts[1..], path, slash_free);
-    }
-
-    // Try every occurrence of `part` in `path`.  We must backtrack rather than
-    // greedily anchoring on the first hit, because a later occurrence may be
-    // the one that satisfies the remaining constraints.
-    for (off, _) in path.match_indices(part) {
-        if slash_free && path[..off].contains('/') {
-            // All later occurrences will have even more '/' in the gap, so we
-            // can stop early.
-            break;
-        }
-        let after = off + part.len();
-        // After consuming this literal the next gap is segment-local.
-        if match_parts(&parts[1..], &path[after..], true) {
-            return true;
-        }
-    }
-    false
+    memo.insert(key, result);
+    result
 }
 
 #[cfg(test)]

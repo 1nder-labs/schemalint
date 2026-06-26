@@ -135,7 +135,25 @@ pub(crate) fn emit_empty_output(
     output: Option<&Path>,
 ) -> i32 {
     if format == OutputFormat::Human {
-        println!("0 issues found (0 errors, 0 warnings) across 0 schemas");
+        // The Human empty-run summary is a fixed string, not routed through
+        // emit_human_to_string, because that function appends a duration suffix
+        // (e.g. " in 0ms") when duration_ms is Some — producing a different
+        // string than the intended output.  The literal below is byte-identical
+        // to what `println!` produced before this fix, including the trailing
+        // newline, so stdout behaviour is unchanged when output is None.
+        let text = "0 issues found (0 errors, 0 warnings) across 0 schemas\n";
+        if let Some(out_path) = output {
+            if let Err(e) = std::fs::write(out_path, text) {
+                eprintln!(
+                    "error: failed to write output to '{}': {}",
+                    out_path.display(),
+                    e
+                );
+                return 1;
+            }
+        } else {
+            print!("{}", text);
+        }
     } else if let Err(exit_code) = emit_output(format, &[], 0, 0, profile_names, Some(0), output) {
         return exit_code;
     }

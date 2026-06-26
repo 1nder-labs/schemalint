@@ -26,8 +26,26 @@ struct CacheEntry {
 
 /// In-memory content-hash cache for normalized schemas.
 ///
-/// The cache is cleared between CLI invocations in Phase 1.
-/// Disk persistence is deferred to Phase 2 server mode.
+/// The cache is cleared between CLI invocations in CLI mode; in server mode
+/// it persists for the lifetime of the process via [`DiskCache`].
+///
+/// # Design: stored bytes as a collision guard
+///
+/// Every [`CacheEntry`] retains `original_bytes` — a copy of the raw JSON that
+/// was normalized and stored.  On a cache hit, `get` does a byte-for-byte
+/// comparison of the caller's input against these stored bytes **before**
+/// returning the cached schema.
+///
+/// This is intentional and necessary for correctness.  The content hash is
+/// computed by [`FxHasher`], a non-cryptographic hash chosen for speed.
+/// Non-cryptographic hashes have non-negligible collision probability at scale.
+/// Without the byte comparison, a hash collision would cause `get` to return a
+/// schema that does not correspond to the caller's input — a silent wrong-result
+/// bug.  The byte comparison converts a potential wrong-result into a cache miss
+/// (the caller re-normalizes), at a minor memory cost: each entry stores the raw
+/// bytes in addition to the normalized schema.  Dropping the bytes would require
+/// replacing [`FxHasher`] with a collision-resistant (e.g. cryptographic) hash
+/// and would change the correctness path — so the stored bytes are kept.
 #[derive(Debug, Default)]
 pub struct Cache {
     inner: std::collections::HashMap<u64, CacheEntry>,
@@ -82,6 +100,28 @@ impl Cache {
 /// directory (e.g. `~/.cache/schemalint/`). A 4-byte version header is
 /// prepended to every file for future migration. If the version does not
 /// match, the entry is treated as a miss and overwritten.
+///
+/// # Design: stored bytes as a collision guard (disk layer)
+///
+/// Like [`Cache`], every on-disk entry serializes `original_bytes` alongside
+/// the normalized schema (see [`CacheEntry`]).  `get` re-verifies the stored
+/// bytes against the caller's input after deserialization for the same reason:
+/// guarding against [`FxHasher`] collisions without requiring a
+/// collision-resistant hash.  A mismatch is silently treated as a miss —
+/// never a wrong result.
+///
+/// # Design: PID-isolated disk directory
+///
+/// The disk cache directory is namespaced by the current process ID (e.g.
+/// `schemalint-<pid>/`).  This means each process maintains its **own**
+/// private on-disk cache; entries written by one process are not read by
+/// another.  The isolation avoids write-write conflicts between concurrent
+/// `schemalint` invocations without requiring file-level advisory locks.
+///
+/// Cross-process cache sharing (which would increase hit rates in scenarios
+/// such as repeated CI runs) is a possible future enhancement — it would
+/// require per-file locking or a different concurrency strategy, and is a
+/// performance trade-off, not a correctness issue.
 #[derive(Debug)]
 pub struct DiskCache {
     memory: RwLock<Cache>,
