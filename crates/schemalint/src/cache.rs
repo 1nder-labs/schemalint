@@ -157,20 +157,30 @@ impl DiskCache {
     }
 
     pub fn new() -> Self {
-        let cache_dir =
+        let candidate =
             dirs::cache_dir().map(|d| d.join(format!("schemalint-{}", std::process::id())));
-        if let Some(ref dir) = cache_dir {
-            if let Err(e) = fs::create_dir_all(dir) {
-                eprintln!(
-                    "warning: failed to create cache directory '{}': {}",
-                    dir.display(),
-                    e
-                );
+        match candidate {
+            Some(ref dir) => {
+                if let Err(e) = fs::create_dir_all(dir) {
+                    eprintln!(
+                        "warning: failed to create cache directory '{}': {}",
+                        dir.display(),
+                        e
+                    );
+                    return Self {
+                        memory: RwLock::new(Cache::new()),
+                        cache_dir: None,
+                    };
+                }
+                Self {
+                    memory: RwLock::new(Cache::new()),
+                    cache_dir: candidate,
+                }
             }
-        }
-        Self {
-            memory: RwLock::new(Cache::new()),
-            cache_dir,
+            None => Self {
+                memory: RwLock::new(Cache::new()),
+                cache_dir: None,
+            },
         }
     }
 
@@ -304,6 +314,15 @@ impl DiskCache {
         };
         let mut files: Vec<(fs::DirEntry, std::time::SystemTime)> = Vec::new();
         for entry in entries.filter_map(|e| e.ok()) {
+            // Only count and evict real cache entries — files ending in ".bin"
+            // and NOT containing ".tmp." (the atomic-write temp-file suffix).
+            // A transient temp file must never be counted toward the eviction
+            // limit or mistakenly removed mid-write by a concurrent rename.
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if !name_str.ends_with(".bin") || name_str.contains(".tmp.") {
+                continue;
+            }
             let Ok(meta) = entry.metadata() else { continue };
             let Ok(mtime) = meta.modified() else { continue };
             files.push((entry, mtime));
