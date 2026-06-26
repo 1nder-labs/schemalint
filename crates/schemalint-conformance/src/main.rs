@@ -169,8 +169,17 @@ fn handle_connection(
     let result = {
         let mut reader = BufReader::new(&stream);
 
+        // 8 KiB is ample for any realistic request line (method + URL + version).
+        const MAX_REQUEST_LINE_BYTES: usize = 8 * 1024;
+
         let mut request_line = String::new();
-        if reader.read_line(&mut request_line).is_err() {
+        match reader.read_line(&mut request_line) {
+            Ok(0) => return, // EOF
+            Ok(_) => {}
+            Err(_) => return,
+        }
+        if request_line.len() > MAX_REQUEST_LINE_BYTES {
+            let _ = send_json_response(&mut stream, 400, r#"{"error":"request line too long"}"#);
             return;
         }
 
@@ -182,17 +191,51 @@ fn handle_connection(
         let method = parts[0];
         let path = parts[1];
 
-        // Read headers.
+        // Read headers — guarded against Slowloris / header-bomb attacks.
+        // Limits: 100 header lines max, 64 KiB total header bytes,
+        // 8 KiB per individual header line.
+        const MAX_HEADERS: usize = 100;
+        const MAX_HEADER_BYTES: usize = 64 * 1024; // 64 KiB cumulative
+        const MAX_LINE_BYTES: usize = 8 * 1024; // 8 KiB per line
+
         let mut content_length: Option<usize> = None;
+        let mut header_count: usize = 0;
+        let mut header_bytes: usize = 0;
         loop {
             let mut line = String::new();
-            if reader.read_line(&mut line).is_err() {
+            match reader.read_line(&mut line) {
+                Ok(0) => return, // EOF before end of headers
+                Ok(_) => {}
+                Err(_) => return,
+            }
+
+            // Per-line length guard (catches a single huge header field).
+            if line.len() > MAX_LINE_BYTES {
+                let _ = send_json_response(
+                    &mut stream,
+                    431,
+                    r#"{"error":"request header fields too large"}"#,
+                );
                 return;
             }
+
             let trimmed = line.trim();
             if trimmed.is_empty() {
-                break;
+                break; // End of headers.
             }
+
+            header_count += 1;
+            header_bytes += line.len();
+
+            if header_count > MAX_HEADERS || header_bytes > MAX_HEADER_BYTES {
+                let _ = send_json_response(
+                    &mut stream,
+                    431,
+                    r#"{"error":"request header fields too large"}"#,
+                );
+                return;
+            }
+
             if let Some((key, value)) = trimmed.split_once(':') {
                 let key = key.trim().to_lowercase();
                 if key == "content-length" {
@@ -286,6 +329,7 @@ fn send_json_response(stream: &mut TcpStream, status: u16, body: &str) -> std::i
         400 => "Bad Request",
         404 => "Not Found",
         413 => "Payload Too Large",
+        431 => "Request Header Fields Too Large",
         _ => "Internal Server Error",
     };
     let response = format!(
