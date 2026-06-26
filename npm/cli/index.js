@@ -14,6 +14,11 @@ if (!VERSION) {
 }
 const REPO = '1nder-labs/schemalint';
 
+// [P1 — resource exhaustion] Hard cap on bytes accepted from any single
+// download. 200 MiB is generous for a CLI binary archive and its tiny
+// SHA-256 sidecar; both go through downloadFile so the cap applies to both.
+const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024;
+
 // [P0 — supply chain] Allowlist of hosts permitted for downloads and redirects.
 // Only GitHub release delivery hosts are trusted; any other host (including
 // same-registrable-domain lookalikes) is rejected before a connection is made.
@@ -129,7 +134,43 @@ function downloadFile(url, destPath, depth = 0) {
         reject(new Error(`HTTP ${response.statusCode}`));
         return;
       }
+
+      // [P1 — resource exhaustion] Fast-reject on Content-Length header when
+      // present. The header can be absent or lie, so we also enforce the cap
+      // on actual bytes received below.
+      const contentLength = parseInt(response.headers['content-length'] || '0', 10);
+      if (contentLength > MAX_DOWNLOAD_BYTES) {
+        response.destroy();
+        fs.unlink(destPath, () => {});
+        reject(new Error(
+          `Download refused: Content-Length ${contentLength} exceeds ` +
+          `the ${MAX_DOWNLOAD_BYTES}-byte cap`
+        ));
+        return;
+      }
+
+      // [P1 — resource exhaustion] Track cumulative bytes received. If the
+      // server lies about Content-Length (or omits it) and streams more data
+      // than the cap allows, destroy the request and reject.
+      let bytesReceived = 0;
       const file = fs.createWriteStream(destPath);
+
+      function abortOversized() {
+        request.destroy();
+        file.destroy();
+        fs.unlink(destPath, () => {});
+        reject(new Error(
+          `Download aborted: received more than ${MAX_DOWNLOAD_BYTES} bytes`
+        ));
+      }
+
+      response.on('data', (chunk) => {
+        bytesReceived += chunk.length;
+        if (bytesReceived > MAX_DOWNLOAD_BYTES) {
+          abortOversized();
+        }
+      });
+
       response.pipe(file);
       file.on('finish', () => {
         file.close((err) => {
@@ -392,6 +433,22 @@ async function ensureBinary() {
       throw new Error(
         `Path traversal detected: extracted binary "${realFound}" escapes ` +
         `work directory "${realWorkDir}"`
+      );
+    }
+
+    // [P0 — defense in depth] Hard-link guard. A legitimate cargo-dist binary
+    // extracted from a freshly-downloaded archive always has nlink === 1 (a
+    // single directory entry pointing to the inode). A file with nlink > 1 is
+    // either a tar hard-link member aliasing another path in the archive, or an
+    // attempt by a compromised archive to alias an existing on-disk file. The
+    // archive has already been SHA-256-verified, so this is defense-in-depth,
+    // but it is cheap and closes the edge case.
+    const lstat = fs.lstatSync(realFound);
+    if (lstat.nlink > 1) {
+      try { fs.unlinkSync(realFound); } catch {}
+      throw new Error(
+        `Hard-link detected: extracted binary "${realFound}" has nlink=${lstat.nlink} ` +
+        `(expected 1). Archive rejected as potentially unsafe.`
       );
     }
 
