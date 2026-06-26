@@ -1,6 +1,62 @@
 'use strict';
 
 const { spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Resolve the argv prefix used to spawn the schemalint CLI.
+ *
+ * Resolution order:
+ *   1. Try require.resolve('@schemalint/cli/package.json') to find the CLI
+ *      package installed alongside this package. Read its `bin.schemalint`
+ *      entry to get the JS script path, then return [process.execPath, script]
+ *      so the script is always spawned via the current Node binary — portable
+ *      regardless of shebang support or executable bits.
+ *   2. If module resolution fails (CLI not a resolvable dependency), fall back
+ *      to ['schemalint'] so global installs continue to work unchanged.
+ *
+ * @returns {string[]} argv prefix, e.g. ['/usr/bin/node', '/path/to/cli/index.js']
+ *                     or ['schemalint']
+ */
+function resolveCliArgv() {
+  try {
+    const pkgJsonPath = require.resolve('@schemalint/cli/package.json');
+    const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
+    const binEntry = pkgJson.bin && (pkgJson.bin.schemalint || pkgJson.bin);
+    if (!binEntry || typeof binEntry !== 'string') {
+      return ['schemalint'];
+    }
+    const cliScript = path.resolve(path.dirname(pkgJsonPath), binEntry);
+    return [process.execPath, cliScript];
+  } catch {
+    // CLI not resolvable as a local dependency — fall back to PATH lookup.
+    return ['schemalint'];
+  }
+}
+
+/**
+ * Shared spawn helper. Takes the resolved argv prefix (from resolveCliArgv)
+ * and merges it with the subcommand args.
+ *
+ * When argv is [node, script], we spawnSync(node, [script, ...args]).
+ * When argv is ['schemalint'],  we spawnSync('schemalint', args) — identical
+ * to the original behaviour.
+ */
+function runCli(subArgs) {
+  const argv = resolveCliArgv();
+  let cmd, spawnArgs;
+  if (argv.length === 2) {
+    // [execPath, scriptPath] — invoke via Node
+    cmd = argv[0];
+    spawnArgs = [argv[1], ...subArgs];
+  } else {
+    // ['schemalint'] — rely on PATH
+    cmd = argv[0];
+    spawnArgs = subArgs;
+  }
+  return spawnSync(cmd, spawnArgs, { encoding: 'utf-8' });
+}
 
 function lint(schemaPath, options = {}) {
   const args = ['check', '--format', 'json'];
@@ -13,7 +69,7 @@ function lint(schemaPath, options = {}) {
   }
   args.push(schemaPath);
 
-  const result = spawnSync('schemalint', args, { encoding: 'utf-8' });
+  const result = runCli(args);
 
   if (result.error && result.error.code === 'ENOENT') {
     throw new Error(
@@ -43,7 +99,7 @@ function lintNode(projectPath, options = {}) {
   }
   args.push('--source', projectPath);
 
-  const result = spawnSync('schemalint', args, { encoding: 'utf-8' });
+  const result = runCli(args);
 
   if (result.error && result.error.code === 'ENOENT') {
     throw new Error(
@@ -73,7 +129,7 @@ function lintPython(projectPath, options = {}) {
   }
   args.push('--package', projectPath);
 
-  const result = spawnSync('schemalint', args, { encoding: 'utf-8' });
+  const result = runCli(args);
 
   if (result.error && result.error.code === 'ENOENT') {
     throw new Error(
