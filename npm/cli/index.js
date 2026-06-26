@@ -160,6 +160,40 @@ function downloadFile(url, destPath, depth = 0) {
   });
 }
 
+/**
+ * Recursively search `dir` for a file named `binaryName`, up to `maxDepth`
+ * levels deep. Symlinked directories are NOT followed (Zip-Slip guard).
+ * Returns all matching file paths (not directories, not symlinks-to-files).
+ */
+function findBinaryInDir(dir, binaryName, maxDepth, currentDepth = 0) {
+  const results = [];
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return results;
+  }
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isFile() && entry.name === binaryName) {
+      results.push(fullPath);
+    } else if (entry.isDirectory() && !entry.isSymbolicLink() && currentDepth < maxDepth) {
+      // entry.isSymbolicLink() is always false when using withFileTypes on a
+      // plain entry because isDirectory() and isSymbolicLink() are mutually
+      // exclusive for Dirent. Explicitly check via lstatSync for safety.
+      const stat = (() => { try { return fs.lstatSync(fullPath); } catch { return null; } })();
+      if (stat && stat.isDirectory() && !stat.isSymbolicLink()) {
+        results.push(...findBinaryInDir(fullPath, binaryName, maxDepth, currentDepth + 1));
+      }
+    }
+  }
+  return results;
+}
+
+// Monotonic counter to disambiguate temp dirs created within the same process
+// during the same millisecond (rare but possible in test harnesses).
+let _tmpCounter = 0;
+
 async function ensureBinary() {
   const binPath = getBinaryPath();
   const sentinelPath = binPath + '.verified';
@@ -200,149 +234,195 @@ async function ensureBinary() {
   const archiveName = `schemalint-${target}${ext}`;
   const url = `https://github.com/${REPO}/releases/download/v${VERSION}/${archiveName}`;
   const cacheDir = path.dirname(binPath);
+
+  // Ensure the final destination directory exists before the temp-dir sibling
+  // is created (both share the same parent, so mkdirSync is only called once).
   fs.mkdirSync(cacheDir, { recursive: true });
 
-  const archivePath = path.join(cacheDir, archiveName);
+  // [Concurrency] Use a unique temp work directory that is a SIBLING of
+  // cacheDir (same parent → same filesystem), so the final fs.renameSync into
+  // binPath is a within-filesystem atomic operation (never EXDEV).
+  // The pid + monotonic counter + random suffix make collisions practically
+  // impossible even under a test harness that spawns many processes rapidly.
+  const randomSuffix = crypto.randomBytes(4).toString('hex');
+  const workDir = path.join(
+    path.dirname(cacheDir),
+    `schemalint-tmp.${process.pid}.${++_tmpCounter}.${randomSuffix}`
+  );
+  fs.mkdirSync(workDir, { recursive: true });
 
-  // Download with retry (exponential backoff, max 3 attempts).
-  let lastError = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      await downloadFile(url, archivePath);
-      lastError = null;
-      break;
-    } catch (e) {
-      lastError = e.message;
-      if (attempt < 3) {
-        try { fs.unlinkSync(archivePath); } catch {}
-        const delayMs = Math.pow(2, attempt) * 1000;
-        await sleep(delayMs);
-      }
-    }
-  }
-
-  if (lastError !== null) {
-    throw new Error(
-      `Failed to download schemalint binary from ${url}: ${lastError}. ` +
-      `Make sure the GitHub Release for v${VERSION} exists.`
-    );
-  }
-
-  // Verify archive integrity against the published per-artifact SHA-256 checksum.
-  // cargo-dist (v0.31.0) emits a <archive>.sha256 sidecar for every archive and
-  // uploads it alongside the archive in the GitHub Release.
-  const checksumUrl = `${url}.sha256`;
-  const checksumPath = archivePath + '.sha256';
   try {
-    // Download checksum with retry (same backoff shape as archive download).
-    let checksumLastError = null;
+    // All temp artifacts (archive, checksum, extracted tree) live inside
+    // workDir so that a crashed/killed process never leaves partial state in
+    // cacheDir visible to a concurrent healthy process.
+    const archivePath = path.join(workDir, archiveName);
+
+    // Download with retry (exponential backoff, max 3 attempts).
+    let lastError = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        await downloadFile(checksumUrl, checksumPath);
-        checksumLastError = null;
+        await downloadFile(url, archivePath);
+        lastError = null;
         break;
       } catch (e) {
-        checksumLastError = e.message;
+        lastError = e.message;
         if (attempt < 3) {
-          try { fs.unlinkSync(checksumPath); } catch {}
+          try { fs.unlinkSync(archivePath); } catch {}
           const delayMs = Math.pow(2, attempt) * 1000;
           await sleep(delayMs);
         }
       }
     }
-    if (checksumLastError !== null) {
+
+    if (lastError !== null) {
       throw new Error(
-        `Failed to download checksum from ${checksumUrl}: ${checksumLastError}`
+        `Failed to download schemalint binary from ${url}: ${lastError}. ` +
+        `Make sure the GitHub Release for v${VERSION} exists.`
       );
     }
 
-    const checksumContent = fs.readFileSync(checksumPath, 'utf8');
-    // Handles both bare-hash and "hash  filename" formats.
-    const expectedHash = checksumContent.trim().split(/\s+/)[0].toLowerCase();
-    const actualHash = await sha256File(archivePath);
-    if (actualHash !== expectedHash) {
+    // Verify archive integrity against the published per-artifact SHA-256
+    // checksum. cargo-dist (v0.31.0) emits a <archive>.sha256 sidecar for
+    // every archive and uploads it alongside the archive in the GitHub Release.
+    const checksumUrl = `${url}.sha256`;
+    const checksumPath = archivePath + '.sha256';
+    try {
+      // Download checksum with retry (same backoff shape as archive download).
+      let checksumLastError = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await downloadFile(checksumUrl, checksumPath);
+          checksumLastError = null;
+          break;
+        } catch (e) {
+          checksumLastError = e.message;
+          if (attempt < 3) {
+            try { fs.unlinkSync(checksumPath); } catch {}
+            const delayMs = Math.pow(2, attempt) * 1000;
+            await sleep(delayMs);
+          }
+        }
+      }
+      if (checksumLastError !== null) {
+        throw new Error(
+          `Failed to download checksum from ${checksumUrl}: ${checksumLastError}`
+        );
+      }
+
+      const checksumContent = fs.readFileSync(checksumPath, 'utf8');
+      // Handles both bare-hash and "hash  filename" formats.
+      const expectedHash = checksumContent.trim().split(/\s+/)[0].toLowerCase();
+      const actualHash = await sha256File(archivePath);
+      if (actualHash !== expectedHash) {
+        throw new Error(
+          `SHA-256 mismatch for ${archiveName}: expected ${expectedHash}, got ${actualHash}`
+        );
+      }
+    } finally {
+      // Always remove the checksum file — it is ephemeral and must not linger.
+      try { fs.unlinkSync(checksumPath); } catch {}
+    }
+
+    // Extract into workDir. Every platform extracts to the same isolated
+    // temp tree; the archive is then deleted, and the binary is searched for
+    // within that tree regardless of how cargo-dist laid out the subdirectory.
+    try {
+      if (process.platform === 'win32') {
+        const result = spawnSync(
+          'powershell',
+          ['-Command', 'Expand-Archive', '-Path', archivePath, '-DestinationPath', workDir],
+          { stdio: 'pipe' }
+        );
+        if (result.error) throw result.error;
+        if (result.status !== 0) throw new Error(result.stderr.toString().trim());
+      } else {
+        const result = spawnSync(
+          'tar',
+          ['-xzf', archivePath, '-C', workDir],
+          { stdio: 'pipe' }
+        );
+        if (result.error) throw result.error;
+        if (result.status !== 0) throw new Error(result.stderr.toString().trim());
+      }
+    } catch (e) {
+      const reason = e.stderr ? e.stderr.toString().trim() : e.message;
+      throw new Error(`Failed to extract schemalint binary: ${reason}`);
+    }
+
+    // Archive is no longer needed once extraction succeeds.
+    try { fs.unlinkSync(archivePath); } catch {}
+
+    // [P0 — layout-agnostic binary location] cargo-dist 0.31 archives may
+    // place the binary at the archive root OR inside a `schemalint-<target>/`
+    // subdirectory. Search workDir recursively (bounded to depth 3) for a file
+    // named `schemalint[.exe]`, then enforce exactly one match.
+    const binaryName = `schemalint${EXE_EXT}`;
+    const candidates = findBinaryInDir(workDir, binaryName, 3);
+
+    if (candidates.length === 0) {
       throw new Error(
-        `SHA-256 mismatch for ${archiveName}: expected ${expectedHash}, got ${actualHash}`
+        `Binary "${binaryName}" not found anywhere inside the extracted archive. ` +
+        `Searched up to depth 3 in ${workDir}.`
       );
     }
-  } catch (e) {
-    // Clean up stale archive so a failed verify doesn't leave it on disk.
-    try { fs.unlinkSync(archivePath); } catch {}
-    // Re-throw integrity failures unconditionally (fail closed).
-    throw e;
+    if (candidates.length > 1) {
+      throw new Error(
+        `Ambiguous extraction: found ${candidates.length} files named "${binaryName}" ` +
+        `inside the archive: ${candidates.join(', ')}`
+      );
+    }
+
+    const foundPath = candidates[0];
+
+    // [P0 — path traversal] Resolve the found path through realpathSync and
+    // verify it is inside workDir before trusting it. This guards against
+    // Tar-Slip / Zip-Slip attacks that place a symlink pointing outside the
+    // extraction directory. Note: GNU tar `--no-absolute-filenames` is
+    // deliberately NOT used because macOS ships bsdtar which does not
+    // recognise that long option. The realpath containment check is the
+    // portable guard for both tar and Expand-Archive paths.
+    let realFound;
+    try {
+      realFound = fs.realpathSync(foundPath);
+    } catch (e) {
+      throw new Error(`Binary not accessible after extraction: ${e.message}`);
+    }
+    const realWorkDir = fs.realpathSync(workDir);
+    if (!realFound.startsWith(realWorkDir + path.sep)) {
+      throw new Error(
+        `Path traversal detected: extracted binary "${realFound}" escapes ` +
+        `work directory "${realWorkDir}"`
+      );
+    }
+
+    // Make executable on Unix before moving into place.
+    if (process.platform !== 'win32') {
+      fs.chmodSync(realFound, 0o755);
+    }
+
+    // [Concurrency] Atomically rename the verified binary into its final
+    // location. Because workDir is a sibling of cacheDir (same filesystem),
+    // renameSync is always within-device and therefore atomic. A racing process
+    // that already placed binPath will simply have its file replaced by an
+    // equally valid binary — both came from the same verified archive.
+    // The sentinel is written AFTER the rename, so the cache-hit path (which
+    // requires both binPath and sentinelPath to exist) can never observe a
+    // partial state left by a crash between the two writes.
+    fs.renameSync(realFound, binPath);
+
+    // [P0 — integrity] Write the SHA-256 of the installed binary into the
+    // sentinel. On future cache hits this hash is re-verified against the live
+    // binary before the cached path is returned, ensuring a tampered binary is
+    // caught on the very next invocation.
+    const binaryHash = await sha256File(binPath);
+    fs.writeFileSync(sentinelPath, binaryHash);
+
   } finally {
-    try { fs.unlinkSync(checksumPath); } catch {}
+    // Always clean up the temp work directory, even on error. This removes
+    // any partially extracted or partially downloaded artifacts so a failed
+    // run never leaves corrupt state visible to concurrent or subsequent runs.
+    try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
   }
-
-  // Extract based on platform.
-  try {
-    if (process.platform === 'win32') {
-      const result = spawnSync(
-        'powershell',
-        ['-Command', 'Expand-Archive', '-Path', archivePath, '-DestinationPath', cacheDir],
-        { stdio: 'pipe' }
-      );
-      if (result.error) throw result.error;
-      if (result.status !== 0) throw new Error(result.stderr.toString().trim());
-    } else {
-      const result = spawnSync(
-        'tar',
-        ['-xzf', archivePath, '-C', cacheDir],
-        { stdio: 'pipe' }
-      );
-      if (result.error) throw result.error;
-      if (result.status !== 0) throw new Error(result.stderr.toString().trim());
-    }
-  } catch (e) {
-    const reason = e.stderr ? e.stderr.toString().trim() : e.message;
-    try { fs.unlinkSync(archivePath); } catch {}
-    throw new Error(`Failed to extract schemalint binary: ${reason}`);
-  }
-
-  // Clean up archive.
-  try { fs.unlinkSync(archivePath); } catch {}
-
-  if (!fs.existsSync(binPath)) {
-    throw new Error(`Binary not found at ${binPath} after extraction`);
-  }
-
-  // [P0 — path traversal] Verify the extracted binary is inside cacheDir.
-  // Both sides are resolved through realpathSync so that symlinks (e.g. macOS
-  // /tmp → /private/tmp) do not cause false rejections. The archive is already
-  // checksum-verified at this point, but we still guard defensively because
-  // Tar-Slip / Zip-Slip attacks target the extraction step.
-  // Note: GNU tar `--no-absolute-filenames` is deliberately NOT used because
-  // macOS ships bsdtar, which does not recognise that long option and would
-  // break every macOS install. The realpath containment check is the portable
-  // guard for both tar and Expand-Archive paths.
-  try {
-    const realBin = fs.realpathSync(binPath);
-    const realCacheDir = fs.realpathSync(cacheDir);
-    if (!realBin.startsWith(realCacheDir + path.sep)) {
-      try { fs.unlinkSync(binPath); } catch {}
-      try { fs.unlinkSync(sentinelPath); } catch {}
-      throw new Error(
-        `Path traversal detected: extracted binary "${realBin}" escapes cache directory "${realCacheDir}"`
-      );
-    }
-  } catch (e) {
-    if (e.message.startsWith('Path traversal')) throw e;
-    // realpathSync can fail if binPath disappeared between existsSync and here —
-    // treat as a missing-binary error so the outer handler surfaces a clear message.
-    throw new Error(`Binary not accessible after extraction: ${e.message}`);
-  }
-
-  // Make executable on Unix.
-  if (process.platform !== 'win32') {
-    fs.chmodSync(binPath, 0o755);
-  }
-
-  // [P0 — integrity] Write the SHA-256 of the extracted binary (not the archive)
-  // into the sentinel. On future cache hits this hash is re-verified against the
-  // live binary before the cached path is returned, ensuring a tampered binary is
-  // caught on the very next invocation.
-  const binaryHash = await sha256File(binPath);
-  fs.writeFileSync(sentinelPath, binaryHash);
 
   return binPath;
 }
