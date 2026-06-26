@@ -400,11 +400,14 @@ fn handle_check(
 //     "format":   "json" | "human" | "sarif" | "gha" | "junit"  // optional, default "json"
 //   }
 //
-// Success response result:
+// Success response result (some sources succeeded):
 //   { "success": true, "output": "<rendered text>",
-//     "total_errors": N, "total_warnings": N }
+//     "total_errors": N, "total_warnings": N,
+//     "discovery_errors": ["..."]   // omitted when empty; present when SOME sources failed
+//     "discovery_warnings": ["..."] // omitted when empty; non-fatal warnings from sidecar
+//   }
 //
-// Failure response result:
+// Failure response result (ALL sources failed or no models found):
 //   { "success": false, "error": "<message>" }
 //
 // Lifecycle: per-request spawn → discover-loop → shutdown → process pipeline.
@@ -507,6 +510,7 @@ fn handle_check_node(
     let start = Instant::now();
 
     // --- 3. Spawn Node helper ---
+    // Per-request spawn keeps a hung helper isolated to one request; pooling is a future optimization if a hot caller appears.
     let mut helper = match crate::node::NodeHelper::spawn(None) {
         Ok(h) => h,
         Err(e) => {
@@ -520,6 +524,7 @@ fn handle_check_node(
     // --- 4. Discover schemas from each source glob ---
     let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
     let mut discovery_errors: Vec<String> = Vec::new();
+    let mut discovery_warnings: Vec<String> = Vec::new();
 
     for source in &sources {
         match helper.discover(source) {
@@ -527,12 +532,16 @@ fn handle_check_node(
                 for model in resp.models {
                     discovered_models.push(model);
                 }
-                // Log discovery warnings to stderr (doesn't corrupt the JSON-RPC stream)
                 for warning in &resp.warnings {
+                    // Log to stderr (doesn't corrupt the JSON-RPC stream) and collect for the response.
                     eprintln!(
                         "[checkNode] warning: discovery warning for '{}' in source '{}': {}",
                         warning.model, source, warning.message
                     );
+                    discovery_warnings.push(format!(
+                        "source '{}', model '{}': {}",
+                        source, warning.model, warning.message
+                    ));
                 }
             }
             Err(e) => {
@@ -554,12 +563,16 @@ fn handle_check_node(
     if discovered_models.is_empty() {
         // No models found, no failures — return clean empty result.
         let output_text = render_output(format, &[], 0, 0, &profile_names, Some(0));
-        return json!({
+        let mut response = json!({
             "success": true,
             "output": output_text,
             "total_errors": 0,
             "total_warnings": 0,
         });
+        if !discovery_warnings.is_empty() {
+            response["discovery_warnings"] = json!(discovery_warnings);
+        }
+        return response;
     }
 
     // --- 5. Run the normalize → check → aggregate pipeline ---
@@ -597,12 +610,21 @@ fn handle_check_node(
         duration_ms,
     );
 
-    json!({
+    // Build the success response, adding discovery_errors / discovery_warnings only when non-empty.
+    // This preserves the existing response shape for callers that see no partial failures.
+    let mut response = json!({
         "success": true,
         "output": output_text,
         "total_errors": total_errors,
         "total_warnings": total_warnings,
-    })
+    });
+    if !discovery_errors.is_empty() {
+        response["discovery_errors"] = json!(discovery_errors);
+    }
+    if !discovery_warnings.is_empty() {
+        response["discovery_warnings"] = json!(discovery_warnings);
+    }
+    response
 }
 
 // ---------------------------------------------------------------------------
@@ -615,11 +637,14 @@ fn handle_check_node(
 //     "format":   "json" | "human" | "sarif" | "gha" | "junit"  // optional, default "json"
 //   }
 //
-// Success response result:
+// Success response result (some packages succeeded):
 //   { "success": true, "output": "<rendered text>",
-//     "total_errors": N, "total_warnings": N }
+//     "total_errors": N, "total_warnings": N,
+//     "discovery_errors": ["..."]   // omitted when empty; present when SOME packages failed
+//     "discovery_warnings": ["..."] // omitted when empty; non-fatal warnings from sidecar
+//   }
 //
-// Failure response result:
+// Failure response result (ALL packages failed or no models found):
 //   { "success": false, "error": "<message>" }
 //
 // Lifecycle: per-request spawn → discover-loop → shutdown → process pipeline.
@@ -725,6 +750,7 @@ fn handle_check_python(
     let start = Instant::now();
 
     // --- 3. Spawn Python helper ---
+    // Per-request spawn keeps a hung helper isolated to one request; pooling is a future optimization if a hot caller appears.
     let mut helper = match crate::python::PythonHelper::spawn(None) {
         Ok(h) => h,
         Err(e) => {
@@ -738,12 +764,19 @@ fn handle_check_python(
     // --- 4. Discover models from each package ---
     let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
     let mut discovery_errors: Vec<String> = Vec::new();
+    let mut discovery_warnings: Vec<String> = Vec::new();
 
     for package in &packages {
         match helper.discover(package) {
             Ok(resp) => {
                 for model in resp.models {
                     discovered_models.push(model);
+                }
+                for warning in &resp.warnings {
+                    discovery_warnings.push(format!(
+                        "package '{}', model '{}': {}",
+                        package, warning.model, warning.message
+                    ));
                 }
             }
             Err(e) => {
@@ -765,12 +798,16 @@ fn handle_check_python(
     if discovered_models.is_empty() {
         // No models found, no failures — return clean empty result.
         let output_text = render_output(format, &[], 0, 0, &profile_names, Some(0));
-        return json!({
+        let mut response = json!({
             "success": true,
             "output": output_text,
             "total_errors": 0,
             "total_warnings": 0,
         });
+        if !discovery_warnings.is_empty() {
+            response["discovery_warnings"] = json!(discovery_warnings);
+        }
+        return response;
     }
 
     // --- 5. Run the normalize → check → aggregate pipeline ---
@@ -808,10 +845,19 @@ fn handle_check_python(
         duration_ms,
     );
 
-    json!({
+    // Build the success response, adding discovery_errors / discovery_warnings only when non-empty.
+    // This preserves the existing response shape for callers that see no partial failures.
+    let mut response = json!({
         "success": true,
         "output": output_text,
         "total_errors": total_errors,
         "total_warnings": total_warnings,
-    })
+    });
+    if !discovery_errors.is_empty() {
+        response["discovery_errors"] = json!(discovery_errors);
+    }
+    if !discovery_warnings.is_empty() {
+        response["discovery_warnings"] = json!(discovery_warnings);
+    }
+    response
 }

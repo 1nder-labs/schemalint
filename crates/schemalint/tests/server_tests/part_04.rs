@@ -487,6 +487,107 @@ fn server_check_python_unknown_profile_returns_error() {
 }
 
 // ---------------------------------------------------------------------------
+// checkNode — partial discovery failure is surfaced in success response
+//
+// Two sources are sent:
+//  - "src/**/*.ts": valid Zod file with z.string().url() → OAI-K-format-restricted
+//  - "": empty string; the Node sidecar treats a falsy source as invalid and
+//    returns a JSON-RPC error, which the server collects into discovery_errors.
+//
+// The response must be success:true (models were found from the first source),
+// contain at least one diagnostic (OAI-K-format-restricted), AND include a
+// non-empty "discovery_errors" array reporting the failed source.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn server_check_node_partial_discovery_failure_surfaced() {
+    let tmp = TempDir::new().unwrap();
+    setup_ts_project(
+        tmp.path(),
+        &[(
+            "schema.ts",
+            r#"import { z } from "zod";
+export const Bad = z.object({ website: z.string().url() });
+"#,
+        )],
+    );
+
+    let mut child = cmd()
+        .current_dir(tmp.path())
+        .arg("server")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("should spawn server");
+
+    // "src/**/*.ts" succeeds; "" triggers a sidecar-level error (falsy source
+    // is rejected before glob evaluation, producing a DiscoverFailed response).
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "checkNode",
+        "params": {
+            "sources": ["src/**/*.ts", ""],
+            "profiles": ["openai.so.2026-04-30"],
+            "format": "json"
+        },
+        "id": 50
+    });
+
+    let response = send_request(&mut child, &request.to_string());
+    assert_eq!(response["jsonrpc"], "2.0", "unexpected envelope: {response}");
+    assert_eq!(response["id"], 50);
+
+    let result = &response["result"];
+
+    // Must remain success:true — models were found from "src/**/*.ts".
+    assert!(
+        result["success"].as_bool().unwrap_or(false),
+        "checkNode should succeed when at least one source produces models; got: {result}"
+    );
+
+    // Diagnostics from the good source must be present.
+    let total_errors = result["total_errors"].as_u64().unwrap_or(0);
+    assert!(
+        total_errors >= 1,
+        "expected at least 1 error (OAI-K-format-restricted) from the valid source; got: {result}"
+    );
+    let output_str = result["output"].as_str().expect("output should be a string");
+    let output_json: serde_json::Value =
+        serde_json::from_str(output_str).expect("output should be valid JSON");
+    let has_format_error = output_json["diagnostics"]
+        .as_array()
+        .map(|arr| arr.iter().any(|d| d["code"].as_str() == Some("OAI-K-format-restricted")))
+        .unwrap_or(false);
+    assert!(
+        has_format_error,
+        "expected OAI-K-format-restricted in diagnostics from the valid source; got: {output_json}"
+    );
+
+    // The failed source must be reported in discovery_errors.
+    let discovery_errors = result["discovery_errors"]
+        .as_array()
+        .expect("discovery_errors must be an array when a source fails");
+    assert!(
+        !discovery_errors.is_empty(),
+        "discovery_errors must be non-empty when a source fails; got: {result}"
+    );
+    // The error entry must reference the failed source ("").
+    let error_mentions_failed_source = discovery_errors
+        .iter()
+        .any(|e| e.as_str().map(|s| s.contains("discovery failed")).unwrap_or(false));
+    assert!(
+        error_mentions_failed_source,
+        "discovery_errors should mention the discovery failure; got: {discovery_errors:?}"
+    );
+
+    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 51});
+    let _ = send_request(&mut child, &shutdown.to_string());
+    let status = child.wait().expect("should exit cleanly");
+    assert!(status.success());
+}
+
+// ---------------------------------------------------------------------------
 // checkNode — server stays alive and handles further requests after checkNode
 // ---------------------------------------------------------------------------
 
