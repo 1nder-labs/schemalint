@@ -166,6 +166,14 @@ export function buildSourceMapFromObjectLiteral(objLit, sourceFile, tsModule) {
             continue;
         }
         const { line } = sourceFile.getLineAndCharacterOfPosition(prop.getStart(sourceFile));
+        // Pointer keys intentionally use the raw property name — NOT RFC 6901-escaped
+        // (i.e. '/' is NOT replaced with '~1', nor '~' with '~0').
+        // The Rust normalizer builds pointers the same way:
+        //   `format!("{}/properties/{}", ptr, key)` in crates/schemalint/src/normalize/traverse.rs
+        // Both sides must be byte-identical so that `source_map.get(&pointer)` matches.
+        // Escaping only this side would desync the two and break source-mapping for any
+        // property whose name contains '/' or '~'.  A coordinated change on both sides
+        // would be required if RFC-6901 canonical pointers are ever desired.
         const pointer = `/properties/${propName}`;
         map[pointer] = {
             file: sourceFile.fileName,

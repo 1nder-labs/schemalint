@@ -1,3 +1,15 @@
+/**
+ * Normalize a file-system path to forward slashes.
+ *
+ * `path.relative()` returns backslash-separated paths on Windows
+ * (e.g. `src\\foo.ts`), but picomatch globs use forward slashes.
+ * Replacing the OS separator with `/` is a no-op on POSIX and correct
+ * on Windows, making the glob filter work on both platforms.
+ *
+ * The `sep` parameter exists solely for unit-testing Windows paths on a
+ * POSIX machine — pass `'\\'` to simulate Windows `path.sep`.
+ */
+export declare function toPosixPath(p: string, sep?: string): string;
 export interface SourceMapEntry {
     file: string;
     line?: number;

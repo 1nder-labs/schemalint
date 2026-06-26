@@ -1,6 +1,21 @@
 import path from 'node:path';
 
 import { evaluateSchema, evaluateSyntheticSchema } from './evaluate.js';
+
+/**
+ * Normalize a file-system path to forward slashes.
+ *
+ * `path.relative()` returns backslash-separated paths on Windows
+ * (e.g. `src\\foo.ts`), but picomatch globs use forward slashes.
+ * Replacing the OS separator with `/` is a no-op on POSIX and correct
+ * on Windows, making the glob filter work on both platforms.
+ *
+ * The `sep` parameter exists solely for unit-testing Windows paths on a
+ * POSIX machine — pass `'\\'` to simulate Windows `path.sep`.
+ */
+export function toPosixPath(p: string, sep: string = path.sep): string {
+  return sep === '/' ? p : p.split(sep).join('/');
+}
 import {
   buildSourceMapFromObjectLiteral,
   findExportedSchemaCalls,
@@ -108,7 +123,12 @@ export async function discoverZodSchemas(
     //     "/repo/application/foo.ts".
     //  2. Files outside projectRoot (monorepo tsconfig referencing "../shared/…")
     //     get a "../"-prefixed path that the caller's glob can match if desired.
-    const relPath = path.relative(projectRoot, f);
+    //
+    // Normalize to forward slashes before matching: on Windows, path.relative()
+    // returns backslash-separated paths (e.g. "src\\foo.ts") but picomatch
+    // globs use forward slashes, causing every file to fail to match.
+    // toPosixPath() is a no-op on POSIX (path.sep === '/') and correct on Windows.
+    const relPath = toPosixPath(path.relative(projectRoot, f));
     return isMatch(relPath);
   });
 

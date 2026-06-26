@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { discoverZodSchemas } from '../discover.js';
+import { discoverZodSchemas, toPosixPath } from '../discover.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -243,5 +243,34 @@ describe('discoverZodSchemas', () => {
       // The module path must NOT contain any path that traverses outside cwd.
       expect(path.relative(fixturesDir, model.module_path)).not.toMatch(/^\.\./);
     }
+  });
+
+  describe('toPosixPath (Windows path normalization)', () => {
+    it('converts backslash-separated Windows paths to forward slashes', () => {
+      // Simulate a Windows path.relative() output with '\\' as the separator.
+      // On POSIX, path.sep === '/' so we pass '\\' explicitly to exercise the
+      // Windows branch.  This is the regression guard: on Windows, path.relative()
+      // returns e.g. "src\\models\\user.ts" which picomatch would fail to match
+      // against "src/**/*.ts" — toPosixPath must convert it first.
+      expect(toPosixPath('src\\models\\user.ts', '\\')).toBe('src/models/user.ts');
+      expect(toPosixPath('src\\foo.ts', '\\')).toBe('src/foo.ts');
+      expect(toPosixPath('..\\shared\\schema.ts', '\\')).toBe('../shared/schema.ts');
+    });
+
+    it('is a no-op for already-posix paths', () => {
+      // On POSIX, sep === '/' so nothing changes.
+      expect(toPosixPath('src/models/user.ts', '/')).toBe('src/models/user.ts');
+      expect(toPosixPath('simple.ts', '/')).toBe('simple.ts');
+    });
+
+    it('normalised Windows path matches a forward-slash picomatch glob', async () => {
+      // End-to-end proof: a backslash-style relPath, once normalised, must
+      // satisfy a forward-slash glob — the exact condition that was broken on Windows.
+      const { default: picomatch } = await import('picomatch');
+      const isMatch = picomatch('src/**/*.ts', { dot: true });
+      expect(isMatch(toPosixPath('src\\models\\user.ts', '\\'))).toBe(true);
+      // Without normalisation the match would fail:
+      expect(isMatch('src\\models\\user.ts')).toBe(false);
+    });
   });
 });
