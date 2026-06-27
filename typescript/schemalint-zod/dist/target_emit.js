@@ -81,6 +81,8 @@ function rewriteImport(stmt, sourceFile, tsModule, compilerOptions) {
         return stmt.getText(sourceFile);
     }
     const text = stmt.getText(sourceFile);
+    // pathToFileURL produces a forward-slash percent-encoded file:// URL (Windows-safe);
+    // JSON.stringify is the correct way to embed it as a JS string literal — not double-escaping.
     return text.replace(spec.getText(sourceFile), JSON.stringify(pathToFileURL(resolved).href));
 }
 function sourceMapForExpression(expr, sourceFile, tsModule) {
