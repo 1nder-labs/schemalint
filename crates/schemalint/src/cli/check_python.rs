@@ -132,6 +132,7 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
             );
             return 1;
         }
+        eprintln!("warning: no Pydantic models discovered in packages");
         return emit_empty_output(format, &profile_names, args.output.as_deref());
     }
 
