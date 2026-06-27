@@ -126,6 +126,11 @@ impl Cache {
 pub struct DiskCache {
     memory: RwLock<Cache>,
     cache_dir: Option<PathBuf>,
+    /// Serializes eviction runs (read_dir + sort + remove) across threads so
+    /// two concurrent `insert` calls cannot race on file deletion and
+    /// over-evict (~2× the intended entries removed).  The cache dir is
+    /// PID-isolated, so this mutex only needs to cover intra-process races.
+    evict_lock: std::sync::Mutex<()>,
 }
 
 impl Default for DiskCache {
@@ -148,11 +153,13 @@ impl DiskCache {
             return Self {
                 memory: RwLock::new(Cache::new()),
                 cache_dir: None,
+                evict_lock: std::sync::Mutex::new(()),
             };
         }
         Self {
             memory: RwLock::new(Cache::new()),
             cache_dir: Some(isolated),
+            evict_lock: std::sync::Mutex::new(()),
         }
     }
 
@@ -170,16 +177,19 @@ impl DiskCache {
                     return Self {
                         memory: RwLock::new(Cache::new()),
                         cache_dir: None,
+                        evict_lock: std::sync::Mutex::new(()),
                     };
                 }
                 Self {
                     memory: RwLock::new(Cache::new()),
                     cache_dir: candidate,
+                    evict_lock: std::sync::Mutex::new(()),
                 }
             }
             None => Self {
                 memory: RwLock::new(Cache::new()),
                 cache_dir: None,
+                evict_lock: std::sync::Mutex::new(()),
             },
         }
     }
@@ -301,6 +311,13 @@ impl DiskCache {
     }
 
     fn evict_if_needed(&self, dir: &PathBuf) {
+        // Serialize the entire read-dir / sort / remove sequence so that two
+        // concurrent inserts cannot both independently trim to the cap and
+        // together remove ~2× the intended number of entries.
+        // Poison tolerance: if a previous holder panicked inside this function
+        // we still get the inner guard rather than propagating a poison error.
+        let _guard = self.evict_lock.lock().unwrap_or_else(|e| e.into_inner());
+
         let entries = match fs::read_dir(dir) {
             Ok(e) => e,
             Err(e) => {
