@@ -250,10 +250,11 @@ jobs:
   # Artifact-action versions:
   #   The cargo-dist-managed jobs (plan, build-local-artifacts,
   #   build-global-artifacts) pin upload-artifact@v6 / download-artifact@v7
-  #   as emitted by dist init. The custom jobs below use upload-artifact@v4
-  #   / download-artifact@v4 — the same generation (v4+), cross-compatible
-  #   with each other. Do not edit the versions in the dist-managed section;
-  #   cargo-dist regenerates them on `dist init`.
+  #   as emitted by dist init. The custom jobs below use the same generation
+  #   (upload-artifact@v6 / download-artifact@v7) for artifact-transfer
+  #   compatibility — cross-major transfers (e.g. v4 download of a v6 upload)
+  #   are fragile per GitHub docs. Do not edit the versions in the
+  #   dist-managed section; cargo-dist regenerates them on `dist init`.
   # ==========================================================================
 
   # Build Python wheel via maturin
@@ -283,7 +284,7 @@ jobs:
           args: --release --out ../../dist
 
       - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: wheels
           path: dist/*.whl
@@ -316,7 +317,7 @@ jobs:
           persist-credentials: false
 
       - name: Download dist artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: artifacts-build-local-*
           path: dist-artifacts
@@ -369,7 +370,7 @@ jobs:
 
       - name: Download wheel artifact (for wheel smoke test)
         if: ${{ matrix.os == 'ubuntu-latest' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: wheels
           path: dist
@@ -481,7 +482,7 @@ jobs:
       url: https://pypi.org/project/schemalint/
     steps:
       - name: Download wheel artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: wheels
           path: dist
@@ -510,21 +511,21 @@ jobs:
           fetch-depth: 0
 
       - name: Download all dist artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: artifacts-build-local-*
           path: release-artifacts
           merge-multiple: true
 
       - name: Download global artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: artifacts-build-global
           path: release-artifacts
           merge-multiple: true
 
       - name: Download wheel artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: wheels
           path: release-artifacts
