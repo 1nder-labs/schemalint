@@ -64,7 +64,15 @@ fn main() {
                 Ok(s) => s,
                 Err(_) => break,
             };
-            handle_connection(stream, &map, mbs);
+            // handle_connection is called AFTER the rx lock is released, so a
+            // panic inside it cannot poison the rx mutex.
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                handle_connection(stream, &map, mbs);
+            }))
+            .is_err()
+            {
+                eprintln!("warning: connection handler panicked, worker recovering");
+            }
         });
     }
 
@@ -130,6 +138,17 @@ fn load_truth_files(truth_dir: &std::path::Path) -> HashMap<String, ProviderTrut
             .unwrap_or_default();
         // Expect filenames like "openai.truth" -> provider key "openai".
         let provider_key = file_name.strip_suffix(".truth").unwrap_or(file_name);
+
+        // Guard: a file named ".truth.toml" has stem ".truth" which strips to
+        // "". An empty provider key would silently shadow every other provider
+        // on lookup. Skip the file with a warning instead.
+        if provider_key.is_empty() {
+            eprintln!(
+                "warning: skipping '{}': empty provider key after stripping '.truth' suffix",
+                path.display()
+            );
+            continue;
+        }
 
         let truth = parse_truth(&std::fs::read_to_string(&path).unwrap_or_else(|e| {
             eprintln!("error: unable to read '{}': {e}", path.display());
