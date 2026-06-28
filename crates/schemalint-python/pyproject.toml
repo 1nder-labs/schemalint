@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "schemalint"
-version = "1.0.0"
+version = "1.0.1"
 description = "Static analysis for JSON Schema compatibility with LLM structured-output providers"
 readme = "README.md"
 license = { text = "MIT OR Apache-2.0" }
@@ -23,8 +23,9 @@ Homepage = "https://github.com/1nder-labs/schemalint"
 Documentation = "https://1nder-labs.github.io/schemalint"
 Repository = "https://github.com/1nder-labs/schemalint"
 
-[project.scripts]
-schemalint = "schemalint.cli:main"
+# No [project.scripts]: maturin's bin bindings install the bundled Rust binary
+# directly as the `schemalint` command (see [[bin]] name in Cargo.toml). Defining
+# [project.scripts] alongside a binary is rejected by maturin.
 
 [tool.maturin]
 bindings = "bin"
