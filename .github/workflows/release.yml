@@ -618,7 +618,12 @@ jobs:
   publish-npm:
     needs:
       - smoke-npm
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    # Gated off for the v1.0.1 bootstrap: the three @1nder-labs packages do not exist
+    # on npm yet, and npm trusted publishing attaches to an EXISTING package. v1.0.1 is
+    # published once by hand (local login, no token); after the trusted publishers are
+    # configured on npmjs.com, set repo variable PUBLISH_NPM=true to publish via OIDC
+    # from v1.0.2 onward.
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_NPM == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
