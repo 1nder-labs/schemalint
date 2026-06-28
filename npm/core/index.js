@@ -8,7 +8,7 @@ const path = require('path');
  * Resolve the argv prefix used to spawn the schemalint CLI.
  *
  * Resolution order:
- *   1. Try require.resolve('@schemalint/cli/package.json') to find the CLI
+ *   1. Try require.resolve('@1nder-labs/cli/package.json') to find the CLI
  *      package installed alongside this package. Read its `bin.schemalint`
  *      entry to get the JS script path, then return [process.execPath, script]
  *      so the script is always spawned via the current Node binary — portable
@@ -21,7 +21,7 @@ const path = require('path');
  */
 function resolveCliArgv() {
   try {
-    const pkgJsonPath = require.resolve('@schemalint/cli/package.json');
+    const pkgJsonPath = require.resolve('@1nder-labs/cli/package.json');
     const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf-8'));
     const binEntry = pkgJson.bin && (pkgJson.bin.schemalint || pkgJson.bin);
     if (!binEntry || typeof binEntry !== 'string') {
@@ -73,7 +73,7 @@ function lint(schemaPath, options = {}) {
 
   if (result.error && result.error.code === 'ENOENT') {
     throw new Error(
-      'schemalint CLI not found on PATH. Install via: npm install -g @schemalint/cli'
+      'schemalint CLI not found on PATH. Install via: npm install -g @1nder-labs/cli'
     );
   }
 
@@ -103,7 +103,7 @@ function lintNode(projectPath, options = {}) {
 
   if (result.error && result.error.code === 'ENOENT') {
     throw new Error(
-      'schemalint CLI not found on PATH. Install via: npm install -g @schemalint/cli'
+      'schemalint CLI not found on PATH. Install via: npm install -g @1nder-labs/cli'
     );
   }
 
@@ -133,7 +133,7 @@ function lintPython(projectPath, options = {}) {
 
   if (result.error && result.error.code === 'ENOENT') {
     throw new Error(
-      'schemalint CLI not found on PATH. Install via: npm install -g @schemalint/cli'
+      'schemalint CLI not found on PATH. Install via: npm install -g @1nder-labs/cli'
     );
   }
 

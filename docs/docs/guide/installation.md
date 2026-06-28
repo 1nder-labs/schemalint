@@ -29,7 +29,7 @@ The PyPI package bundles the CLI binary — no Rust toolchain required.
 ## npm
 
 ```bash
-npm install -g @schemalint/cli
+npm install -g @1nder-labs/cli
 ```
 
 The npm package downloads the platform-appropriate binary on first use.

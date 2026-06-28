@@ -17,14 +17,14 @@
 
 schemalint catches provider-incompatible JSON Schema at build time: unsupported keywords, missing `required` entries, invalid root shapes, `additionalProperties` mistakes, size limits, and provider-specific restrictions.
 
-New install? Use `@schemalint/cli`. The installed binary is `schemalint`.
+New install? Use `@1nder-labs/cli`. The installed binary is `schemalint`.
 
 ## Install
 
 ```bash
 # Bun / npm projects
-bun add -d @schemalint/cli
-# or: npm install -D @schemalint/cli
+bun add -d @1nder-labs/cli
+# or: npm install -D @1nder-labs/cli
 
 # Rust
 cargo install schemalint
@@ -66,7 +66,7 @@ Lint for both OpenAI and Anthropic:
 Install the Zod helper when schemas live in TypeScript:
 
 ```bash
-bun add -d @schemalint/cli @schemalint/zod
+bun add -d @1nder-labs/cli @1nder-labs/zod
 ```
 
 Configure discovery in `package.json`:

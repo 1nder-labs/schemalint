@@ -8,9 +8,9 @@ Five-crate Rust workspace plus npm and TypeScript packages:
 - `crates/schemalint-docgen` — rule documentation generator (`publish = false`)
 - `crates/schemalint-conformance` — conformance mock server and truth engine (`publish = false`)
 - `crates/schemalint-python` — maturin PyPI packaging crate (`publish = false`)
-- `npm/cli/` — npm auto-download binary wrapper (`@schemalint/cli`)
-- `npm/core/` — npm programmatic API placeholder (`@schemalint/core`, requires CLI on PATH)
-- `typescript/schemalint-zod/` — Zod ingestion helper (`@schemalint/zod`)
+- `npm/cli/` — npm auto-download binary wrapper (`@1nder-labs/cli`)
+- `npm/core/` — npm programmatic API placeholder (`@1nder-labs/core`, requires CLI on PATH)
+- `typescript/schemalint-zod/` — Zod ingestion helper (`@1nder-labs/zod`)
 
 Entrypoints:
 - CLI binary: `crates/schemalint/src/main.rs` → `schemalint::cli::run()`

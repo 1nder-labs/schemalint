@@ -1,6 +1,6 @@
 {
-  "name": "@schemalint/core",
-  "version": "1.0.0",
+  "name": "@1nder-labs/core",
+  "version": "1.0.1",
   "description": "schemalint programmatic API — requires schemalint CLI on PATH",
   "repository": {
     "type": "git",

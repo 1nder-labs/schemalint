@@ -1,6 +1,6 @@
 {
-  "name": "@schemalint/zod",
-  "version": "1.0.0",
+  "name": "@1nder-labs/zod",
+  "version": "1.0.1",
   "description": "Zod schema discovery for schemalint — AST-based discovery + JSON-RPC server",
   "repository": {
     "type": "git",
