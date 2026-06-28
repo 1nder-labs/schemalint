@@ -361,12 +361,16 @@ jobs:
             Get-ChildItem -Path _smoke -Recurse
             exit 1
           }
+          # Do NOT capture native stdout into a variable: under $ErrorActionPreference=Stop,
+          # pwsh 7.4 throws "StandardOutputEncoding is only supported when standard output is
+          # redirected". Run directly and check $LASTEXITCODE explicitly.
           Write-Host "Running: schemalint --version"
-          $versionOutput = & $bin.FullName --version
-          Write-Host $versionOutput
+          & $bin.FullName --version
+          if ($LASTEXITCODE -ne 0) { throw "schemalint --version failed (exit $LASTEXITCODE)" }
           Write-Host "Running: schemalint check (minimal schema)"
           '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false}' | Out-File -Encoding ascii test-schema.json
           & $bin.FullName check test-schema.json --profile openai.so.2026-04-30
+          if ($LASTEXITCODE -ne 0) { throw "schemalint check failed (exit $LASTEXITCODE)" }
 
       - name: Download wheel artifact (for wheel smoke test)
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -543,10 +547,11 @@ jobs:
       - name: Install git-cliff
         id: git-cliff
         run: |
-          if curl -fsSLO "https://github.com/orhun/git-cliff/releases/download/v2.9.0/git-cliff-2.9.0-x86_64-unknown-linux-gnu.tar.gz"; then
-            tar xzf git-cliff-2.9.0-x86_64-unknown-linux-gnu.tar.gz -C /usr/local/bin git-cliff
+          if curl -fsSLO "https://github.com/orhun/git-cliff/releases/download/v2.9.0/git-cliff-2.9.0-x86_64-unknown-linux-gnu.tar.gz" \
+             && tar xzf git-cliff-2.9.0-x86_64-unknown-linux-gnu.tar.gz -C /usr/local/bin git-cliff; then
             echo "installed=true" >> "$GITHUB_OUTPUT"
           else
+            echo "git-cliff install failed; falling back to auto-generated release notes"
             echo "installed=false" >> "$GITHUB_OUTPUT"
           fi
 
