@@ -3,11 +3,12 @@ members = ["crates/schemalint", "crates/schemalint-profiles", "crates/schemalint
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["Lahfir"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/1nder-labs/schemalint"
+readme = "README.md"
 rust-version = "1.80"
 
 [profile.release]
