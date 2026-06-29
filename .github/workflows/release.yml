@@ -50,6 +50,9 @@ on:
   push:
     tags:
       - '**[0-9]+.[0-9]+.[0-9]+*'
+  # release-please dispatches this workflow at the freshly-created tag. workflow_dispatch
+  # fires even from GITHUB_TOKEN (unlike a tag push), so no PAT is needed to chain the two.
+  workflow_dispatch:
 
 jobs:
   # ==========================================================================

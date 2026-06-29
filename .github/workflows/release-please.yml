@@ -1,14 +1,14 @@
 name: release-please
 
 # Maintains a "Release PR" on main (version bumps across the Cargo workspace, the npm
-# package, and the Python wheel + CHANGELOG) from Conventional Commit history. Merging
-# that PR creates the v<version> tag, which triggers release.yml (build binaries +
-# publish to crates.io / npm via OIDC / PyPI / GitHub Releases).
+# package, and the Python wheel + CHANGELOG) from Conventional Commit history. When that
+# Release PR is merged, release-please tags v<version>, then the final step dispatches
+# release.yml at that tag to build binaries + publish (crates.io / npm via OIDC / PyPI /
+# GitHub Release).
 #
-# IMPORTANT: `token` must be a Personal Access Token (repo secret RELEASE_PLEASE_TOKEN),
-# NOT the default GITHUB_TOKEN — a tag pushed by GITHUB_TOKEN does not trigger other
-# workflows, so release.yml would never fire. The PAT needs `contents: write` +
-# `pull-requests: write` on this repository.
+# No PAT required: release-please authenticates with the default GITHUB_TOKEN, and
+# workflow_dispatch is the one cross-workflow trigger that DOES fire from GITHUB_TOKEN
+# (a plain tag push from GITHUB_TOKEN would not trigger release.yml).
 
 on:
   push:
@@ -17,13 +17,20 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v4
-        with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          # config + manifest are picked up from the repo root by default:
-          #   release-please-config.json  +  .release-please-manifest.json
+        id: release
+        # `token` defaults to ${{ github.token }} — no PAT needed.
+        # config + manifest are read from the repo root by default
+        # (release-please-config.json + .release-please-manifest.json).
+
+      - name: Dispatch the build + publish pipeline for the new tag
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml --ref "${{ steps.release.outputs.tag_name }}"
