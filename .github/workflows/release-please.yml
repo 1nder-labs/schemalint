@@ -1,0 +1,29 @@
+name: release-please
+
+# Maintains a "Release PR" on main (version bumps across the Cargo workspace, the npm
+# package, and the Python wheel + CHANGELOG) from Conventional Commit history. Merging
+# that PR creates the v<version> tag, which triggers release.yml (build binaries +
+# publish to crates.io / npm via OIDC / PyPI / GitHub Releases).
+#
+# IMPORTANT: `token` must be a Personal Access Token (repo secret RELEASE_PLEASE_TOKEN),
+# NOT the default GITHUB_TOKEN — a tag pushed by GITHUB_TOKEN does not trigger other
+# workflows, so release.yml would never fire. The PAT needs `contents: write` +
+# `pull-requests: write` on this repository.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # config + manifest are picked up from the repo root by default:
+          #   release-please-config.json  +  .release-please-manifest.json

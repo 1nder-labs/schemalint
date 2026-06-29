@@ -98,7 +98,7 @@ fn snapshot_json_clean_schema() {
         .unwrap();
 
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert_snapshot_stable!(normalize_temp_paths(&stdout, dir.path()));
+    assert_snapshot_stable_json!(normalize_temp_paths(&stdout, dir.path()));
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn snapshot_json_forbidden_keyword() {
         .unwrap();
 
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert_snapshot_stable!(normalize_temp_paths(&stdout, dir.path()));
+    assert_snapshot_stable_json!(normalize_temp_paths(&stdout, dir.path()));
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn snapshot_json_batch_with_errors() {
         .unwrap();
 
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert_snapshot_stable!(normalize_temp_paths(&stdout, dir.path()));
+    assert_snapshot_stable_json!(normalize_temp_paths(&stdout, dir.path()));
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "include-component-in-tag": false,
+  "bump-minor-pre-major": true,
+  "packages": {
+    ".": {
+      "component": "schemalint",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "toml", "path": "Cargo.toml", "jsonpath": "$.workspace.package.version" },
+        { "type": "toml", "path": "crates/schemalint-python/pyproject.toml", "jsonpath": "$.project.version" },
+        { "type": "json", "path": "npm/schemalint/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "npm/schemalint/package-lock.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "npm/schemalint/package-lock.json", "jsonpath": "$.packages[''].version" },
+        "crates/schemalint-python/python/schemalint/__init__.py"
+      ]
+    }
+  }
+}

@@ -27,7 +27,7 @@ rustc-hash = "2"
 percent-encoding = "2"
 
 [dev-dependencies]
-insta = "1"
+insta = { version = "1", features = ["filters"] }
 proptest = "1"
 assert_cmd = "2"
 predicates = "3"

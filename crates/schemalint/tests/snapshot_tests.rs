@@ -59,6 +59,21 @@ macro_rules! assert_snapshot_stable {
     }};
 }
 
+/// Like `assert_snapshot_stable!` but additionally redacts the `tool.version`
+/// field in JSON output so version bumps don't break the snapshot.
+macro_rules! assert_snapshot_stable_json {
+    ($value:expr) => {{
+        let mut settings = insta::Settings::clone_current();
+        settings.set_snapshot_path(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots"),
+        );
+        settings.add_filter(r#""version": "[\d.]+""#, r#""version": "[version]""#);
+        settings.bind(|| {
+            insta::assert_snapshot!($value);
+        });
+    }};
+}
+
 // ---------------------------------------------------------------------------
 // Snapshot: human output
 // ---------------------------------------------------------------------------
