@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a new rule, profile, flag, or other enhancement for schemalint.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Describe what you'd like and why it would help.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you open this issue
+      options:
+        - label: I have searched [existing issues](https://github.com/1nder-labs/schemalint/issues) and did not find a duplicate.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do, and why is it difficult or impossible today?
+      placeholder: "When I lint schemas for the Anthropic profile, schemalint doesn't catch…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed solution
+      description: Describe your preferred solution — a new rule, flag, output format, API, etc. Include example invocations or schema snippets if it helps.
+      placeholder: "Add a `--fix` flag that rewrites schema.json in-place by removing disallowed keywords…"
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or alternative approaches have you tried or considered?
+    validations:
+      required: false

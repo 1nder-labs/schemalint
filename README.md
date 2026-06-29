@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/1nder-labs/schemalint/actions/workflows/ci.yml"><img src="https://github.com/1nder-labs/schemalint/actions/workflows/ci.yml/badge.svg?event=push&branch=main" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/@1nder-labs/schemalint"><img src="https://img.shields.io/npm/v/@1nder-labs/schemalint?logo=npm" alt="npm"></a>
   <a href="https://crates.io/crates/schemalint"><img src="https://img.shields.io/crates/v/schemalint" alt="Crates.io"></a>
   <a href="https://docs.rs/schemalint"><img src="https://img.shields.io/docsrs/schemalint" alt="Docs.rs"></a>
   <a href="https://github.com/1nder-labs/schemalint/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" alt="License"></a>
@@ -140,4 +141,12 @@ cargo clippy --workspace -- -D warnings
 cargo fmt --all -- --check
 ```
 
-MSRV: 1.80. License: MIT OR Apache-2.0.
+MSRV: 1.80. Dual-licensed under MIT or Apache-2.0 — see [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).
+
+## Contributing
+
+Contributions are welcome — bug reports, rule improvements, new provider profiles, and docs alike. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before opening a PR.
+
+## Security
+
+To report a vulnerability, please disclose it privately — see [SECURITY.md](SECURITY.md) for details.

@@ -7,7 +7,11 @@ license.workspace = true
 repository.workspace = true
 readme.workspace = true
 rust-version.workspace = true
+homepage.workspace = true
+documentation.workspace = true
 description = "Static analysis tool for JSON Schema compatibility with LLM structured-output providers"
+keywords = ["json-schema", "openai", "anthropic", "llm", "linter"]
+categories = ["development-tools", "command-line-utilities"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

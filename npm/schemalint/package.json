@@ -3,11 +3,19 @@
   "version": "1.0.1",
   "description": "Lint JSON Schema and Zod schemas before OpenAI or Anthropic structured-output APIs reject them.",
   "license": "MIT OR Apache-2.0",
-  "repository": { "type": "git", "url": "git+https://github.com/1nder-labs/schemalint.git" },
+  "author": "Lahfir",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1nder-labs/schemalint.git",
+    "directory": "npm/schemalint"
+  },
   "homepage": "https://1nder-labs.github.io/schemalint",
+  "bugs": { "url": "https://github.com/1nder-labs/schemalint/issues" },
+  "keywords": ["json-schema", "zod", "openai", "anthropic", "structured-output", "llm", "schema", "lint", "validation", "pydantic"],
+  "engines": { "node": ">=18" },
   "type": "module",
   "bin": { "schemalint": "./index.cjs" },
-  "files": ["index.cjs", "dist/", "bin/"],
+  "files": ["index.cjs", "dist/", "bin/", "LICENSE-MIT", "LICENSE-APACHE"],
   "dependencies": { "picomatch": "^4.0.0", "zod-to-json-schema": "^3.24.0" },
   "peerDependencies": { "typescript": ">=4.9", "zod": ">=3.20" },
   "peerDependenciesMeta": {

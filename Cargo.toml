@@ -10,6 +10,8 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/1nder-labs/schemalint"
 readme = "README.md"
 rust-version = "1.80"
+homepage = "https://1nder-labs.github.io/schemalint"
+documentation = "https://docs.rs/schemalint"
 
 [profile.release]
 opt-level = 3
