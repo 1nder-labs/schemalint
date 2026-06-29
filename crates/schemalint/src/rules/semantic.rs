@@ -37,9 +37,14 @@ impl Rule for EmptyObjectRule {
         if !props_empty {
             return Vec::new();
         }
+        let severity = if profile.structural.forbid_empty_object {
+            DiagnosticSeverity::Error
+        } else {
+            DiagnosticSeverity::Warning
+        };
         vec![Diagnostic {
             code: format!("{}-S-empty-object", profile.code_prefix),
-            severity: DiagnosticSeverity::Warning,
+            severity,
             message: "object schema with additionalProperties: false has no properties".to_string(),
             pointer: node_ref.json_pointer.clone(),
             source: None,
@@ -142,6 +147,9 @@ struct AnyOfObjectsHint;
 impl Rule for AnyOfObjectsHint {
     fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         let node_ref = &arena[node];
+        if node_ref.parent.is_none() {
+            return Vec::new();
+        }
         let Some(Value::Array(branches)) = &node_ref.annotations.any_of else {
             return Vec::new();
         };

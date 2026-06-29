@@ -14,34 +14,16 @@ allOf combined with $ref is not supported by Anthropic
 
 ## Rationale
 
-Anthropic Structured Outputs does not support combining allOf with $ref references. Schemas using this pattern will be rejected by the Anthropic API.
+Anthropic rejects schemas that combine allOf with $ref references.
 
 ## Bad Example
 
 ```json
-{
-  "type": "object",
-  "allOf": [
-    { "$ref": "#/$defs/Base" },
-    { "properties": { "extra": { "type": "string" } } }
-  ],
-  "$defs": {
-    "Base": {
-      "type": "object",
-      "properties": { "id": { "type": "string" } }
-    }
-  }
-}
+{ "type": "object", "allOf": [{ "$ref": "#/$defs/Base" }] }
 ```
 
 ## Good Example
 
 ```json
-{
-  "type": "object",
-  "properties": {
-    "id": { "type": "string" },
-    "extra": { "type": "string" }
-  }
-}
+{ "type": "object", "properties": { "id": { "type": "string" } } }
 ```

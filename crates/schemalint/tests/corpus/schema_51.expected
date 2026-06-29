@@ -1,0 +1,13 @@
+[
+  {
+    "code": "OAI-S-max-depth",
+    "severity": "error",
+    "message": "object nesting depth 11 exceeds limit of 10",
+    "pointer": "/properties/l1/properties/l2/properties/l3/properties/l4/properties/l5/properties/l6/properties/l7/properties/l8/properties/l9/properties/l10/properties/l11",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_51.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/max-depth"
+  }
+]

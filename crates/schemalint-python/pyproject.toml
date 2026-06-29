@@ -4,13 +4,13 @@ build-backend = "maturin"
 
 [project]
 name = "schemalint"
-version = "0.1.0"
+version = "1.0.1"
 description = "Static analysis for JSON Schema compatibility with LLM structured-output providers"
-readme = "../../README.md"
+readme = "README.md"
 license = { text = "MIT OR Apache-2.0" }
 requires-python = ">=3.8"
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "License :: OSI Approved :: Apache Software License",
@@ -22,6 +22,10 @@ classifiers = [
 Homepage = "https://github.com/1nder-labs/schemalint"
 Documentation = "https://1nder-labs.github.io/schemalint"
 Repository = "https://github.com/1nder-labs/schemalint"
+
+# No [project.scripts]: maturin's bin bindings install the bundled Rust binary
+# directly as the `schemalint-python-bin` command (see [[bin]] name in Cargo.toml).
+# Defining [project.scripts] alongside a binary is rejected by maturin.
 
 [tool.maturin]
 bindings = "bin"

@@ -83,7 +83,7 @@ fn bench_incremental(c: &mut Criterion) {
     for bytes in &schema_bytes[..schema_bytes.len() - 1] {
         let value: serde_json::Value = serde_json::from_slice(bytes).unwrap();
         let normalized = normalize(value).unwrap();
-        cache.insert(hash_bytes(bytes), normalized);
+        cache.insert(hash_bytes(bytes), bytes.to_vec(), normalized);
     }
 
     let mut group = c.benchmark_group("incremental");
@@ -91,7 +91,7 @@ fn bench_incremental(c: &mut Criterion) {
         b.iter(|| {
             for bytes in &schema_bytes {
                 let hash = hash_bytes(bytes);
-                let _diags = if let Some(cached) = cache.get(hash) {
+                let _diags = if let Some(cached) = cache.get(hash, bytes) {
                     ruleset.check_all(&cached.arena, &profile)
                 } else {
                     let value: serde_json::Value = serde_json::from_slice(bytes).unwrap();

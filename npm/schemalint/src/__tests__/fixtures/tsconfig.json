@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "#schemas": ["./aliased-schema.ts"],
+      "ai": ["./ai-shim.ts"],
+      "openai/helpers/zod": ["./openai-zod-shim.ts"],
+      "@anthropic-ai/sdk/helpers/zod": ["./anthropic-zod-shim.ts"]
+    },
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": ["*.ts"]
+}

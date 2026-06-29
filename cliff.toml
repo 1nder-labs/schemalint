@@ -1,0 +1,48 @@
+# git-cliff configuration for schemalint
+# Generates Keep a Changelog-compliant release notes from conventional commits.
+# Usage: git cliff --tag v1.0.0
+
+[changelog]
+header = "# Changelog\n\nAll notable changes to schemalint will be documented in this file.\n"
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+  {% if commit.scope -%}
+  - **{{ commit.scope }}:** {{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})
+  {%- else -%}
+  - {{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})
+  {%- endif %}
+{%- endfor %}
+{% endfor %}
+"""
+trim = true
+postprocessors = [
+  { pattern = "<REPO>", replace = "https://github.com/1nder-labs/schemalint" },
+]
+
+[git]
+conventional_commits = true
+commit_parsers = [
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^docs", group = "Documentation" },
+  { message = "^refactor", group = "Changed" },
+  { message = "^perf", group = "Changed" },
+  { message = "^style", group = "Changed" },
+  { message = "^test", group = "CI & Tooling" },
+  { message = "^ci", group = "CI & Tooling" },
+  { message = "^chore", group = "CI & Tooling" },
+  { message = "^build", group = "CI & Tooling" },
+  { message = "^revert", group = "Reverted" },
+]
+filter_commits = true
+tag_pattern = "v[0-9]*"
+skip_tags = ""
+ignore_tags = ""
+topo_order = false
+sort_commits = "oldest"
+link_parsers = [
+  { pattern = "#(\\d+)", href = "https://github.com/1nder-labs/schemalint/issues/$1" },
+  { pattern = "([0-9a-f]{7,40})", href = "https://github.com/1nder-labs/schemalint/commit/${1}" },
+]

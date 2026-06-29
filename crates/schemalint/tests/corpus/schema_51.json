@@ -1,0 +1,102 @@
+{
+  "type": "object",
+  "properties": {
+    "l1": {
+      "type": "object",
+      "properties": {
+        "l2": {
+          "type": "object",
+          "properties": {
+            "l3": {
+              "type": "object",
+              "properties": {
+                "l4": {
+                  "type": "object",
+                  "properties": {
+                    "l5": {
+                      "type": "object",
+                      "properties": {
+                        "l6": {
+                          "type": "object",
+                          "properties": {
+                            "l7": {
+                              "type": "object",
+                              "properties": {
+                                "l8": {
+                                  "type": "object",
+                                  "properties": {
+                                    "l9": {
+                                      "type": "object",
+                                      "properties": {
+                                        "l10": {
+                                          "type": "object",
+                                          "properties": {
+                                            "l11": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "l11"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "l10"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "required": [
+                                    "l9"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "l8"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "l7"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "l6"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "l5"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "l4"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "l3"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "l2"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "l1"
+  ],
+  "additionalProperties": false
+}

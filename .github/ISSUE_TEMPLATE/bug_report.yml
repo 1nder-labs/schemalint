@@ -1,0 +1,91 @@
+name: Bug report
+description: Report incorrect output, a crash, or unexpected behavior in schemalint.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to file a bug report.
+        Please fill in as much detail as possible — especially the reproduction snippet and the exact command you ran.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you open this issue
+      options:
+        - label: I have searched [existing issues](https://github.com/1nder-labs/schemalint/issues) and did not find a duplicate.
+          required: true
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. What did schemalint do that it shouldn't have (or fail to do)?
+      placeholder: "schemalint reported X but I expected Y…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: |
+        Paste:
+        1. The JSON Schema, Zod schema, or Pydantic model you are linting.
+        2. The exact `schemalint` command you ran (include all flags).
+        3. The `--profile` value you used (e.g. `openai-strict`, `anthropic`).
+      placeholder: |
+        ```json
+        { "type": "object", "properties": { … } }
+        ```
+
+        ```
+        schemalint lint schema.json --profile openai-strict
+        ```
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_vs_actual
+    attributes:
+      label: Expected vs actual output
+      description: What output did you expect? What did you actually see? Paste terminal output if helpful.
+      placeholder: |
+        Expected: no errors / "error X"
+        Actual:   "error Y" / crash with …
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: schemalint version
+      description: Paste the output of `schemalint --version`.
+      placeholder: "schemalint 0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      description: How did you install schemalint?
+      options:
+        - npm (@1nder-labs/schemalint)
+        - cargo (crates.io schemalint)
+        - pip (PyPI schemalint)
+        - Prebuilt binary (GitHub Releases)
+        - Other / built from source
+    validations:
+      required: false
+
+  - type: input
+    id: os_arch
+    attributes:
+      label: OS / architecture
+      description: e.g. macOS 14 arm64, Ubuntu 22.04 x86_64, Windows 11 x64
+      placeholder: "macOS 15 arm64"
+    validations:
+      required: false

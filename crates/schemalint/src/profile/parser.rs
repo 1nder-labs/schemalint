@@ -46,16 +46,31 @@ pub struct Restriction {
 }
 
 /// Structural limits from the profile `[structural]` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(default)]
 pub struct StructuralLimits {
     pub require_object_root: bool,
     pub require_additional_properties_false: bool,
     pub require_all_properties_in_required: bool,
+    pub require_array_items: bool,
+    pub forbid_root_any_of: bool,
+    pub forbid_root_enum: bool,
+    /// Treat an object with `additionalProperties: false` and no usable
+    /// `properties` as an error rather than a warning. OpenAI rejects such
+    /// schemas ("object schema missing properties"); providers that strip or
+    /// tolerate them leave this `false`.
+    pub forbid_empty_object: bool,
     pub max_object_depth: u32,
     pub max_total_properties: u32,
     pub max_total_enum_values: u32,
     pub max_string_length_total: u32,
+    pub max_optional_properties: u32,
+    pub max_union_properties: u32,
     pub external_refs: bool,
+    /// When `true`, schemas that combine `allOf` with a `$ref` inside its
+    /// branches are rejected.  Currently used by the Anthropic profile, which
+    /// does not support that pattern in Structured Outputs.
+    pub forbid_allof_with_ref: bool,
 }
 
 /// Errors that can occur when loading a profile.
@@ -239,55 +254,12 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
 }
 
 fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, ProfileError> {
-    let mut limits = StructuralLimits::default();
-    let Some(toml::Value::Table(t)) = val else {
+    let Some(v @ toml::Value::Table(_)) = val else {
         // Missing [structural] is fatal in Phase 1 per plan U3.
         return Err(ProfileError::MissingField("[structural] section"));
     };
-
-    if let Some(v) = t.get("require_object_root").and_then(|v| v.as_bool()) {
-        limits.require_object_root = v;
-    }
-    if let Some(v) = t
-        .get("require_additional_properties_false")
-        .and_then(|v| v.as_bool())
-    {
-        limits.require_additional_properties_false = v;
-    }
-    if let Some(v) = t
-        .get("require_all_properties_in_required")
-        .and_then(|v| v.as_bool())
-    {
-        limits.require_all_properties_in_required = v;
-    }
-    if let Some(v) = t.get("max_object_depth").and_then(|v| v.as_integer()) {
-        limits.max_object_depth = u32::try_from(v).map_err(|_| {
-            ProfileError::InvalidSeverity(format!("max_object_depth out of u32 range: {v}"))
-        })?;
-    }
-    if let Some(v) = t.get("max_total_properties").and_then(|v| v.as_integer()) {
-        limits.max_total_properties = u32::try_from(v).map_err(|_| {
-            ProfileError::InvalidSeverity(format!("max_total_properties out of u32 range: {v}"))
-        })?;
-    }
-    if let Some(v) = t.get("max_total_enum_values").and_then(|v| v.as_integer()) {
-        limits.max_total_enum_values = u32::try_from(v).map_err(|_| {
-            ProfileError::InvalidSeverity(format!("max_total_enum_values out of u32 range: {v}"))
-        })?;
-    }
-    if let Some(v) = t
-        .get("max_string_length_total")
-        .and_then(|v| v.as_integer())
-    {
-        limits.max_string_length_total = u32::try_from(v).map_err(|_| {
-            ProfileError::InvalidSeverity(format!("max_string_length_total out of u32 range: {v}"))
-        })?;
-    }
-    if let Some(v) = t.get("external_refs").and_then(|v| v.as_bool()) {
-        limits.external_refs = v;
-    }
-
-    Ok(limits)
+    // toml::de::Error is #[from]-mapped to ProfileError::InvalidToml.
+    Ok(v.clone().try_into()?)
 }
 
 fn leak_str(s: &str) -> &'static str {

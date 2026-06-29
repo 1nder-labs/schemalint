@@ -1,14 +1,17 @@
 [workspace]
-members = ["crates/schemalint", "crates/schemalint-profiles", "crates/schemalint-docgen", "crates/schemalint-conformance", "crates/schemalint-python"]
+members = ["crates/schemalint", "crates/schemalint-docgen", "crates/schemalint-conformance", "crates/schemalint-python"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.1"
 edition = "2021"
-authors = ["schemalint contributors"]
+authors = ["Lahfir"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/1nder-labs/schemalint"
+readme = "README.md"
 rust-version = "1.80"
+homepage = "https://1nder-labs.github.io/schemalint"
+documentation = "https://docs.rs/schemalint"
 
 [profile.release]
 opt-level = 3
@@ -19,3 +22,8 @@ codegen-units = 1
 opt-level = 3
 lto = false
 codegen-units = 1
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

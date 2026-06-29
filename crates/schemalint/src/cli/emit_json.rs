@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+use crate::cli::docs_url::rule_url;
 use crate::rules::registry::{DiagnosticSeverity, SourceSpan};
 use crate::rules::Diagnostic;
 
@@ -74,7 +75,7 @@ pub fn emit_json_to_string(
                 }),
                 profile: d.profile.clone(),
                 hint: d.hint.clone(),
-                see_url: format!("https://schemalint.dev/rules/{}", d.code),
+                see_url: rule_url(&d.code),
             });
         }
     }

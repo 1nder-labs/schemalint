@@ -11,11 +11,11 @@
 
 ## Description
 
-Flag usage of the 'uniqueItems' keyword, which is discouraged by openai.so.2026-04-30
+Flag usage of the 'uniqueItems' keyword, which is not supported by openai.so.2026-04-30
 
 ## Rationale
 
-The openai.so.2026-04-30 structured-output provider discourages use of the 'uniqueItems' keyword. Schemas using this keyword may be rejected or silently altered.
+The openai.so.2026-04-30 structured-output provider rejects the 'uniqueItems' keyword. Schemas using this keyword may be rejected or silently altered.
 
 ## Bad Example
 

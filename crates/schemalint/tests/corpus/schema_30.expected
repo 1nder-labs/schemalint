@@ -8,6 +8,18 @@
       "file": "crates/schemalint/tests/corpus/schema_30.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/OAI-K-dependentRequired"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/dependentRequired"
+  },
+  {
+    "code": "OAI-S-all-properties-required",
+    "severity": "error",
+    "message": "object has 2 properties not listed in required: 'credit_card', 'name'",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_30.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "Add every object property to required",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/all-properties-required"
   }
 ]

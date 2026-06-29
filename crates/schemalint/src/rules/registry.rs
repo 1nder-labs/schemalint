@@ -44,10 +44,6 @@ pub trait Rule: Sync {
     }
 }
 
-/// Stable identifier for a rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct RuleId(pub u32);
-
 // ---------------------------------------------------------------------------
 // linkme distributed slice for compile-time rule registration
 // ---------------------------------------------------------------------------
@@ -142,16 +138,11 @@ impl RuleSet {
 }
 
 // ---------------------------------------------------------------------------
-// Helper: check whether a keyword is present in a node's annotations
+// Keyword accessor
 // ---------------------------------------------------------------------------
 
 /// Function pointer type for extracting a keyword value from a node.
 pub type KeywordAccessor = fn(&Node) -> Option<&serde_json::Value>;
-
-/// Return `true` if the given keyword appears in `node.annotations`.
-pub fn keyword_present(node: &Node, keyword: &str) -> bool {
-    keyword_value(node, keyword).is_some()
-}
 
 /// Return a function pointer that extracts the value for a known keyword.
 ///
@@ -203,9 +194,4 @@ pub fn keyword_accessor(keyword: &str) -> Option<KeywordAccessor> {
         "dependentSchemas" => Some(|n| n.annotations.dependent_schemas.as_ref()),
         _ => None,
     }
-}
-
-/// Return the `Value` associated with a known keyword, if any.
-pub fn keyword_value<'a>(node: &'a Node, keyword: &str) -> Option<&'a serde_json::Value> {
-    keyword_accessor(keyword).and_then(|f| f(node))
 }

@@ -7,8 +7,10 @@ use std::collections::HashSet;
 ///
 /// Phase 1 only resolves refs pointing directly to `$defs` or `definitions`
 /// entries. Any other internal ref pattern is a fatal error.
-/// External refs (http://, https://, absolute paths) are left unresolved and
-/// will be caught by structural rules (U6).
+/// External refs — any `$ref` that does not start with `#` (e.g. http://,
+/// https://, file://, absolute paths, relative paths like `./x.json` or
+/// `../x.json`, bare filenames) — are left unresolved and will be caught by
+/// structural rules (ExternalRefsRule / U6).
 pub fn resolve_refs(
     arena: &mut Arena,
     defs: &IndexMap<String, NodeId>,
@@ -33,13 +35,11 @@ pub fn resolve_refs(
         }
     }
 
-    // Check for unresolved internal refs and report fatal errors.
+    // A fragment ref (starts with '#') that failed to resolve is a broken
+    // internal pointer — fatal error.  Any non-fragment ref is external and
+    // is left unresolved so ExternalRefsRule can flag it.
     for (node_id, ref_str) in &refs {
-        if arena[*node_id].ref_target.is_none()
-            && !ref_str.starts_with("http://")
-            && !ref_str.starts_with("https://")
-            && !ref_str.starts_with('/')
-        {
+        if arena[*node_id].ref_target.is_none() && ref_str.starts_with('#') {
             return Err(NormalizeError::UnresolvedRef(ref_str.clone()));
         }
     }

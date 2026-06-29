@@ -8,6 +8,6 @@
       "file": "crates/schemalint/tests/corpus/schema_12.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/OAI-S-object-root"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/object-root"
   }
 ]

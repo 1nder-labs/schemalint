@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Documentation & usage questions
+    url: https://1nder-labs.github.io/schemalint
+    about: Read the docs for usage guides, rule references, and profile configuration before opening an issue.

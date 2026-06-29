@@ -37,6 +37,9 @@ max_total_properties = 5000
 max_total_enum_values = 1000
 max_string_length_total = 120000
 external_refs = true
+require_array_items = true
+forbid_root_any_of = true
+forbid_root_enum = true
 "##,
     );
     let schema = serde_json::json!({
@@ -96,6 +99,86 @@ fn structural_missing_required_property() {
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(diagnostics[0].code, "TEST-S-all-properties-required");
     assert!(diagnostics[0].message.contains("b"));
+}
+
+#[test]
+fn structural_missing_array_items() {
+    let profile = profile_with_structural("require_array_items = true\n");
+    let schema = serde_json::json!({
+        "type": "array"
+    });
+    let diagnostics = lint(schema, &profile);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "TEST-S-array-items");
+}
+
+#[test]
+fn structural_root_anyof_rejected_nested_anyof_allowed() {
+    let profile = profile_with_structural("forbid_root_any_of = true\n");
+    let root_schema = serde_json::json!({
+        "type": "object",
+        "anyOf": [
+            { "type": "object", "properties": { "a": { "type": "string" } } }
+        ]
+    });
+    let root_diagnostics = lint(root_schema, &profile);
+    assert!(
+        root_diagnostics
+            .iter()
+            .any(|d| d.code == "TEST-S-root-anyof"),
+        "expected root anyOf diagnostic, got {:?}",
+        root_diagnostics
+    );
+
+    let nested_schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "value": {
+                "anyOf": [
+                    { "type": "string" },
+                    { "type": "number" }
+                ]
+            }
+        }
+    });
+    let nested_diagnostics = lint(nested_schema, &profile);
+    assert!(
+        !nested_diagnostics
+            .iter()
+            .any(|d| d.code == "TEST-S-root-anyof"),
+        "nested anyOf should not trigger root-only rule"
+    );
+}
+
+#[test]
+fn structural_root_enum_rejected_nested_enum_allowed() {
+    let profile = profile_with_structural("forbid_root_enum = true\n");
+    let root_schema = serde_json::json!({
+        "type": "string",
+        "enum": ["a", "b"]
+    });
+    let root_diagnostics = lint(root_schema, &profile);
+    assert!(
+        root_diagnostics
+            .iter()
+            .any(|d| d.code == "TEST-S-root-enum"),
+        "expected root enum diagnostic, got {:?}",
+        root_diagnostics
+    );
+
+    let nested_schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "status": { "type": "string", "enum": ["a", "b"] }
+        }
+    });
+    let nested_diagnostics = lint(nested_schema, &profile);
+    assert!(
+        !nested_diagnostics
+            .iter()
+            .any(|d| d.code == "TEST-S-root-enum"),
+        "nested enum should not trigger root-only rule"
+    );
 }
 
 #[test]

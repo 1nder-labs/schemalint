@@ -2,13 +2,7 @@ use crate::rules::registry::DiagnosticSeverity;
 use crate::rules::Diagnostic;
 
 /// Emit diagnostics as JUnit XML.
-pub fn emit_junit_to_string(
-    diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)],
-    _total_errors: usize,
-    _total_warnings: usize,
-    _profile_names: &[String],
-    _duration_ms: Option<u64>,
-) -> String {
+pub fn emit_junit_to_string(diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)]) -> String {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str("<testsuites>\n");

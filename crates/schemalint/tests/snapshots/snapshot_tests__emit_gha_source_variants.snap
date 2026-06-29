@@ -1,0 +1,7 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+::error file=variants.json,title=TST-FULL,line=10,col=5::full span with line and col [profile%3A test]
+::error file=variants.json,title=TST-LINEONLY,line=20::line only%2C no col [profile%3A test]
+::warning file=variants.json,title=TST-NOSOURCE::no source span at all [profile%3A test]

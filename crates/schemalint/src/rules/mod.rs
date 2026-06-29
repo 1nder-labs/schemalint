@@ -4,4 +4,4 @@ pub mod metadata;
 pub mod registry;
 pub mod semantic;
 
-pub use registry::{Diagnostic, DiagnosticSeverity, Rule, RuleId, RuleSet, RULES};
+pub use registry::{Diagnostic, DiagnosticSeverity, Rule, RuleSet, RULES};

@@ -8,18 +8,7 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_22.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/ANT-K-if"
-  },
-  {
-    "code": "ANT-K-else",
-    "severity": "error",
-    "message": "keyword 'else' is not supported by anthropic.so.2026-04-30",
-    "pointer": "",
-    "source": {
-      "file": "crates/schemalint/tests/corpus/ant_schema_22.json"
-    },
-    "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/ANT-K-else"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/if"
   },
   {
     "code": "ANT-K-then",
@@ -30,7 +19,18 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_22.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/ANT-K-then"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/then"
+  },
+  {
+    "code": "ANT-K-else",
+    "severity": "error",
+    "message": "keyword 'else' is not supported by anthropic.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_22.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/else"
   },
   {
     "code": "ANT-S-additional-properties-false",
@@ -41,7 +41,7 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_22.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/ANT-S-additional-properties-false"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/additional-properties-false"
   },
   {
     "code": "ANT-S-additional-properties-false",
@@ -52,7 +52,7 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_22.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/ANT-S-additional-properties-false"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/additional-properties-false"
   },
   {
     "code": "ANT-S-additional-properties-false",
@@ -63,6 +63,6 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_22.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://schemalint.dev/rules/ANT-S-additional-properties-false"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/additional-properties-false"
   }
 ]

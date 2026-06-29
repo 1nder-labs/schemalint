@@ -1,0 +1,18 @@
+---
+source: crates/schemalint/tests/snapshot_tests.rs
+expression: output
+---
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="variants.json" tests="3" failures="2" skipped="1" errors="0" time="0">
+    <testcase name="TST-FULL - full span with line and col" classname="schemalint" time="0" file="variants.json" line="10">
+      <failure type="error" message="full span with line and col">full span with line and col</failure>
+    </testcase>
+    <testcase name="TST-LINEONLY - line only, no col" classname="schemalint" time="0" file="variants.json" line="20">
+      <failure type="error" message="line only, no col">line only, no col</failure>
+    </testcase>
+    <testcase name="TST-NOSOURCE - no source span at all" classname="schemalint" time="0">
+      <skipped message="no source span at all">no source span at all</skipped>
+    </testcase>
+  </testsuite>
+</testsuites>

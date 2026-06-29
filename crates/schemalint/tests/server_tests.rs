@@ -1,5 +1,9 @@
+use std::fs;
 use std::io::{BufRead, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+use tempfile::TempDir;
 
 fn cmd() -> Command {
     let exe = std::env::current_exe().expect("current_exe should be available");
@@ -28,153 +32,73 @@ fn send_request(child: &mut std::process::Child, request: &str) -> serde_json::V
 }
 
 // ---------------------------------------------------------------------------
+// TypeScript project helpers — shared with part_04.rs (checkNode tests)
+// ---------------------------------------------------------------------------
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("schemalint crate should be inside workspace/crates")
+        .to_path_buf()
+}
+
+#[cfg(unix)]
+fn create_dir_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn create_dir_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(target, link)
+}
+
+/// Symlink the workspace node_modules into `dir` so the Node sidecar can
+/// resolve `zod` without a full `npm install` in the temp directory.
+fn link_workspace_node_modules(dir: &Path) {
+    let target = workspace_root().join("npm/schemalint/node_modules");
+    assert!(
+        target.join("zod").exists(),
+        "missing workspace zod dependency at {}; run npm ci first",
+        target.display()
+    );
+    let link = dir.join("node_modules");
+    if link.exists() {
+        return;
+    }
+    create_dir_symlink(&target, &link).unwrap_or_else(|err| {
+        panic!(
+            "failed to link {} to {}: {}",
+            link.display(),
+            target.display(),
+            err
+        )
+    });
+}
+
+/// Create a minimal TypeScript project with zod installed.
+///
+/// Writes `files` into `dir/src/`, creates a tsconfig.json, and symlinks
+/// `node_modules` from the workspace so the sidecar can resolve `zod`.
+fn setup_ts_project(dir: &Path, files: &[(&str, &str)]) {
+    let src = dir.join("src");
+    fs::create_dir_all(&src).unwrap();
+    for (name, content) in files {
+        fs::write(src.join(name), content).unwrap();
+    }
+    fs::write(
+        dir.join("tsconfig.json"),
+        r#"{"compilerOptions":{"module":"ESNext","moduleResolution":"bundler","strict":true},"include":["src/**/*.ts"]}"#,
+    )
+    .unwrap();
+    link_workspace_node_modules(dir);
+}
+
+// ---------------------------------------------------------------------------
 // Happy path
 // ---------------------------------------------------------------------------
 
-#[test]
-fn server_check_single_profile_json() {
-    let mut child = cmd()
-        .arg("server")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("should spawn server");
-
-    let request = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "check",
-        "params": {
-            "schema": {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"], "additionalProperties": false},
-            "profiles": ["openai.so.2026-04-30"],
-            "format": "json"
-        },
-        "id": 1
-    });
-
-    let response = send_request(&mut child, &request.to_string());
-    assert_eq!(response["jsonrpc"], "2.0");
-    assert!(response["result"]["success"].as_bool().unwrap());
-    assert_eq!(response["id"], 1);
-
-    // Shutdown
-    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 2});
-    let response = send_request(&mut child, &shutdown.to_string());
-    assert_eq!(response["result"], serde_json::Value::Null);
-
-    let status = child.wait().expect("should exit cleanly");
-    assert!(status.success());
-}
-
-#[test]
-fn server_check_multi_profile() {
-    let mut child = cmd()
-        .arg("server")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("should spawn server");
-
-    let request = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "check",
-        "params": {
-            "schema": {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"], "additionalProperties": false},
-            "profiles": ["openai.so.2026-04-30", "anthropic.so.2026-04-30"],
-            "format": "json"
-        },
-        "id": 1
-    });
-
-    let response = send_request(&mut child, &request.to_string());
-    assert!(response["result"]["success"].as_bool().unwrap());
-
-    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 2});
-    let _response = send_request(&mut child, &shutdown.to_string());
-
-    let status = child.wait().expect("should exit cleanly");
-    assert!(status.success());
-}
-
-// ---------------------------------------------------------------------------
-// Error paths
-// ---------------------------------------------------------------------------
-
-#[test]
-fn server_invalid_jsonrpc_missing_field() {
-    let mut child = cmd()
-        .arg("server")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("should spawn server");
-
-    let request = serde_json::json!({"method": "check", "id": 1});
-    let response = send_request(&mut child, &request.to_string());
-    assert!(response["error"].is_object());
-    assert_eq!(response["error"]["code"], -32600);
-
-    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 2});
-    let _response = send_request(&mut child, &shutdown.to_string());
-
-    let status = child.wait().expect("should exit cleanly");
-    assert!(status.success());
-}
-
-#[test]
-fn server_unknown_method() {
-    let mut child = cmd()
-        .arg("server")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("should spawn server");
-
-    let request = serde_json::json!({"jsonrpc": "2.0", "method": "foo", "id": 1});
-    let response = send_request(&mut child, &request.to_string());
-    assert!(response["error"].is_object());
-    assert_eq!(response["error"]["code"], -32601);
-
-    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 2});
-    let _response = send_request(&mut child, &shutdown.to_string());
-
-    let status = child.wait().expect("should exit cleanly");
-    assert!(status.success());
-}
-
-#[test]
-fn server_check_unknown_profile() {
-    let mut child = cmd()
-        .arg("server")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("should spawn server");
-
-    let request = serde_json::json!({
-        "jsonrpc": "2.0",
-        "method": "check",
-        "params": {
-            "schema": {"type": "string"},
-            "profiles": ["nonexistent-profile"]
-        },
-        "id": 1
-    });
-
-    let response = send_request(&mut child, &request.to_string());
-    assert!(response["result"]["success"].as_bool() == Some(false));
-    assert!(response["result"]["error"]
-        .as_str()
-        .unwrap()
-        .contains("unknown built-in profile"));
-
-    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 2});
-    let _response = send_request(&mut child, &shutdown.to_string());
-
-    let status = child.wait().expect("should exit cleanly");
-    assert!(status.success());
-}
+include!("server_tests/part_01.rs");
+include!("server_tests/part_02.rs");
+include!("server_tests/part_03.rs");
+include!("server_tests/part_04.rs");

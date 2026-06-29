@@ -1,3 +1,4 @@
+use crate::cli::docs_url::rule_url;
 use crate::rules::registry::DiagnosticSeverity;
 use crate::rules::registry::SourceSpan;
 use crate::rules::Diagnostic;
@@ -14,7 +15,7 @@ use crate::rules::Diagnostic;
 ///      |
 ///      = profile: openai.so.2026-04-30
 ///      = schema path: /properties/items
-///      = see: https://schemalint.dev/rules/OAI-K-allOf
+///      = see: https://1nder-labs.github.io/schemalint/rules/keyword/allOf
 /// ```
 pub fn emit_human_to_string(
     diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)],
@@ -40,10 +41,7 @@ pub fn emit_human_to_string(
             if let Some(hint) = &d.hint {
                 out.push_str(&format!("     = hint: {}\n", hint));
             }
-            out.push_str(&format!(
-                "     = see: https://schemalint.dev/rules/{}\n",
-                d.code
-            ));
+            out.push_str(&format!("     = see: {}\n", rule_url(&d.code)));
             out.push('\n');
         }
     }

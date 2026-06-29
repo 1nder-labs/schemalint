@@ -11,38 +11,20 @@
 
 ## Description
 
-External $ref values (URLs, absolute paths) are not supported
+External $ref values are not supported
 
 ## Rationale
 
-Providers require all $ref references to be internal to the schema (e.g., `#/$defs/Foo`). External references via URLs or file paths are rejected.
+Providers require references to be internal to the submitted schema.
 
 ## Bad Example
 
 ```json
-{
-  "type": "object",
-  "properties": {
-    "address": { "$ref": "https://example.com/schemas/address.json" }
-  }
-}
+{ "type": "object", "properties": { "address": { "$ref": "https://example.com/address.json" } } }
 ```
 
 ## Good Example
 
 ```json
-{
-  "type": "object",
-  "$defs": {
-    "Address": {
-      "type": "object",
-      "properties": {
-        "street": { "type": "string" }
-      }
-    }
-  },
-  "properties": {
-    "address": { "$ref": "#/$defs/Address" }
-  }
-}
+{ "type": "object", "$defs": { "Address": { "type": "object" } }, "properties": { "address": { "$ref": "#/$defs/Address" } } }
 ```

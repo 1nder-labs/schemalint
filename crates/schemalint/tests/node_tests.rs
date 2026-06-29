@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use assert_cmd::prelude::*;
@@ -7,8 +7,8 @@ use tempfile::TempDir;
 
 use clap::Parser;
 use schemalint::cli::args::{Cli, Commands, OutputFormat};
+use schemalint::node::NodeError;
 use serde::Deserialize;
-use std::path::Path;
 
 /// Minimal JSON output structure for asserting key fields.
 #[derive(Debug, Deserialize)]
@@ -57,12 +57,46 @@ fn setup_ts_project(dir: &Path, files: &[(&str, &str)]) {
         r#"{"compilerOptions":{"module":"ESNext","moduleResolution":"bundler","strict":true},"include":["src/**/*.ts"]}"#,
     )
     .unwrap();
-    let status = Command::new("npm")
-        .args(["install", "--silent", "zod@^3.23"])
-        .current_dir(dir)
-        .status()
-        .expect("npm install zod failed");
-    assert!(status.success(), "npm install zod exited non-zero");
+    link_workspace_node_modules(dir);
+}
+
+fn link_workspace_node_modules(dir: &Path) {
+    let target = workspace_root().join("npm/schemalint/node_modules");
+    assert!(
+        target.join("zod").exists(),
+        "missing workspace zod dependency at {}",
+        target.display()
+    );
+    let link = dir.join("node_modules");
+    if link.exists() {
+        return;
+    }
+    create_dir_symlink(&target, &link).unwrap_or_else(|err| {
+        panic!(
+            "failed to link {} to {}: {}",
+            link.display(),
+            target.display(),
+            err
+        )
+    });
+}
+
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("schemalint crate should be inside workspace/crates")
+        .to_path_buf()
+}
+
+#[cfg(unix)]
+fn create_dir_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn create_dir_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(target, link)
 }
 
 /// Run schemalint check-node in dir with given args, return parsed JSON output.
@@ -74,540 +108,26 @@ fn run_check_node_json(dir: &Path, args: &[&str]) -> JsonOutput {
     let output = cmd.args(&full_args).output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}"))
-}
-
-// ---------------------------------------------------------------------------
-// CLI argument parsing
-// ---------------------------------------------------------------------------
-
-#[test]
-fn parse_check_node_with_source_and_profile() {
-    let cli = Cli::parse_from([
-        "schemalint",
-        "check-node",
-        "-S",
-        "src/**/*.ts",
-        "-p",
-        "openai.so.2026-04-30",
-    ]);
-    match cli.command {
-        Commands::CheckNode(args) => {
-            assert_eq!(args.sources, vec!["src/**/*.ts"]);
-            assert_eq!(args.profiles, vec![PathBuf::from("openai.so.2026-04-30")]);
-            assert!(args.format.is_none());
-            assert!(args.config.is_none());
-            assert!(args.node_path.is_none());
-        }
-        _ => unreachable!(),
-    }
-}
-
-#[test]
-fn parse_check_node_with_format() {
-    let cli = Cli::parse_from([
-        "schemalint",
-        "check-node",
-        "-S",
-        "app.ts",
-        "-p",
-        "openai.so.2026-04-30",
-        "-f",
-        "json",
-    ]);
-    match cli.command {
-        Commands::CheckNode(args) => {
-            assert_eq!(args.format, Some(OutputFormat::Json));
-        }
-        _ => unreachable!(),
-    }
-}
-
-#[test]
-fn parse_check_node_with_config_and_node_path() {
-    let cli = Cli::parse_from([
-        "schemalint",
-        "check-node",
-        "-S",
-        "app.ts",
-        "-p",
-        "openai.so.2026-04-30",
-        "--config",
-        "custom-package.json",
-        "--node-path",
-        "/usr/local/bin/tsx",
-    ]);
-    match cli.command {
-        Commands::CheckNode(args) => {
-            assert_eq!(args.config, Some(PathBuf::from("custom-package.json")));
-            assert_eq!(args.node_path, Some("/usr/local/bin/tsx".to_string()));
-        }
-        _ => unreachable!(),
-    }
-}
-
-#[test]
-fn parse_check_node_multiple_sources() {
-    let cli = Cli::parse_from([
-        "schemalint",
-        "check-node",
-        "-S",
-        "src/models.ts",
-        "-S",
-        "src/schemas.ts",
-        "-p",
-        "openai.so.2026-04-30",
-    ]);
-    match cli.command {
-        Commands::CheckNode(args) => {
-            assert_eq!(args.sources, vec!["src/models.ts", "src/schemas.ts"]);
-        }
-        _ => unreachable!(),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Help output
-// ---------------------------------------------------------------------------
-
-#[test]
-fn check_node_help_shows_subcommand() {
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    let output = cmd.args(["check-node", "--help"]).output().unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Check Zod schemas"));
-    assert!(stdout.contains("--source"));
-    assert!(stdout.contains("--profile"));
-    assert!(stdout.contains("--config"));
-    assert!(stdout.contains("--node-path"));
-    assert!(output.status.success());
-}
-
-// ---------------------------------------------------------------------------
-// Error paths
-// ---------------------------------------------------------------------------
-
-#[test]
-fn check_node_no_sources_no_config_errors() {
-    let tmp = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    let output = cmd
-        .args(["check-node", "--profile", "openai.so.2026-04-30"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("no sources specified."));
-}
-
-#[test]
-fn check_node_no_profiles_errors() {
-    let tmp = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    let output = cmd
-        .args(["check-node", "--source", "src/**/*.ts"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("no profiles specified."));
-}
-
-#[test]
-fn check_node_nonexistent_node_path_errors() {
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    let output = cmd
-        .args([
-            "check-node",
-            "--source",
-            "src/**/*.ts",
-            "--profile",
-            "openai.so.2026-04-30",
-            "--node-path",
-            "/nonexistent/node/binary",
-        ])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("failed to start"));
-}
-
-// ---------------------------------------------------------------------------
-// package.json config integration
-// ---------------------------------------------------------------------------
-
-#[test]
-fn check_node_loads_package_json_config() {
-    let tmp = TempDir::new().unwrap();
-    let pkg = tmp.path().join("package.json");
-    fs::write(
-        &pkg,
-        r#"{
-  "schemalint": {
-    "profiles": ["openai.so.2026-04-30"],
-    "include": ["src/**/*.ts"]
-  }
-}"#,
-    )
-    .unwrap();
-
-    // This will try to spawn the Node helper. The key assertion: config was
-    // loaded, NOT "no sources specified".
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    let output = cmd.args(["check-node"]).output().unwrap();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("no sources specified."));
-}
-
-#[test]
-fn check_node_cli_overrides_package_json_profiles() {
-    let tmp = TempDir::new().unwrap();
-    let pkg = tmp.path().join("package.json");
-    fs::write(
-        &pkg,
-        r#"{
-  "schemalint": {
-    "profiles": ["anthropic.so.2026-04-30"],
-    "include": ["src/**/*.ts"]
-  }
-}"#,
-    )
-    .unwrap();
-
-    // CLI --profile should override package.json profiles
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    let output = cmd
-        .args(["check-node", "--profile", "openai.so.2026-04-30"])
-        .output()
-        .unwrap();
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("no profiles specified."));
-}
-
-#[test]
-fn check_node_invalid_package_json_errors() {
-    let tmp = TempDir::new().unwrap();
-    let pkg = tmp.path().join("package.json");
-    fs::write(&pkg, "this is not valid json {{{").unwrap();
-
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    let output = cmd.args(["check-node"]).output().unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("invalid JSON in"));
-}
-
-#[test]
-fn check_node_missing_package_json_no_config_ok() {
-    let tmp = TempDir::new().unwrap();
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    // No package.json, and no --source → should error about no sources
-    let output = cmd
-        .args(["check-node", "--profile", "openai.so.2026-04-30"])
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("no sources specified."));
-}
-
-// ---------------------------------------------------------------------------
-// End-to-end pipeline tests (real Node helper + TypeScript project)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn e2e_forbidden_format_produces_diagnostic_with_source_span() {
-    let tmp = TempDir::new().unwrap();
-    setup_ts_project(
-        tmp.path(),
-        &[(
-            "forbidden.ts",
-            r#"import { z } from "zod";
-export const Bad = z.object({ website: z.string().url() });
-"#,
-        )],
+    let parsed: JsonOutput = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
+    assert_eq!(
+        parsed.summary.total_issues,
+        parsed.summary.errors + parsed.summary.warnings
     );
-
-    let out = run_check_node_json(
-        tmp.path(),
-        &[
-            "--source",
-            "src/**/*.ts",
-            "--profile",
-            "openai.so.2026-04-30",
-        ],
-    );
-
-    assert_eq!(out.profiles, vec!["openai.so.2026-04-30"]);
-    assert_eq!(out.summary.errors, 1);
-    assert_eq!(out.summary.warnings, 0);
-    assert_eq!(out.summary.schemas_checked, 1);
-
-    let diag = &out.diagnostics[0];
-    assert_eq!(diag.code, "OAI-K-format-restricted");
-    assert_eq!(diag.severity, "error");
-    assert_eq!(diag.pointer, "/properties/website");
-    assert_eq!(diag.profile, "openai.so.2026-04-30");
-
-    let src = diag
-        .source
-        .as_ref()
-        .expect("source span should be populated");
-    assert!(src.file.ends_with("/forbidden.ts"), "file={}", src.file);
-    assert_eq!(src.line, Some(2));
+    parsed
 }
 
-#[test]
-fn e2e_clean_schema_exits_zero() {
-    let tmp = TempDir::new().unwrap();
-    setup_ts_project(
-        tmp.path(),
-        &[(
-            "clean.ts",
-            r#"import { z } from "zod";
-export const Good = z.object({ name: z.string(), age: z.number() });
-"#,
-        )],
-    );
-
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    let output = cmd
-        .args([
-            "check-node",
-            "-S",
-            "src/**/*.ts",
-            "-p",
-            "openai.so.2026-04-30",
-            "-f",
-            "json",
-        ])
-        .output()
-        .unwrap();
-
-    // A plain z.object({...}) won't produce additionalProperties: false,
-    // so the OpenAI structural rule OAI-S-additionalProperties-required
-    // may fire. The invariant we care about: the schema IS discovered and
-    // checked, and the pipeline doesn't crash.
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let out: JsonOutput = serde_json::from_str(&stdout).unwrap();
-    assert!(
-        out.summary.schemas_checked >= 1,
-        "schema should be discovered"
-    );
-    // No format-restricted or allof errors on this clean schema
-    assert!(
-        !out.diagnostics
-            .iter()
-            .any(|d| d.code == "OAI-K-format-restricted" || d.code == "OAI-K-allOf-forbidden"),
-        "clean schema should not trigger format/allof errors"
-    );
-}
-
-#[test]
-fn e2e_multi_schema_single_file_separate_source_spans() {
-    let tmp = TempDir::new().unwrap();
-    setup_ts_project(
-        tmp.path(),
-        &[(
-            "multi.ts",
-            r#"import { z } from "zod";
-
-export const UserSchema = z.object({
-  email: z.string().url(),
-});
-
-export const AddressSchema = z.object({
-  street: z.string(),
-  city: z.string(),
-});
-"#,
-        )],
-    );
-
-    let out = run_check_node_json(
-        tmp.path(),
-        &[
-            "--source",
-            "src/**/*.ts",
-            "--profile",
-            "openai.so.2026-04-30",
-        ],
-    );
-
-    let user_diag = out
-        .diagnostics
-        .iter()
-        .find(|d| d.pointer == "/properties/email")
-        .expect("should diagnose /properties/email from UserSchema");
-
-    let src = user_diag.source.as_ref().unwrap();
-    assert!(src.file.ends_with("/multi.ts"));
-    assert_eq!(src.line, Some(4), "url() is on line 4 of multi.ts");
-}
-
-#[test]
-fn e2e_package_json_driven_without_cli_flags() {
-    let tmp = TempDir::new().unwrap();
-    setup_ts_project(
-        tmp.path(),
-        &[(
-            "schema.ts",
-            r#"import { z } from "zod";
-export const My = z.object({ site: z.string().url() });
-"#,
-        )],
-    );
-
-    fs::write(
-        tmp.path().join("package.json"),
-        r#"{
-  "schemalint": {
-    "profiles": ["openai.so.2026-04-30"],
-    "include": ["src/**/*.ts"]
-  }
-}"#,
-    )
-    .unwrap();
-
-    let out = run_check_node_json(tmp.path(), &[]);
-    assert_eq!(out.summary.errors, 1);
-    assert_eq!(out.diagnostics[0].code, "OAI-K-format-restricted");
-}
-
-#[test]
-fn e2e_cli_source_overrides_package_json_include() {
-    let tmp = TempDir::new().unwrap();
-    let src = tmp.path().join("src");
-    let sub = src.join("sub");
-    fs::create_dir_all(&sub).unwrap();
-    fs::write(
-        sub.join("nested.ts"),
-        r#"import { z } from "zod";
-export const Nested = z.object({ url: z.string().url() });
-"#,
-    )
-    .unwrap();
-
-    let status = Command::new("npm")
-        .args(["install", "--silent", "zod@^3.23"])
-        .current_dir(tmp.path())
-        .status()
-        .unwrap();
-    assert!(status.success());
-
-    fs::write(
-        tmp.path().join("tsconfig.json"),
-        r#"{"compilerOptions":{"module":"ESNext","moduleResolution":"bundler","strict":true},"include":["src/**/*.ts"]}"#,
-    )
-    .unwrap();
-
-    fs::write(
-        tmp.path().join("package.json"),
-        r#"{
-  "schemalint": {
-    "profiles": ["openai.so.2026-04-30"],
-    "include": ["src/nonexistent/**/*.ts"]
-  }
-}"#,
-    )
-    .unwrap();
-
-    let out = run_check_node_json(
-        tmp.path(),
-        &[
-            "--source",
-            "src/**/*.ts",
-            "--profile",
-            "openai.so.2026-04-30",
-        ],
-    );
-
-    assert_eq!(out.summary.errors, 1);
-    assert_eq!(out.diagnostics[0].code, "OAI-K-format-restricted");
-}
-
-#[test]
-fn e2e_anthropic_profile_allows_uri_format() {
-    let tmp = TempDir::new().unwrap();
-    setup_ts_project(
-        tmp.path(),
-        &[(
-            "schema.ts",
-            r#"import { z } from "zod";
-export const My = z.object({ site: z.string().url() });
-"#,
-        )],
-    );
-
-    let out = run_check_node_json(
-        tmp.path(),
-        &[
-            "--source",
-            "src/**/*.ts",
-            "--profile",
-            "anthropic.so.2026-04-30",
-        ],
-    );
-
-    assert!(
-        !out.diagnostics
-            .iter()
-            .any(|d| d.code == "OAI-K-format-restricted"),
-        "Anthropic profile should not produce OpenAI format-restricted diagnostics"
-    );
-}
-
-#[test]
-fn e2e_intersection_not_discovered_gracefully() {
-    let tmp = TempDir::new().unwrap();
-    setup_ts_project(
-        tmp.path(),
-        &[(
-            "intersection.ts",
-            r#"import { z } from "zod";
-
-const Person = z.object({ name: z.string() });
-const Employee = z.object({ id: z.number() });
-
-export const Combo = z.intersection(Person, Employee);
-"#,
-        )],
-    );
-
-    // z.intersection() is NOT discovered — the AST walker only finds
-    // z.object() call expressions. This is documented behavior (scope
-    // boundary: "Schemas constructed from imported factory functions...
-    // are not discoverable via AST walking"). The pipeline should exit
-    // cleanly with 0 schemas rather than crashing.
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    let output = cmd
-        .args([
-            "check-node",
-            "-S",
-            "src/**/*.ts",
-            "-p",
-            "openai.so.2026-04-30",
-            "-f",
-            "json",
-        ])
-        .output()
-        .unwrap();
-
-    assert!(
-        output.status.success(),
-        "should exit 0 (no schemas found, no error)"
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let out: JsonOutput = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(out.summary.schemas_checked, 0);
-}
+#[path = "node_tests/args.rs"]
+mod args;
+#[path = "node_tests/args_more.rs"]
+mod args_more;
+#[path = "node_tests/config.rs"]
+mod config;
+#[path = "node_tests/e2e.rs"]
+mod e2e;
+#[path = "node_tests/errors.rs"]
+mod errors;
+#[path = "node_tests/node_error_display.rs"]
+mod node_error_display;
+#[path = "node_tests/sidecar_errors.rs"]
+mod sidecar_errors;

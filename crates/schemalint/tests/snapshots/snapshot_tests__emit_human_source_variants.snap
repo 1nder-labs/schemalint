@@ -1,0 +1,33 @@
+---
+source: crates/schemalint/tests/snapshot_tests/part_02.rs
+expression: output
+---
+error[TST-FULL]: full source span with line and col
+   --> variants.json:10:5
+     |
+     = profile: test
+     = schema path: /full
+     = see: https://1nder-labs.github.io/schemalint/rules
+
+error[TST-LINEONLY]: line only, no column
+   --> variants.json:20
+     |
+     = profile: test
+     = schema path: /lineonly
+     = see: https://1nder-labs.github.io/schemalint/rules
+
+warning[TST-FILEONLY]: file only, no line or col
+   --> variants.json
+     |
+     = profile: test
+     = schema path: /fileonly
+     = see: https://1nder-labs.github.io/schemalint/rules
+
+warning[TST-NOSOURCE]: no source span at all — falls back to path
+   --> variants.json
+     |
+     = profile: test
+     = schema path: /nosource
+     = see: https://1nder-labs.github.io/schemalint/rules
+
+4 issues found (2 errors, 2 warnings) across 1 schema in 0ms
