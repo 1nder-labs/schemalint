@@ -590,10 +590,11 @@ jobs:
   publish-npm:
     needs:
       - smoke-npm
-    # The @1nder-labs packages were bootstrapped by hand for v1.0.1; from here on
-    # publish-npm runs on every tagged release via OIDC trusted publishing (no token).
-    # Requires a trusted publisher configured on npmjs.com for each @1nder-labs package.
-    if: ${{ !cancelled() && needs.smoke-npm.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
+    # @1nder-labs/schemalint must be bootstrapped by hand for its first publish: npm
+    # trusted publishing attaches to an EXISTING package, and a brand-new name cannot be
+    # pre-configured. Gated off until the package exists and its trusted publisher is set
+    # on npmjs.com; then set repo variable PUBLISH_NPM=true to publish every tag via OIDC.
+    if: ${{ !cancelled() && needs.smoke-npm.result == 'success' && startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_NPM == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
