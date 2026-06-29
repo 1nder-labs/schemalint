@@ -7,6 +7,7 @@ pub mod ir;
 pub mod node;
 pub mod normalize;
 pub mod profile;
+pub mod profiles;
 pub mod python;
 pub mod rules;
 pub(crate) mod subprocess;

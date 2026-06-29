@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn anthropic_profile_loads() {
-    let bytes = schemalint_profiles::ANTHROPIC_SO_2026_04_30.as_bytes();
+    let bytes = schemalint::profiles::ANTHROPIC_SO_2026_04_30.as_bytes();
     let profile = load(bytes).unwrap();
     assert_eq!(profile.name, "anthropic.so.2026-04-30");
     assert_eq!(profile.version, "2026-04-30");
@@ -14,7 +14,7 @@ fn anthropic_profile_loads() {
 
 #[test]
 fn anthropic_profile_values() {
-    let bytes = schemalint_profiles::ANTHROPIC_SO_2026_04_30.as_bytes();
+    let bytes = schemalint::profiles::ANTHROPIC_SO_2026_04_30.as_bytes();
     let profile = load(bytes).unwrap();
 
     assert_eq!(profile.code_prefix, "ANT");
@@ -31,7 +31,7 @@ fn anthropic_profile_values() {
 
 #[test]
 fn anthropic_profile_restrictions_present() {
-    let bytes = schemalint_profiles::ANTHROPIC_SO_2026_04_30.as_bytes();
+    let bytes = schemalint::profiles::ANTHROPIC_SO_2026_04_30.as_bytes();
     let profile = load(bytes).unwrap();
 
     assert!(profile.restrictions.contains_key("additionalProperties"));

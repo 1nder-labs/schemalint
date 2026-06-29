@@ -61,7 +61,7 @@ fn setup_ts_project(dir: &Path, files: &[(&str, &str)]) {
 }
 
 fn link_workspace_node_modules(dir: &Path) {
-    let target = workspace_root().join("typescript/schemalint-zod/node_modules");
+    let target = workspace_root().join("npm/schemalint/node_modules");
     assert!(
         target.join("zod").exists(),
         "missing workspace zod dependency at {}",

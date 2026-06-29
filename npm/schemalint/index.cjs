@@ -487,7 +487,15 @@ async function ensureBinary() {
 (async () => {
   try {
     const binPath = await ensureBinary();
-    const result = spawnSync(binPath, process.argv.slice(2), { stdio: 'inherit' });
+    const result = spawnSync(binPath, process.argv.slice(2), {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        SCHEMALINT_ZOD_HELPER:
+          process.env.SCHEMALINT_ZOD_HELPER ||
+          path.join(__dirname, 'bin', 'schemalint-zod.js'),
+      },
+    });
     process.exit(result.status ?? 1);
   } catch (err) {
     console.error(`schemalint: ${err.message}`);

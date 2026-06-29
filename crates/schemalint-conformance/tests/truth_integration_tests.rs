@@ -1,5 +1,5 @@
+use schemalint::profiles::{ANTHROPIC_TRUTH, OPENAI_TRUTH};
 use schemalint_conformance::{evaluate, parse_truth};
-use schemalint_profiles::{ANTHROPIC_TRUTH, OPENAI_TRUTH};
 
 #[test]
 fn openai_truth_parses() {

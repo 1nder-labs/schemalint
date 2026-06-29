@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn openai_profile_loads() {
-    let bytes = schemalint_profiles::OPENAI_SO_2026_04_30.as_bytes();
+    let bytes = schemalint::profiles::OPENAI_SO_2026_04_30.as_bytes();
     let profile = load(bytes).unwrap();
     assert_eq!(profile.name, "openai.so.2026-04-30");
     assert_eq!(profile.version, "2026-04-30");
@@ -14,7 +14,7 @@ fn openai_profile_loads() {
 
 #[test]
 fn openai_profile_has_zero_unknown_for_pydantic_zod_keywords() {
-    let bytes = schemalint_profiles::OPENAI_SO_2026_04_30.as_bytes();
+    let bytes = schemalint::profiles::OPENAI_SO_2026_04_30.as_bytes();
     let profile = load(bytes).unwrap();
 
     // Keywords commonly emitted by Pydantic v2 and zod-to-json-schema.
@@ -71,7 +71,7 @@ fn openai_profile_has_zero_unknown_for_pydantic_zod_keywords() {
 
 #[test]
 fn openai_profile_restrictions_present() {
-    let bytes = schemalint_profiles::OPENAI_SO_2026_04_30.as_bytes();
+    let bytes = schemalint::profiles::OPENAI_SO_2026_04_30.as_bytes();
     let profile = load(bytes).unwrap();
 
     assert!(profile.restrictions.contains_key("format"));
@@ -87,7 +87,7 @@ fn openai_profile_restrictions_present() {
 
 #[test]
 fn openai_profile_corrections() {
-    let bytes = schemalint_profiles::OPENAI_SO_2026_04_30.as_bytes();
+    let bytes = schemalint::profiles::OPENAI_SO_2026_04_30.as_bytes();
     let profile = load(bytes).unwrap();
 
     assert_eq!(profile.code_prefix, "OAI");
@@ -103,7 +103,7 @@ fn openai_profile_corrections() {
 /// The flag defaults to false and the OpenAI profile does not set it.
 #[test]
 fn openai_profile_does_not_forbid_allof_with_ref() {
-    let bytes = schemalint_profiles::OPENAI_SO_2026_04_30.as_bytes();
+    let bytes = schemalint::profiles::OPENAI_SO_2026_04_30.as_bytes();
     let profile = load(bytes).unwrap();
 
     assert_eq!(

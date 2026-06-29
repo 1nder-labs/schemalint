@@ -27,11 +27,11 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: typescript/schemalint-zod/package-lock.json
+          cache-dependency-path: npm/schemalint/package-lock.json
 
-      - name: Install schemalint-zod dependencies
+      - name: Install npm/schemalint dependencies
         run: npm ci
-        working-directory: typescript/schemalint-zod
+        working-directory: npm/schemalint
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -120,11 +120,11 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: typescript/schemalint-zod/package-lock.json
+          cache-dependency-path: npm/schemalint/package-lock.json
 
-      - name: Install schemalint-zod dependencies
+      - name: Install npm/schemalint dependencies
         run: npm ci
-        working-directory: typescript/schemalint-zod
+        working-directory: npm/schemalint
 
       - name: Setup Python
         uses: actions/setup-python@v5

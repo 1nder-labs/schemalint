@@ -34,7 +34,7 @@ fn resolve_workspace_tsx() -> Option<PathBuf> {
     let ws_root = workspace_root().ok()?;
     let bin_name = if cfg!(windows) { "tsx.cmd" } else { "tsx" };
     let path = ws_root
-        .join("typescript/schemalint-zod/node_modules/.bin")
+        .join("npm/schemalint/node_modules/.bin")
         .join(bin_name);
     path.exists().then_some(path)
 }
@@ -42,10 +42,10 @@ fn resolve_workspace_tsx() -> Option<PathBuf> {
 /// Resolve the path to the `schemalint-zod` source helper bin entry.
 pub(super) fn resolve_helper_path() -> Result<PathBuf, NodeError> {
     let ws_root = workspace_root()?;
-    let bin_path = ws_root.join("typescript/schemalint-zod/bin/schemalint-zod.js");
+    let bin_path = ws_root.join("npm/schemalint/bin/schemalint-zod.js");
     if !bin_path.exists() {
         return Err(NodeError::SpawnFailed(format!(
-            "helper binary not found at '{}' - ensure typescript/schemalint-zod is built",
+            "helper binary not found at '{}' - ensure npm/schemalint is built",
             bin_path.display()
         )));
     }
@@ -53,8 +53,17 @@ pub(super) fn resolve_helper_path() -> Result<PathBuf, NodeError> {
 }
 
 pub(super) fn resolve_compiled_helper_path() -> Option<PathBuf> {
+    // Explicit override: published distributions (npm) bundle the compiled Zod
+    // sidecar and point here via SCHEMALINT_ZOD_HELPER, since the workspace-relative
+    // dev path below only exists in the source checkout, not on an end user's machine.
+    if let Some(raw) = std::env::var_os("SCHEMALINT_ZOD_HELPER") {
+        let path = PathBuf::from(raw);
+        if path.exists() {
+            return Some(path);
+        }
+    }
     let ws_root = workspace_root().ok()?;
-    let bin_path = ws_root.join("typescript/schemalint-zod/dist/main.js");
+    let bin_path = ws_root.join("npm/schemalint/dist/main.js");
     bin_path.exists().then_some(bin_path)
 }
 

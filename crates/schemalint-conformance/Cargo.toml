@@ -18,5 +18,5 @@ clap = { version = "4", features = ["derive"] }
 ctrlc = "3.4"
 
 [dev-dependencies]
-schemalint-profiles = { path = "../schemalint-profiles" }
+schemalint = { path = "../schemalint" }
 tempfile = "3"

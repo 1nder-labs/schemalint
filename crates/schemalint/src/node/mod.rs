@@ -35,7 +35,7 @@ pub struct NodeHelper {
 impl NodeHelper {
     /// Spawn the Node helper subprocess.
     ///
-    /// Prefers the compiled helper from `typescript/schemalint-zod/dist`.
+    /// Prefers the compiled helper from `npm/schemalint/dist`.
     /// Falls back to the TypeScript source helper through `tsx` when the
     /// compiled entry is unavailable. If `node_path` provides an explicit
     /// executable, it is used as the runner with the resolved helper entry.

@@ -63,12 +63,10 @@ pub fn resolve_profile(path_or_id: &str) -> Result<Vec<u8>, String> {
         fs::read(path_or_id).map_err(|e| format!("{e}"))
     } else {
         match path_or_id {
-            OPENAI_PROFILE_ID => Ok(schemalint_profiles::OPENAI_SO_2026_04_30
-                .as_bytes()
-                .to_vec()),
-            ANTHROPIC_PROFILE_ID => Ok(schemalint_profiles::ANTHROPIC_SO_2026_04_30
-                .as_bytes()
-                .to_vec()),
+            OPENAI_PROFILE_ID => Ok(crate::profiles::OPENAI_SO_2026_04_30.as_bytes().to_vec()),
+            ANTHROPIC_PROFILE_ID => {
+                Ok(crate::profiles::ANTHROPIC_SO_2026_04_30.as_bytes().to_vec())
+            }
             other => Err(format!("unknown built-in profile '{other}'")),
         }
     }

@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use schemalint::profile;
+use schemalint::profiles::{ANTHROPIC_SO_2026_04_30, OPENAI_SO_2026_04_30};
 use schemalint::rules::metadata::RuleCategory;
 use schemalint::rules::{RuleSet, RULES};
-use schemalint_profiles::{ANTHROPIC_SO_2026_04_30, OPENAI_SO_2026_04_30};
 
 #[derive(Parser)]
 #[command(name = "schemalint-docgen")]

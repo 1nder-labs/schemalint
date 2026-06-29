@@ -29,10 +29,10 @@ The PyPI package bundles the CLI binary — no Rust toolchain required.
 ## npm
 
 ```bash
-npm install -g @1nder-labs/cli
+npm install -g @1nder-labs/schemalint
 ```
 
-The npm package downloads the platform-appropriate binary on first use.
+The npm package downloads the platform-appropriate binary on first use, and bundles the Zod ingestor for linting TypeScript/Zod schemas.
 
 ## Verify Installation
 

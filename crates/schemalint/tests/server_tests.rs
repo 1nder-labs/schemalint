@@ -56,7 +56,7 @@ fn create_dir_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
 /// Symlink the workspace node_modules into `dir` so the Node sidecar can
 /// resolve `zod` without a full `npm install` in the temp directory.
 fn link_workspace_node_modules(dir: &Path) {
-    let target = workspace_root().join("typescript/schemalint-zod/node_modules");
+    let target = workspace_root().join("npm/schemalint/node_modules");
     assert!(
         target.join("zod").exists(),
         "missing workspace zod dependency at {}; run npm ci first",

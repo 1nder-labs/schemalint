@@ -196,18 +196,15 @@ error[OAI-K-allOf]: keyword 'allOf' is not supported by openai.so.2026-04-30
 
 ```
 crates/
-├── schemalint/              # Core engine + CLI
-│   ├── src/cli/             # Args, file discovery, server, output formatters
-│   ├── src/ir/              # Arena-allocated IR (Node, NodeId, Arena)
-│   ├── src/normalize/       # Normalizer pipeline (dialect, $ref resolution, desugar)
-│   ├── src/profile/         # TOML profile loader
-│   ├── src/rules/           # Rule trait, registry, Class A/B + semantic rules
-│   ├── tests/               # 128 tests across 12 test files
-│   └── benches/             # Criterion benchmarks
-└── schemalint-profiles/     # Bundled provider profiles (zero deps)
-    └── profiles/
-        ├── openai.so.2026-04-30.toml
-        └── anthropic.so.2026-04-30.toml
+└── schemalint/              # Core engine + CLI
+    ├── src/cli/             # Args, file discovery, server, output formatters
+    ├── src/ir/              # Arena-allocated IR (Node, NodeId, Arena)
+    ├── src/normalize/       # Normalizer pipeline (dialect, $ref resolution, desugar)
+    ├── src/profile/         # TOML profile loader
+    ├── src/rules/           # Rule trait, registry, Class A/B + semantic rules
+    ├── profiles/            # Bundled provider profiles (openai, anthropic)
+    ├── tests/               # 128 tests across 12 test files
+    └── benches/             # Criterion benchmarks
 ```
 
 ## Contribute

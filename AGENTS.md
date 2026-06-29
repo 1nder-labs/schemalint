@@ -2,15 +2,12 @@
 
 ## Workspace
 
-Five-crate Rust workspace plus npm and TypeScript packages:
-- `crates/schemalint` — core engine, CLI, and all tests
-- `crates/schemalint-profiles` — built-in TOML profiles and conformance truth files (zero deps)
+Four-crate Rust workspace plus one npm package:
+- `crates/schemalint` — core engine, CLI, built-in profiles (`src/profiles.rs` + `profiles/`), and all tests
 - `crates/schemalint-docgen` — rule documentation generator (`publish = false`)
 - `crates/schemalint-conformance` — conformance mock server and truth engine (`publish = false`)
 - `crates/schemalint-python` — maturin PyPI packaging crate (`publish = false`)
-- `npm/cli/` — npm auto-download binary wrapper (`@1nder-labs/cli`)
-- `npm/core/` — npm programmatic API placeholder (`@1nder-labs/core`, requires CLI on PATH)
-- `typescript/schemalint-zod/` — Zod ingestion helper (`@1nder-labs/zod`)
+- `npm/schemalint/` — the npm package (`@1nder-labs/schemalint`): native-binary launcher + bundled Zod ingestor sidecar
 
 Entrypoints:
 - CLI binary: `crates/schemalint/src/main.rs` → `schemalint::cli::run()`

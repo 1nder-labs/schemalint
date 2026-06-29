@@ -398,8 +398,8 @@ jobs:
       - smoke-test
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
-    # Two real verify-builds + up to 5 min index poll; allow headroom.
-    timeout-minutes: 25
+    # Single schemalint crate (profiles folded in); one verify-build, allow headroom.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -410,51 +410,6 @@ jobs:
 
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
-
-      - name: Publish schemalint-profiles (dependency first)
-        run: |
-          published=false
-          for i in 1 2 3; do
-            out=$(cargo publish -p schemalint-profiles 2>&1) && { published=true; echo "$out"; break; }
-            echo "$out"
-            if echo "$out" | grep -qiE "already (uploaded|exists)"; then
-              echo "crate version already published; treating as success"
-              published=true; break
-            fi
-            echo "cargo publish attempt $i failed, retrying in 10s..."
-            sleep 10
-          done
-          if [ "$published" != true ]; then
-            echo "::error::cargo publish failed after 3 attempts"
-            exit 1
-          fi
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Wait for schemalint-profiles to appear on the crates.io sparse index
-        # Replaces the old --no-verify propagation workaround: cargo publish -p schemalint
-        # verifies against the real crates.io index (schemalint depends on schemalint-profiles
-        # by path + version), so the dependency must be indexed before we publish the parent.
-        # Sparse index URL: first2/next2/crate-name (https://doc.rust-lang.org/cargo/reference/registry-index.html)
-        env:
-          TAG_NAME: ${{ github.ref_name }}
-        run: |
-          VERSION="${TAG_NAME#v}"
-          echo "Waiting for schemalint-profiles@${VERSION} to appear on the crates.io sparse index..."
-          found=false
-          for i in $(seq 1 30); do
-            if curl -sf "https://index.crates.io/sc/he/schemalint-profiles" 2>/dev/null | grep -q "\"vers\":\"${VERSION}\""; then
-              echo "schemalint-profiles@${VERSION} is available on the index."
-              found=true
-              break
-            fi
-            echo "attempt ${i}/30: not yet indexed, waiting 10s..."
-            sleep 10
-          done
-          if [ "$found" != true ]; then
-            echo "::error::schemalint-profiles@${VERSION} did not appear on the crates.io sparse index after 5 minutes"
-            exit 1
-          fi
 
       - name: Publish schemalint
         run: |
@@ -612,14 +567,17 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Pack npm package
-        run: npm pack
-        working-directory: npm/cli
+      - name: Build + pack npm package
+        run: |
+          npm ci
+          npm run build
+          npm pack
+        working-directory: npm/schemalint
 
       - name: Install packed package globally
         shell: bash
         run: npm install -g ./*.tgz
-        working-directory: npm/cli
+        working-directory: npm/schemalint
 
       - name: Smoke-test installed CLI
         shell: bash
@@ -632,12 +590,10 @@ jobs:
   publish-npm:
     needs:
       - smoke-npm
-    # Gated off for the v1.0.1 bootstrap: the three @1nder-labs packages do not exist
-    # on npm yet, and npm trusted publishing attaches to an EXISTING package. v1.0.1 is
-    # published once by hand (local login, no token); after the trusted publishers are
-    # configured on npmjs.com, set repo variable PUBLISH_NPM=true to publish via OIDC
-    # from v1.0.2 onward.
-    if: ${{ !cancelled() && needs.smoke-npm.result == 'success' && startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_NPM == 'true' }}
+    # The @1nder-labs packages were bootstrapped by hand for v1.0.1; from here on
+    # publish-npm runs on every tagged release via OIDC trusted publishing (no token).
+    # Requires a trusted publisher configured on npmjs.com for each @1nder-labs package.
+    if: ${{ !cancelled() && needs.smoke-npm.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -645,7 +601,7 @@ jobs:
       contents: read
     environment:
       name: npm
-      url: https://www.npmjs.com/package/@1nder-labs/cli
+      url: https://www.npmjs.com/package/@1nder-labs/schemalint
     steps:
       - uses: actions/checkout@v4
         with:
@@ -660,13 +616,13 @@ jobs:
       - name: Upgrade npm for trusted publishing
         run: npm install -g npm@latest
 
-      - name: Install and build @1nder-labs/zod
+      - name: Build @1nder-labs/schemalint (compiles the bundled Zod sidecar)
         run: |
           npm ci
           npm run build
-        working-directory: typescript/schemalint-zod
+        working-directory: npm/schemalint
 
-      - name: Publish @1nder-labs/cli
+      - name: Publish @1nder-labs/schemalint
         run: |
           published=false
           for i in 1 2 3; do
@@ -683,42 +639,4 @@ jobs:
             echo "::error::npm publish failed after 3 attempts"
             exit 1
           fi
-        working-directory: npm/cli
-
-      - name: Publish @1nder-labs/core
-        run: |
-          published=false
-          for i in 1 2 3; do
-            out=$(npm publish --access public 2>&1) && { published=true; echo "$out"; break; }
-            echo "$out"
-            if echo "$out" | grep -qiE "previously published|cannot publish over|You cannot publish over|already exists"; then
-              echo "package version already published; treating as success"
-              published=true; break
-            fi
-            echo "npm publish attempt $i failed, retrying in 10s..."
-            sleep 10
-          done
-          if [ "$published" != true ]; then
-            echo "::error::npm publish failed after 3 attempts"
-            exit 1
-          fi
-        working-directory: npm/core
-
-      - name: Publish @1nder-labs/zod
-        run: |
-          published=false
-          for i in 1 2 3; do
-            out=$(npm publish --access public 2>&1) && { published=true; echo "$out"; break; }
-            echo "$out"
-            if echo "$out" | grep -qiE "previously published|cannot publish over|You cannot publish over|already exists"; then
-              echo "package version already published; treating as success"
-              published=true; break
-            fi
-            echo "npm publish attempt $i failed, retrying in 10s..."
-            sleep 10
-          done
-          if [ "$published" != true ]; then
-            echo "::error::npm publish failed after 3 attempts"
-            exit 1
-          fi
-        working-directory: typescript/schemalint-zod
+        working-directory: npm/schemalint
