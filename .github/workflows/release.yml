@@ -385,9 +385,12 @@ jobs:
         run: |
           set -e
           pip install dist/*.whl
-          schemalint --version
+          # The wheel installs the bundled binary as `schemalint-python-bin` (the [[bin]]
+          # name; it cannot be `schemalint` without colliding with the main crate's bin in
+          # the cargo-dist build).
+          schemalint-python-bin --version
           echo '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false}' > test-schema.json
-          schemalint check test-schema.json --profile openai.so.2026-04-30
+          schemalint-python-bin check test-schema.json --profile openai.so.2026-04-30
 
   # Publish Rust crates to crates.io
   publish-crates:

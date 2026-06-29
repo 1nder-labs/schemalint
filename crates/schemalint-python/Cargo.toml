@@ -9,12 +9,14 @@ rust-version.workspace = true
 description = "schemalint CLI packaged as a Python wheel via maturin"
 publish = false
 
-# Installed by maturin (bindings = "bin") as the `schemalint` command in the wheel.
-# Same name as crates/schemalint's default bin; both are byte-identical thin wrappers
-# over schemalint::cli::run(), so the workspace build only emits a cosmetic output
-# collision warning (per-package CARGO_BIN_EXE_schemalint stays correct for tests).
+# Bin name MUST stay unique (NOT `schemalint`): crates/schemalint already produces a
+# `schemalint` bin, and cargo-dist builds the workspace into one target dir, so two
+# `schemalint` bins collide in dist/deps/ and the Windows linker hard-fails (LNK1181 —
+# intermittently, since it's a race). maturin installs this as the wheel's
+# `schemalint-python-bin` command. (To expose it as `schemalint` for a future PyPI
+# release, exclude this crate from cargo-dist via [package.metadata.dist] dist = false.)
 [[bin]]
-name = "schemalint"
+name = "schemalint-python-bin"
 path = "src/main.rs"
 
 [dependencies]

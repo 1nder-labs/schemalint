@@ -24,8 +24,8 @@ Documentation = "https://1nder-labs.github.io/schemalint"
 Repository = "https://github.com/1nder-labs/schemalint"
 
 # No [project.scripts]: maturin's bin bindings install the bundled Rust binary
-# directly as the `schemalint` command (see [[bin]] name in Cargo.toml). Defining
-# [project.scripts] alongside a binary is rejected by maturin.
+# directly as the `schemalint-python-bin` command (see [[bin]] name in Cargo.toml).
+# Defining [project.scripts] alongside a binary is rejected by maturin.
 
 [tool.maturin]
 bindings = "bin"
