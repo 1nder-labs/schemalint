@@ -1,29 +1,43 @@
-# @1nder-labs/schemalint
+<p align="center">
+  <img src="https://raw.githubusercontent.com/1nder-labs/schemalint/main/assets/schemalint-header.png" alt="schemalint" width="100%">
+</p>
 
-Lint JSON Schema and Zod schemas before OpenAI or Anthropic structured-output APIs reject them.
+<h1 align="center">@1nder-labs/schemalint</h1>
 
-This is the schemalint CLI as a single npm package. Installing it adds a `schemalint` command that downloads the native binary for your platform on first use. The Zod ingestor (TypeScript AST discovery + JSON-RPC server) is bundled in `bin/` and `dist/` so no extra package or install step is needed.
+<p align="center">
+  <b>Catch provider-incompatible schemas before OpenAI or Anthropic reject them at runtime.</b>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/1nder-labs/schemalint/main/assets/Schemalint.gif" alt="schemalint catching a provider-incompatible schema" width="90%">
+</p>
+
+OpenAI and Anthropic structured-output APIs accept only a strict subset of JSON Schema. Ship one with an unsupported keyword, a missing `required` entry, or the wrong `additionalProperties`, and the API rejects it in production as a `400`. **schemalint catches those errors at build time** — so a bad schema fails your CI instead of your users' requests.
+
+One package, one `schemalint` command — JSON Schema, Zod, and Pydantic all in the box.
 
 ## Install
 
 ```bash
-npm install -g @1nder-labs/schemalint
-```
-
-Or as a project dev dependency:
-
-```bash
 npm install -D @1nder-labs/schemalint
-# bun add -d @1nder-labs/schemalint
+# or globally:  npm install -g @1nder-labs/schemalint
+# or with bun:  bun add -d @1nder-labs/schemalint
 ```
 
-## Quick Start
+## Quick start
 
 ```bash
-schemalint check --profile openai.so.2026-04-30 schemas/
+schemalint check --profile openai.so.2026-04-30 schema.json
 ```
 
-Lint for both OpenAI and Anthropic:
+```text
+error[OAI-K-allOf]: keyword 'allOf' is not supported by openai.so.2026-04-30
+  --> schema.json
+
+1 issue found (1 error, 0 warnings) across 1 schema
+```
+
+Check a directory for both providers at once:
 
 ```bash
 schemalint check \
@@ -32,21 +46,38 @@ schemalint check \
   schemas/
 ```
 
-Add it as a package script so CI can run it:
+## Lint Zod directly
 
-```json
+Schemas live in TypeScript? schemalint reads them straight from your Zod definitions — no JSON Schema export needed:
+
+```jsonc
+// package.json
 {
-  "scripts": {
-    "schema": "schemalint check --profile openai.so.2026-04-30 schemas/"
+  "scripts": { "lint:schemas": "schemalint check-node" },
+  "schemalint": {
+    "profiles": ["openai.so.2026-04-30"],
+    "include": ["src/**/*.ts"]
   }
 }
 ```
 
+```bash
+npm run lint:schemas
+```
+
+## Providers
+
+| Provider | Profile |
+| --- | --- |
+| OpenAI Structured Outputs | `openai.so.2026-04-30` |
+| Anthropic Structured Outputs | `anthropic.so.2026-04-30` |
+
+schemalint exits non-zero on errors, so it fails the build before a broken schema ships. Output formats: `human` (default), `json`, `sarif`, `gha`.
+
 ## Documentation
 
-Full docs, profile reference, and Zod configuration guide at
-https://1nder-labs.github.io/schemalint
+Full guide, profile reference, and CI recipes: **https://1nder-labs.github.io/schemalint**
 
 ## License
 
-MIT OR Apache-2.0
+Dual-licensed under MIT or Apache-2.0, at your option.

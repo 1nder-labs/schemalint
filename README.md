@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="assets/schemalint-header.png" alt="schemalint validates schemas before provider APIs reject them" width="100%">
+  <img src="assets/schemalint-header.png" alt="schemalint" width="100%">
 </p>
 
 <h1 align="center">schemalint</h1>
 
 <p align="center">
-  Lint schemas before OpenAI or Anthropic structured-output APIs reject them.
+  <b>Catch provider-incompatible schemas before OpenAI or Anthropic reject them at runtime.</b>
 </p>
 
 <p align="center">
@@ -13,19 +13,22 @@
   <a href="https://www.npmjs.com/package/@1nder-labs/schemalint"><img src="https://img.shields.io/npm/v/@1nder-labs/schemalint?logo=npm" alt="npm"></a>
   <a href="https://crates.io/crates/schemalint"><img src="https://img.shields.io/crates/v/schemalint" alt="Crates.io"></a>
   <a href="https://docs.rs/schemalint"><img src="https://img.shields.io/docsrs/schemalint" alt="Docs.rs"></a>
-  <a href="https://github.com/1nder-labs/schemalint/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" alt="License"></a>
+  <a href="https://github.com/1nder-labs/schemalint/blob/main/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" alt="License"></a>
 </p>
 
-schemalint catches provider-incompatible JSON Schema at build time: unsupported keywords, missing `required` entries, invalid root shapes, `additionalProperties` mistakes, size limits, and provider-specific restrictions.
+<p align="center">
+  <img src="assets/Schemalint.gif" alt="schemalint catching a provider-incompatible schema" width="90%">
+</p>
 
-New install? Use `@1nder-labs/schemalint`. The installed command is `schemalint`.
+OpenAI and Anthropic structured-output APIs accept only a strict subset of JSON Schema. Ship a schema with an unsupported keyword, a missing `required` entry, or the wrong `additionalProperties`, and the API rejects it — in production, at request time, as a `400`.
+
+**schemalint catches those errors at build time**, checked against the exact provider rules, so a bad schema fails your CI instead of your users' requests.
 
 ## Install
 
 ```bash
-# Bun / npm projects
-bun add -d @1nder-labs/schemalint
-# or: npm install -D @1nder-labs/schemalint
+# npm / bun — adds the `schemalint` command to your project
+npm install -D @1nder-labs/schemalint
 
 # Rust
 cargo install schemalint
@@ -34,119 +37,100 @@ cargo install schemalint
 pip install schemalint
 ```
 
-## Quick Start
+## Quick start
 
-Add a package script:
-
-```json
-{
-  "scripts": {
-    "schema": "schemalint check --profile openai.so.2026-04-30 schemas/"
-  }
-}
-```
-
-Run it:
-
-```bash
-bun schema
-```
-
-Lint for both OpenAI and Anthropic:
-
-```json
-{
-  "scripts": {
-    "schema": "schemalint check --profile openai.so.2026-04-30 --profile anthropic.so.2026-04-30 schemas/"
-  }
-}
-```
-
-## Zod
-
-Zod support is bundled into `@1nder-labs/schemalint` — no extra package. When your schemas live in TypeScript, configure discovery in `package.json`:
-
-```json
-{
-  "scripts": {
-    "schema": "schemalint check-node"
-  },
-  "schemalint": {
-    "profiles": ["openai.so.2026-04-30"],
-    "include": ["src/**/*.ts"],
-    "exclude": ["**/*.test.ts"]
-  }
-}
-```
-
-schemalint can auto-detect OpenAI or Anthropic imports, but explicit profiles are better for CI.
-
-## CLI
+Check a schema against OpenAI's structured-output rules:
 
 ```bash
 schemalint check --profile openai.so.2026-04-30 schema.json
-schemalint check --profile openai.so.2026-04-30 schemas/
-
-# Run the local binary directly with Bun
-bun schemalint check --profile openai.so.2026-04-30 schemas/
 ```
 
-Supported profiles:
-
-| Provider | Profile |
-| --- | --- |
-| OpenAI Structured Outputs | `openai.so.2026-04-30` |
-| Anthropic Structured Outputs | `anthropic.so.2026-04-30` |
-
-## Output
-
-```bash
-schemalint check --profile openai.so.2026-04-30 schema.json
-schemalint check --format json --profile openai.so.2026-04-30 schema.json
-schemalint check --format gha --profile openai.so.2026-04-30 schema.json
-schemalint check --format sarif --profile openai.so.2026-04-30 schema.json
-```
-
-Exit codes:
-
-| Code | Meaning |
-| --- | --- |
-| `0` | No errors |
-| `1` | Schema errors, parse errors, or read errors |
-| `2` | Could not write the output file |
-
-## Example
-
-```bash
-$ schemalint check --profile openai.so.2026-04-30 schema.json
+```text
 error[OAI-K-allOf]: keyword 'allOf' is not supported by openai.so.2026-04-30
   --> schema.json
 
 1 issue found (1 error, 0 warnings) across 1 schema
 ```
 
-## Links
-
-- [Installation](https://1nder-labs.github.io/schemalint/guide/installation)
-- [Quick start](https://1nder-labs.github.io/schemalint/guide/quick-start)
-- [OpenAI profile](https://1nder-labs.github.io/schemalint/profiles/openai)
-- [Anthropic profile](https://1nder-labs.github.io/schemalint/profiles/anthropic)
-- [Rule reference](https://1nder-labs.github.io/schemalint/rules)
-
-## Development
+Check a whole directory, for both providers at once:
 
 ```bash
-cargo test --workspace
-cargo clippy --workspace -- -D warnings
-cargo fmt --all -- --check
+schemalint check \
+  --profile openai.so.2026-04-30 \
+  --profile anthropic.so.2026-04-30 \
+  schemas/
 ```
 
-MSRV: 1.80. Dual-licensed under MIT or Apache-2.0 — see [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).
+## Lint Zod and Pydantic directly
+
+Schemas live in your code, not in `.json` files? schemalint reads them straight from your **Zod** or **Pydantic** definitions — no manual JSON Schema export, no second package to install.
+
+```jsonc
+// package.json
+{
+  "scripts": { "lint:schemas": "schemalint check-node" },
+  "schemalint": {
+    "profiles": ["openai.so.2026-04-30"],
+    "include": ["src/**/*.ts"]
+  }
+}
+```
+
+```bash
+npm run lint:schemas        # Zod  → check-node
+schemalint check-python     # Pydantic → check-python
+```
+
+## What it catches
+
+- Unsupported keywords (`allOf`, `oneOf`, `not`, unsupported `format`s, …) per provider
+- Missing `required` entries and `additionalProperties: false` mistakes
+- Invalid root shapes, unsupported `$ref` patterns, and enum / nesting limits
+- Size and depth limits that otherwise only surface as a runtime `400`
+
+## Providers
+
+| Provider | Profile |
+| --- | --- |
+| OpenAI Structured Outputs | `openai.so.2026-04-30` |
+| Anthropic Structured Outputs | `anthropic.so.2026-04-30` |
+
+## In CI
+
+schemalint exits non-zero on errors, so it fails the build before a broken schema ever ships:
+
+```yaml
+- run: npx schemalint check --profile openai.so.2026-04-30 schemas/
+```
+
+Pick the output format that fits your pipeline:
+
+```bash
+schemalint check --format json   --profile openai.so.2026-04-30 schema.json   # machine-readable
+schemalint check --format sarif  --profile openai.so.2026-04-30 schema.json   # code scanning
+schemalint check --format gha    --profile openai.so.2026-04-30 schema.json   # GitHub Actions annotations
+```
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | No errors |
+| `1` | Schema, parse, or read errors |
+| `2` | Could not write the output file |
+
+## Documentation
+
+- [Installation](https://1nder-labs.github.io/schemalint/guide/installation) · [Quick start](https://1nder-labs.github.io/schemalint/guide/quick-start)
+- [OpenAI profile](https://1nder-labs.github.io/schemalint/profiles/openai) · [Anthropic profile](https://1nder-labs.github.io/schemalint/profiles/anthropic)
+- [Rule reference](https://1nder-labs.github.io/schemalint/rules)
 
 ## Contributing
 
-Contributions are welcome — bug reports, rule improvements, new provider profiles, and docs alike. Please read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before opening a PR.
+Bug reports, new rules, and provider profiles are all welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## Security
 
-To report a vulnerability, please disclose it privately — see [SECURITY.md](SECURITY.md) for details.
+Found a vulnerability? Please report it privately — see [SECURITY.md](SECURITY.md).
+
+## License
+
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
