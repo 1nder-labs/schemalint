@@ -589,7 +589,11 @@ jobs:
   smoke-npm:
     needs:
       - create-github-release
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    # !cancelled() + explicit success check: create-github-release's dependency chain
+    # includes the intentionally-skipped publish-pypi, and a skip propagates down the
+    # whole chain. Without this override smoke-npm is skipped even though
+    # create-github-release succeeded (which would also skip the OIDC publish-npm).
+    if: ${{ !cancelled() && needs.create-github-release.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
     strategy:
       fail-fast: false
       matrix:
@@ -633,7 +637,7 @@ jobs:
     # published once by hand (local login, no token); after the trusted publishers are
     # configured on npmjs.com, set repo variable PUBLISH_NPM=true to publish via OIDC
     # from v1.0.2 onward.
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_NPM == 'true' }}
+    if: ${{ !cancelled() && needs.smoke-npm.result == 'success' && startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_NPM == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
