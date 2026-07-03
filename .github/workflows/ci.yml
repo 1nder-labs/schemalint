@@ -10,6 +10,19 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
+  actionlint:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint
+        # Validate workflow YAML schema + ${{ }} expression contexts across all workflows
+        # (catches the class of bug that once made release.yml an "invalid workflow file").
+        # shellcheck disabled: cargo-dist's generated release.yml shell trips harmless
+        # SC2086/SC2129 style/info findings we don't own and won't churn.
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.11 -shellcheck= -color
+
   test:
     name: Test
     runs-on: ubuntu-latest
