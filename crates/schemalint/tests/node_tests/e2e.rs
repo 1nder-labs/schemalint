@@ -402,3 +402,100 @@ export const Translate = betaZodTool({
 // is no fixture that causes it to emit an arbitrary string. Testing that branch would
 // require either mocking the node subprocess or patching the sidecar, neither of which
 // is available in this integration harness. The branch is covered by code inspection.
+
+// ---------------------------------------------------------------------------
+// Default-profile fallback tiers when there is no --profile, no package.json
+// "schemalint" config, and no source-import provider hint.
+// ---------------------------------------------------------------------------
+
+/// No provider hint (plain `z.object` with no provider SDK import), no
+/// "schemalint" config in package.json, but package.json lists the `openai`
+/// dependency → falls back to `detect_providers_from_deps` and selects the
+/// openai profile.
+#[test]
+fn e2e_no_hint_falls_back_to_package_json_deps_detection() {
+    let tmp = TempDir::new().unwrap();
+    setup_ts_project(
+        tmp.path(),
+        &[(
+            "schema.ts",
+            r#"import { z } from "zod";
+export const Plain = z.object({ name: z.string() });
+"#,
+        )],
+    );
+    // No "schemalint" key here — only a dependency for the deps-detection
+    // tier to find.
+    fs::write(
+        tmp.path().join("package.json"),
+        r#"{"dependencies": {"openai": "^4.0.0"}}"#,
+    )
+    .unwrap();
+
+    let mut cmd = Command::cargo_bin("schemalint").unwrap();
+    cmd.current_dir(tmp.path());
+    let output = cmd
+        .args(["check-node", "-S", "src/**/*.ts", "-f", "json"])
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("info: no --profile given; detected openai from package.json"),
+        "expected deps-detection info line, got stderr:\n{stderr}"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let out: JsonOutput = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
+    assert!(
+        out.profiles.iter().any(|p| p == "openai.so.2026-04-30"),
+        "expected openai profile in output, got: {:?}",
+        out.profiles
+    );
+}
+
+/// No provider hint, no "schemalint" config, and no recognized dependency in
+/// package.json → falls all the way through to the openai default rather
+/// than hard-erroring with "no profiles specified.".
+#[test]
+fn e2e_no_hint_no_deps_defaults_to_openai() {
+    let tmp = TempDir::new().unwrap();
+    setup_ts_project(
+        tmp.path(),
+        &[(
+            "schema.ts",
+            r#"import { z } from "zod";
+export const Plain = z.object({ name: z.string() });
+"#,
+        )],
+    );
+
+    let mut cmd = Command::cargo_bin("schemalint").unwrap();
+    cmd.current_dir(tmp.path());
+    let output = cmd
+        .args(["check-node", "-S", "src/**/*.ts", "-f", "json"])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "should exit 0 on the default profile, not hard-error"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("no profiles specified."),
+        "the old hard-error message must never appear, got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "info: no --profile and no provider detected in package.json; defaulting to openai.so.2026-04-30"
+        ),
+        "expected openai-default info line, got stderr:\n{stderr}"
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let out: JsonOutput = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
+    assert!(out.profiles.iter().any(|p| p == "openai.so.2026-04-30"));
+}

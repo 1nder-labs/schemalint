@@ -7,7 +7,7 @@ use crate::cli::node_config;
 use crate::cli::pipeline::{aggregate_results, attach_source_spans, emit_output, process_schemas};
 use crate::rules::registry::RuleSet;
 
-use super::{load_profiles_from_ids, ANTHROPIC_PROFILE_ID, OPENAI_PROFILE_ID};
+use super::{default_profile_ids, load_profiles_from_ids, ANTHROPIC_PROFILE_ID, OPENAI_PROFILE_ID};
 
 pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     let start = std::time::Instant::now();
@@ -19,6 +19,12 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
         .config
         .as_deref()
         .unwrap_or_else(|| Path::new("package.json"));
+    // Directory to search for provider-detection purposes if we fall all the
+    // way through to the deps-based default (step 5 below).
+    let profile_start_dir: &Path = config_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     let node_config = match node_config::load_node_config(config_path) {
         Ok(c) => c,
         Err(e) => {
@@ -152,15 +158,6 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     helper.shutdown();
 
     if discovered_models.is_empty() && discovery_failures > 0 {
-        // If no profiles configured yet, show the profiles error instead of
-        // the generic discovery failure — the user may have forgotten to
-        // configure profiles/packages.json.
-        if profile_args.is_empty() {
-            eprintln!(
-                "error: no profiles specified. Use --profile or configure \"schemalint\" in package.json"
-            );
-            return 1;
-        }
         eprintln!(
             "error: all {} source(s) failed discovery",
             discovery_failures
@@ -169,28 +166,35 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     }
 
     // -------------------------------------------------------------------
-    // 5. Auto-detect profile from provider_hint if none specified
+    // 5. Resolve a default profile if none was given yet: source-import
+    //    provider hint first (existing signal), then package.json
+    //    dependencies, then the openai default. This never hard-errors — it
+    //    always resolves to a profile and prints an `info:` line explaining
+    //    the choice.
     // -------------------------------------------------------------------
     if profile_args.is_empty() {
-        if let Some(ref hint) = provider_hint {
-            let resolved = match hint.as_str() {
-                "openai" => OPENAI_PROFILE_ID.to_string(),
-                "anthropic" => ANTHROPIC_PROFILE_ID.to_string(),
-                other => {
-                    eprintln!("error: unknown provider hint '{}' from source files", other);
-                    return 1;
-                }
-            };
-            eprintln!(
-                "info: auto-detected provider '{}' from source imports → using profile '{}'",
-                hint, resolved
-            );
-            profile_args.push(resolved);
-        } else {
-            eprintln!(
-                "error: no profiles specified. Use --profile or configure \"schemalint\" in package.json"
-            );
-            return 1;
+        match provider_hint.as_deref() {
+            Some("openai") => {
+                eprintln!(
+                    "info: auto-detected provider 'openai' from source imports → using profile '{}'",
+                    OPENAI_PROFILE_ID
+                );
+                profile_args.push(OPENAI_PROFILE_ID.to_string());
+            }
+            Some("anthropic") => {
+                eprintln!(
+                    "info: auto-detected provider 'anthropic' from source imports → using profile '{}'",
+                    ANTHROPIC_PROFILE_ID
+                );
+                profile_args.push(ANTHROPIC_PROFILE_ID.to_string());
+            }
+            Some(other) => {
+                eprintln!("error: unknown provider hint '{}' from source files", other);
+                return 1;
+            }
+            None => {
+                profile_args = default_profile_ids(profile_start_dir);
+            }
         }
     }
     let profiles = match explicit_profiles {

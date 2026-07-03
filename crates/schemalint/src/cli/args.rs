@@ -20,14 +20,21 @@ pub enum Commands {
     CheckPython(CheckPythonArgs),
     /// Check Zod schemas via Node.js subprocess
     CheckNode(CheckNodeArgs),
+    /// List built-in capability profiles and their provider aliases
+    Profiles(ProfilesArgs),
     /// Start JSON-RPC server mode
     Server(ServerArgs),
 }
 
 #[derive(Parser)]
 pub struct CheckArgs {
-    /// Built-in profile ID or path to a TOML capability profile (may be given multiple times)
-    #[arg(short, long = "profile", required = true)]
+    /// Built-in profile ID or path to a TOML capability profile (repeatable).
+    /// Accepts bare provider names ("openai", "anthropic") and
+    /// "<provider>.so.latest" as aliases for that provider's latest profile.
+    /// Optional: if omitted, the provider is auto-detected from package.json
+    /// dependencies near the schema path (falling back to openai.so.2026-04-30).
+    /// Run `schemalint profiles` to list all built-in profiles.
+    #[arg(short, long = "profile")]
     pub profiles: Vec<PathBuf>,
 
     /// Output format
@@ -43,6 +50,9 @@ pub struct CheckArgs {
 }
 
 #[derive(Parser)]
+pub struct ProfilesArgs {}
+
+#[derive(Parser)]
 pub struct ServerArgs {}
 
 #[derive(Parser)]
@@ -51,7 +61,9 @@ pub struct CheckPythonArgs {
     #[arg(short = 'P', long = "package")]
     pub packages: Vec<String>,
 
-    /// Built-in profile ID or TOML capability profile path (repeatable; overrides pyproject.toml)
+    /// Built-in profile ID or TOML capability profile path (repeatable; overrides
+    /// pyproject.toml). Accepts bare provider names ("openai", "anthropic") and
+    /// "<provider>.so.latest" as aliases. Run `schemalint profiles` to list all.
     #[arg(short, long = "profile")]
     pub profiles: Vec<PathBuf>,
 
@@ -78,7 +90,11 @@ pub struct CheckNodeArgs {
     #[arg(short = 'S', long = "source")]
     pub sources: Vec<String>,
 
-    /// Built-in profile ID or TOML capability profile path (repeatable; overrides package.json)
+    /// Built-in profile ID or TOML capability profile path (repeatable; overrides
+    /// package.json). Accepts bare provider names ("openai", "anthropic") and
+    /// "<provider>.so.latest" as aliases. Optional: if omitted, the provider is
+    /// auto-detected from source imports or package.json dependencies (falling
+    /// back to openai.so.2026-04-30). Run `schemalint profiles` to list all.
     #[arg(short, long = "profile")]
     pub profiles: Vec<PathBuf>,
 
