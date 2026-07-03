@@ -5,7 +5,6 @@
 *.swo
 *.swp
 # Docusaurus
-Cargo.lock
 docs/.docusaurus/
 docs/build/
 docs/node_modules/

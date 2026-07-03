@@ -9,6 +9,10 @@
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         { "type": "toml", "path": "Cargo.toml", "jsonpath": "$.workspace.package.version" },
+        { "type": "toml", "path": "Cargo.lock", "jsonpath": "$.package[?(@.name.value == 'schemalint')].version" },
+        { "type": "toml", "path": "Cargo.lock", "jsonpath": "$.package[?(@.name.value == 'schemalint-docgen')].version" },
+        { "type": "toml", "path": "Cargo.lock", "jsonpath": "$.package[?(@.name.value == 'schemalint-conformance')].version" },
+        { "type": "toml", "path": "Cargo.lock", "jsonpath": "$.package[?(@.name.value == 'schemalint-python')].version" },
         { "type": "toml", "path": "crates/schemalint-python/pyproject.toml", "jsonpath": "$.project.version" },
         { "type": "json", "path": "npm/schemalint/package.json", "jsonpath": "$.version" },
         { "type": "json", "path": "npm/schemalint/package-lock.json", "jsonpath": "$.version" },
