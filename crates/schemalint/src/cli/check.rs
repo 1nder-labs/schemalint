@@ -15,11 +15,24 @@ use super::load_profiles_from_ids;
 
 pub(super) fn run_check(args: CheckArgs) -> i32 {
     let start = std::time::Instant::now();
-    let profile_args: Vec<String> = args
+    let mut profile_args: Vec<String> = args
         .profiles
         .iter()
         .map(|profile| profile.to_string_lossy().to_string())
         .collect();
+
+    // No --profile given: auto-detect a default from package.json
+    // dependencies near the first schema path (or cwd if none given), always
+    // falling back to the openai profile rather than hard-erroring.
+    if profile_args.is_empty() {
+        let start_dir = args
+            .paths
+            .first()
+            .map(|p| PathBuf::from(p.as_str()))
+            .unwrap_or_else(|| PathBuf::from("."));
+        profile_args = super::default_profile_ids(&start_dir);
+    }
+
     let profiles = match load_profiles_from_ids(&profile_args) {
         Ok(profiles) => profiles,
         Err(e) => {

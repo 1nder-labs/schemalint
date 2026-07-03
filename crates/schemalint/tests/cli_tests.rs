@@ -27,6 +27,7 @@ fn parse_check_command_with_profile_and_files() {
         Commands::Server(_) => unreachable!(),
         Commands::CheckPython(_) => unreachable!(),
         Commands::CheckNode(_) => unreachable!(),
+        Commands::Profiles(_) => unreachable!(),
     }
 }
 
@@ -48,6 +49,7 @@ fn parse_check_command_with_format_flag() {
         Commands::Server(_) => unreachable!(),
         Commands::CheckPython(_) => unreachable!(),
         Commands::CheckNode(_) => unreachable!(),
+        Commands::Profiles(_) => unreachable!(),
     }
 }
 
@@ -69,6 +71,7 @@ fn parse_check_command_with_multiple_paths() {
         Commands::Server(_) => unreachable!(),
         Commands::CheckPython(_) => unreachable!(),
         Commands::CheckNode(_) => unreachable!(),
+        Commands::Profiles(_) => unreachable!(),
     }
 }
 
@@ -96,6 +99,7 @@ fn parse_check_command_with_multiple_profiles() {
         Commands::Server(_) => unreachable!(),
         Commands::CheckPython(_) => unreachable!(),
         Commands::CheckNode(_) => unreachable!(),
+        Commands::Profiles(_) => unreachable!(),
     }
 }
 
@@ -124,6 +128,60 @@ fn resolve_unknown_builtin_profile() {
     let result = schemalint::cli::resolve_profile("unknown-profile");
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("unknown built-in profile"));
+}
+
+// ---------------------------------------------------------------------------
+// Provider alias resolution ("openai", "anthropic", "*.so.latest")
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolve_profile_bare_openai_alias() {
+    let bytes = schemalint::cli::resolve_profile("openai").unwrap();
+    let profile = schemalint::profile::load(&bytes).unwrap();
+    assert_eq!(profile.name, "openai.so.2026-04-30");
+}
+
+#[test]
+fn resolve_profile_bare_anthropic_alias() {
+    let bytes = schemalint::cli::resolve_profile("anthropic").unwrap();
+    let profile = schemalint::profile::load(&bytes).unwrap();
+    assert_eq!(profile.name, "anthropic.so.2026-04-30");
+}
+
+#[test]
+fn resolve_profile_openai_so_latest_alias() {
+    let bytes = schemalint::cli::resolve_profile("openai.so.latest").unwrap();
+    let profile = schemalint::profile::load(&bytes).unwrap();
+    assert_eq!(profile.name, "openai.so.2026-04-30");
+}
+
+#[test]
+fn resolve_profile_anthropic_so_latest_alias() {
+    let bytes = schemalint::cli::resolve_profile("anthropic.so.latest").unwrap();
+    let profile = schemalint::profile::load(&bytes).unwrap();
+    assert_eq!(profile.name, "anthropic.so.2026-04-30");
+}
+
+#[test]
+fn resolve_profile_dated_ids_still_work_alongside_aliases() {
+    // The exact dated IDs must keep resolving after aliases were added.
+    let openai = schemalint::cli::resolve_profile("openai.so.2026-04-30").unwrap();
+    let anthropic = schemalint::cli::resolve_profile("anthropic.so.2026-04-30").unwrap();
+    assert_eq!(
+        schemalint::profile::load(&openai).unwrap().name,
+        "openai.so.2026-04-30"
+    );
+    assert_eq!(
+        schemalint::profile::load(&anthropic).unwrap().name,
+        "anthropic.so.2026-04-30"
+    );
+}
+
+#[test]
+fn resolve_profile_alias_and_dated_id_are_byte_identical() {
+    let via_alias = schemalint::cli::resolve_profile("openai").unwrap();
+    let via_dated_id = schemalint::cli::resolve_profile("openai.so.2026-04-30").unwrap();
+    assert_eq!(via_alias, via_dated_id);
 }
 
 #[test]
@@ -216,4 +274,32 @@ fn discover_deduplicates() {
         file.to_string_lossy().to_string(),
     ]);
     assert_eq!(files.len(), 1);
+}
+
+// ---------------------------------------------------------------------------
+// `schemalint profiles` subcommand
+// ---------------------------------------------------------------------------
+
+#[test]
+fn profiles_table_lists_both_builtin_profiles_with_aliases() {
+    let output = assert_cmd::Command::cargo_bin("schemalint")
+        .unwrap()
+        .arg("profiles")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("openai.so.2026-04-30"));
+    assert!(stdout.contains("alias: openai"));
+    assert!(stdout.contains("anthropic.so.2026-04-30"));
+    assert!(stdout.contains("alias: anthropic"));
+}
+
+#[test]
+fn profiles_table_takes_no_arguments() {
+    let cli = Cli::parse_from(["schemalint", "profiles"]);
+    match cli.command {
+        Commands::Profiles(_) => {}
+        _ => unreachable!(),
+    }
 }
