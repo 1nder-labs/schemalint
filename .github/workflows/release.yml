@@ -403,6 +403,9 @@ jobs:
     runs-on: ubuntu-latest
     # Single schemalint crate (profiles folded in); one verify-build, allow headroom.
     timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -413,6 +416,10 @@ jobs:
 
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
+
+      - name: Authenticate to crates.io via OIDC (trusted publishing)
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
 
       - name: Publish schemalint
         run: |
@@ -432,7 +439,7 @@ jobs:
             exit 1
           fi
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   # Publish Python wheel to PyPI
   publish-pypi:
