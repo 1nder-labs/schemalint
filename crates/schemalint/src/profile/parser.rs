@@ -157,20 +157,7 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
             toml::Value::Table(t)
                 if t.get("kind").and_then(|v| v.as_str()) == Some("restricted") =>
             {
-                let allowed = t
-                    .get("allowed")
-                    .and_then(|v| v.as_array())
-                    .ok_or_else(|| ProfileError::InvalidRestriction(key.clone()))?;
-                let mut values = Vec::new();
-                for v in allowed {
-                    values.push(toml_to_json(v.clone())?);
-                }
-                restrictions.insert(
-                    keyword,
-                    Restriction {
-                        allowed_values: values,
-                    },
-                );
+                restrictions.insert(keyword, parse_restriction(t, key)?);
             }
             _ => {
                 return Err(ProfileError::InvalidKeywordValue(key.clone()));
@@ -197,20 +184,7 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
             if keyword_map.contains_key(&typed_keyword) {
                 return Err(ProfileError::ConflictingKeyword(keyword.to_string()));
             }
-            let allowed = t
-                .get("allowed")
-                .and_then(|v| v.as_array())
-                .ok_or_else(|| ProfileError::InvalidRestriction(keyword.to_string()))?;
-            let mut values = Vec::new();
-            for v in allowed {
-                values.push(toml_to_json(v.clone())?);
-            }
-            restrictions.insert(
-                typed_keyword,
-                Restriction {
-                    allowed_values: values,
-                },
-            );
+            restrictions.insert(typed_keyword, parse_restriction(t, keyword)?);
         }
     }
 
@@ -224,6 +198,19 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
         restrictions,
         structural,
     })
+}
+
+fn parse_restriction(table: &toml::Table, keyword: &str) -> Result<Restriction, ProfileError> {
+    let allowed = table
+        .get("allowed")
+        .and_then(toml::Value::as_array)
+        .ok_or_else(|| ProfileError::InvalidRestriction(keyword.to_string()))?;
+    let allowed_values = allowed
+        .iter()
+        .cloned()
+        .map(toml_to_json)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Restriction { allowed_values })
 }
 
 fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, ProfileError> {

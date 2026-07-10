@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::time::Instant;
 
 use serde_json::{json, Value};
@@ -7,11 +6,12 @@ use crate::cli::args::OutputFormat;
 use crate::cli::discovery_policy::{discover_batch, DiscoveryBatch};
 use crate::cli::pipeline::{
     append_envelope_diagnostics, attach_source_spans, build_report, process_schemas, render_output,
+    schema_entries,
 };
 use crate::profile::Profile;
 use crate::rules::RuleSet;
 
-use super::policy::{load_profiles, output_format, rulesets, string_array};
+use super::policy::{load_profiles, output_format, required_string_array, rulesets, string_array};
 use super::ProfileCache;
 
 struct PreparedRequest {
@@ -82,10 +82,7 @@ fn prepare(
     target_description: &str,
     cache: &ProfileCache,
 ) -> Result<PreparedRequest, Value> {
-    let targets: Vec<String> = params
-        .get(target_key)
-        .and_then(Value::as_array)
-        .map(|values| values.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+    let targets = required_string_array(&params, target_key)
         .ok_or_else(|| {
             json!({
                 "success": false,
@@ -98,22 +95,12 @@ fn prepare(
             "error": format!("Empty '{target_key}' array; at least one {} is required", if target_key == "sources" { "source glob" } else { "package name" })
         }));
     }
-    let profile_ids: Vec<String> = params
-        .get("profiles")
-        .and_then(Value::as_array)
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
+    let profile_ids = required_string_array(&params, "profiles").ok_or_else(|| {
+        json!({
+            "success": false,
+            "error": "Missing 'profiles' parameter (expected array of built-in profile IDs)"
         })
-        .ok_or_else(|| {
-            json!({
-                "success": false,
-                "error": "Missing 'profiles' parameter (expected array of built-in profile IDs)"
-            })
-        })?;
+    })?;
     let format = output_format(&params)?;
     let exclusions = string_array(&params, "exclude");
     let continue_on_error = params
@@ -137,18 +124,7 @@ fn finish(
     start: Instant,
     validate_envelopes: bool,
 ) -> Value {
-    let schemas = discovery
-        .models
-        .iter()
-        .map(|model| {
-            (
-                PathBuf::from(&model.module_path),
-                model.name.clone(),
-                model.schema.clone(),
-            )
-        })
-        .collect();
-    let mut results = process_schemas(schemas, rules);
+    let mut results = process_schemas(schema_entries(&discovery.models), rules);
     if validate_envelopes {
         append_envelope_diagnostics(&mut results, &discovery.models, rules);
     }

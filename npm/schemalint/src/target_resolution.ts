@@ -340,7 +340,8 @@ export function stringValueFromExpression(
 ): string | undefined {
   if (!expr) return undefined;
   const unwrapped = skipParens(expr, tsModule);
-  if (tsModule.isStringLiteralLike(unwrapped)) return unwrapped.text;
+  const literal = stringLiteralText(unwrapped, tsModule);
+  if (literal !== undefined) return literal;
   if (tsModule.isIdentifier(unwrapped)) {
     const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
     return stringValueFromExpression(decl?.initializer, checker, tsModule);

@@ -27,7 +27,7 @@ fn profile_has_provider_name_rules(profile: &Profile) -> bool {
 }
 
 fn validate_name(field: &EnvelopeField, profile: &Profile) -> Option<Diagnostic> {
-    let issue = if field.required && (!field.resolved || field.value.is_none()) {
+    let issue = if field.required && field.value.is_none() {
         Some("required provider name is not statically resolvable".to_string())
     } else if let Some(name) = field.value.as_deref() {
         let count = name.chars().count();
@@ -68,7 +68,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::ingest::{ProviderCertainty, ProviderResolution};
+    use crate::ingest::ProviderResolution;
     use crate::profile::load;
     use crate::rules::registry::SourceSpan;
 
@@ -83,15 +83,13 @@ mod tests {
             schema: serde_json::json!({}),
             source_map: HashMap::new(),
             canonical_kind: "openai.zodTextFormat".into(),
-            provider: ProviderResolution {
-                certainty: ProviderCertainty::Definitive,
-                provider: Some(crate::ingest::Provider::Openai),
+            provider: ProviderResolution::Definitive {
+                provider: crate::ingest::Provider::Openai,
             },
             envelope: HashMap::from([(
                 "name".into(),
                 EnvelopeField {
                     required: true,
-                    resolved: true,
                     value: Some(name.into()),
                     span: SourceSpan {
                         file: "schema.ts".into(),

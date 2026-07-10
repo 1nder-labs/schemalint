@@ -1,6 +1,10 @@
 import type * as ts from 'typescript';
 
-import { adapterFor, type SdkAdapter } from './sdk_adapters.js';
+import {
+  adapterFor,
+  hasAdapterPrefix,
+  type SdkAdapter,
+} from './sdk_adapters.js';
 
 interface ImportedObject {
   module: string;
@@ -71,12 +75,6 @@ export function resolveTargetAdapter(
   return adapterFor(
     object.module,
     `${object.exportPath}.${members.join('.')}`
-  );
-}
-
-function hasAdapterPrefix(module: string, exportPath: string): boolean {
-  return ['object', 'array'].some((member) =>
-    adapterFor(module, `${exportPath}.${member}`)
   );
 }
 

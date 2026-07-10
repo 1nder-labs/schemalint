@@ -6,8 +6,10 @@ use rayon::prelude::*;
 use crate::cli::args::OutputFormat;
 use crate::cli::report::{CheckReport, CoverageCounts, ReportMessage};
 use crate::cli::{emit_gha, emit_human, emit_json, emit_junit, emit_sarif};
+use crate::ingest::DiscoveredModel;
 use crate::normalize::normalize;
-use crate::rules::registry::{DiagnosticSeverity, RuleSet, SourceSpan};
+use crate::profile::Profile;
+use crate::rules::registry::{DiagnosticSeverity, RuleSet, RuleSetError, SourceSpan};
 
 pub(crate) type SchemaCheckResult = (
     PathBuf,
@@ -197,6 +199,33 @@ pub(crate) fn emit_output(
 // ---------------------------------------------------------------------------
 // Shared pipeline helpers — reused by run_check, handle_check, and run_check_python
 // ---------------------------------------------------------------------------
+
+/// Construct each profile's ruleset without coupling rule errors to a CLI or
+/// JSON-RPC response format.
+pub(crate) fn build_rulesets(
+    profiles: &[Profile],
+) -> Result<Vec<(&Profile, RuleSet)>, RuleSetError> {
+    profiles
+        .iter()
+        .map(|profile| RuleSet::from_profile(profile).map(|rules| (profile, rules)))
+        .collect()
+}
+
+/// Project discovered models into the normalized schema pipeline's input type.
+pub(crate) fn schema_entries(
+    models: &[DiscoveredModel],
+) -> Vec<(PathBuf, String, serde_json::Value)> {
+    models
+        .iter()
+        .map(|model| {
+            (
+                PathBuf::from(&model.module_path),
+                model.name.clone(),
+                model.schema.clone(),
+            )
+        })
+        .collect()
+}
 
 /// Run all profile rulesets against a normalized arena and collect diagnostics.
 pub(crate) fn check_rulesets(

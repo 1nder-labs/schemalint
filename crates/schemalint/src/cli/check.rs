@@ -7,9 +7,9 @@ use rayon::prelude::*;
 use crate::cache::{hash_bytes, Cache};
 use crate::cli::args::{CheckArgs, OutputFormat};
 use crate::cli::discover;
-use crate::cli::pipeline::{build_report, check_rulesets, emit_output};
+use crate::cli::pipeline::{build_report, build_rulesets, check_rulesets, emit_output};
 use crate::normalize::normalize;
-use crate::rules::registry::{Diagnostic, RuleSet};
+use crate::rules::registry::Diagnostic;
 
 use super::load_profiles_from_ids;
 
@@ -41,12 +41,7 @@ pub(super) fn run_check(args: CheckArgs) -> i32 {
         }
     };
 
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = match profiles
-        .iter()
-        .map(|p| (p, RuleSet::from_profile(p)))
-        .map(|(profile, ruleset)| ruleset.map(|ruleset| (profile, ruleset)))
-        .collect()
-    {
+    let profile_rulesets = match build_rulesets(&profiles) {
         Ok(rulesets) => rulesets,
         Err(e) => {
             eprintln!("error: failed to construct profile rules: {e}");

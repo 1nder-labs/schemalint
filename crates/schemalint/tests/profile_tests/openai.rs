@@ -108,8 +108,8 @@ fn openai_profile_does_not_forbid_allof_with_ref() {
     let bytes = schemalint::profiles::OPENAI_SO_2026_04_30.as_bytes();
     let profile = load(bytes).unwrap();
 
-    assert_eq!(
-        profile.structural.forbid_allof_with_ref, false,
+    assert!(
+        !profile.structural.forbid_allof_with_ref,
         "OpenAI profile must not enable forbid_allof_with_ref"
     );
 }

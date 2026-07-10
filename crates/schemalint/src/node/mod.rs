@@ -125,23 +125,8 @@ impl NodeHelper {
 
     /// Drain captured stderr lines and append them to the error message.
     fn augment_error(&self, err: NodeError) -> NodeError {
-        let lines = self.client.take_stderr();
-        if lines.is_empty() {
+        let Some(stderr_tail) = self.client.take_stderr_tail("Node") else {
             return err;
-        }
-        let stderr_tail = if lines.len() > 10 {
-            let tail: Vec<_> = lines.iter().rev().take(10).map(|s| s.as_str()).collect();
-            format!(
-                "\n--- Node stderr (last {} of {} lines) ---\n{}\n--- end stderr ---",
-                10,
-                lines.len(),
-                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
-            )
-        } else {
-            format!(
-                "\n--- Node stderr ---\n{}\n--- end stderr ---",
-                lines.join("\n")
-            )
         };
         match err {
             NodeError::DiscoverFailed(msg) => {

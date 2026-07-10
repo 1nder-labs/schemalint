@@ -96,5 +96,5 @@ another_unknown_integer = 42
     // Must succeed — unknown keys must be silently ignored, not rejected.
     let profile = load(toml.as_bytes()).unwrap();
     // Known fields still deserialize correctly.
-    assert_eq!(profile.structural.require_object_root, false);
+    assert!(!profile.structural.require_object_root);
 }

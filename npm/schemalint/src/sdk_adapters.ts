@@ -1,10 +1,8 @@
 export type Provider = 'openai' | 'anthropic';
-export type ProviderCertainty = 'definitive' | 'inferred' | 'ambiguous';
 
-export interface ProviderResolution {
-  certainty: ProviderCertainty;
-  provider?: Provider;
-}
+export type ProviderResolution =
+  | { certainty: 'definitive' | 'inferred'; provider: Provider }
+  | { certainty: 'ambiguous'; provider?: never };
 
 export interface TargetSpan {
   file: string;
@@ -14,7 +12,6 @@ export interface TargetSpan {
 
 export interface EnvelopeField {
   required: boolean;
-  resolved: boolean;
   span: TargetSpan;
   value?: string;
 }
@@ -117,6 +114,14 @@ export function adapterFor(
   exportPath: string
 ): SdkAdapter | undefined {
   return byImport.get(`${module}:${exportPath}`);
+}
+
+export function hasAdapterPrefix(module: string, exportPath: string): boolean {
+  const prefix = `${exportPath}.`;
+  return adapters.some(
+    (adapter) =>
+      adapter.module === module && adapter.exportPath.startsWith(prefix)
+  );
 }
 
 function objectAdapter(

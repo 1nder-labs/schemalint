@@ -1,4 +1,4 @@
-import { adapterFor } from './sdk_adapters.js';
+import { adapterFor, hasAdapterPrefix, } from './sdk_adapters.js';
 export function collectTargetImports(sourceFile, tsModule) {
     const imports = {
         functions: new Map(),
@@ -49,9 +49,6 @@ export function resolveTargetAdapter(expression, imports, tsModule) {
     if (!object)
         return undefined;
     return adapterFor(object.module, `${object.exportPath}.${members.join('.')}`);
-}
-function hasAdapterPrefix(module, exportPath) {
-    return ['object', 'array'].some((member) => adapterFor(module, `${exportPath}.${member}`));
 }
 function propertyPath(expression, tsModule) {
     if (tsModule.isIdentifier(expression))

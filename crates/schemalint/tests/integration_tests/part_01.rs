@@ -55,7 +55,7 @@ fn cli_directory_with_schemas() {
         .arg(&profile)
         .arg("--format")
         .arg("human")
-        .arg(&dir.path())
+        .arg(dir.path())
         .assert()
         .success()
         .stdout(predicate::str::contains("0 issues found"));
@@ -171,7 +171,7 @@ fn cli_empty_directory() {
         .arg(&profile)
         .arg("--format")
         .arg("json")
-        .arg(&dir.path())
+        .arg(dir.path())
         .output()
         .unwrap();
 
@@ -241,7 +241,7 @@ fn cli_json_output_structure() {
     assert_eq!(json["report"]["coverage"]["discovered"], 1);
     assert_eq!(json["report"]["coverage"]["checked"], 1);
     assert!(json["summary"]["errors"].as_u64().unwrap() > 0);
-    assert!(json["diagnostics"].as_array().unwrap().len() > 0);
+    assert!(!json["diagnostics"].as_array().unwrap().is_empty());
     let diag = &json["diagnostics"][0];
     assert!(diag["code"].as_str().unwrap().starts_with("TEST-K"));
     assert!(diag["pointer"].as_str().is_some());

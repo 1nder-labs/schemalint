@@ -8,7 +8,7 @@ use crate::cli::pipeline::{build_report, check_rulesets, render_output};
 use crate::cli::report::CoverageCounts;
 use crate::normalize::normalize;
 
-use super::policy::{load_profiles, output_format, rulesets};
+use super::policy::{load_profiles, output_format, required_string_array, rulesets};
 use super::{ProfileCache, SchemaCache};
 
 const MAX_CHECK_SECONDS: u64 = 30;
@@ -21,12 +21,8 @@ pub(super) fn handle(params: Value, cache: &SchemaCache, profiles: &ProfileCache
         Some(schema) => schema.clone(),
         None => return json!({"success": false, "error": "Missing 'schema' parameter"}),
     };
-    let profile_ids: Vec<String> = match params.get("profiles").and_then(Value::as_array) {
-        Some(values) => values
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect(),
+    let profile_ids = match required_string_array(&params, "profiles") {
+        Some(values) => values,
         None => return json!({"success": false, "error": "Missing 'profiles' parameter"}),
     };
     let format = match output_format(&params) {

@@ -100,13 +100,13 @@ pub(crate) enum SubprocessError {
 /// - spawning the concrete command and constructing a `SubprocessClient` via
 ///   `SubprocessClient::from_child`.
 /// - mapping `SubprocessError` → their own public error type.
-/// - implementing `augment_error` with the appropriate stderr header/labels.
+/// - attaching the formatted stderr tail to the appropriate error variants.
 pub(crate) struct SubprocessClient {
-    pub child: Child,
-    pub stdin: ChildStdin,
-    pub request_id: u64,
-    pub stdout_rx: mpsc::Receiver<Option<String>>,
-    pub stderr_lines: Arc<Mutex<VecDeque<String>>>,
+    child: Child,
+    stdin: ChildStdin,
+    request_id: u64,
+    stdout_rx: mpsc::Receiver<Option<String>>,
+    stderr_lines: Arc<Mutex<VecDeque<String>>>,
     /// Human-readable name used in the `Drop` warning message ("node" / "python").
     name: &'static str,
 }
@@ -147,10 +147,28 @@ impl SubprocessClient {
         })
     }
 
-    /// Drain captured stderr lines and return them in order (clears the buffer).
-    pub(crate) fn take_stderr(&self) -> Vec<String> {
+    /// Drain captured stderr and format its last lines for an error message.
+    pub(crate) fn take_stderr_tail(&self, label: &str) -> Option<String> {
         let mut guard = self.stderr_lines.lock().unwrap_or_else(|e| e.into_inner());
-        std::mem::take(&mut *guard).into()
+        let lines: Vec<String> = std::mem::take(&mut *guard).into();
+        drop(guard);
+        if lines.is_empty() {
+            return None;
+        }
+
+        const TAIL_LINES: usize = 10;
+        if lines.len() > TAIL_LINES {
+            let tail = lines[lines.len() - TAIL_LINES..].join("\n");
+            Some(format!(
+                "\n--- {label} stderr (last {TAIL_LINES} of {} lines) ---\n{tail}\n--- end stderr ---",
+                lines.len()
+            ))
+        } else {
+            Some(format!(
+                "\n--- {label} stderr ---\n{}\n--- end stderr ---",
+                lines.join("\n")
+            ))
+        }
     }
 
     /// Send a JSON-RPC `discover` request and return the raw parsed response.
@@ -243,6 +261,11 @@ impl SubprocessClient {
     /// Send a `shutdown` request and wait up to `SHUTDOWN_TIMEOUT_SECS` for the
     /// child to exit, killing it if it does not.
     pub(crate) fn shutdown(&mut self) {
+        self.send_shutdown();
+        self.wait_or_kill(Duration::from_secs(SHUTDOWN_TIMEOUT_SECS));
+    }
+
+    fn send_shutdown(&mut self) {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "shutdown",
@@ -252,26 +275,31 @@ impl SubprocessClient {
             let _ = writeln!(self.stdin, "{}", req);
             let _ = self.stdin.flush();
         }
+    }
 
-        let deadline = Instant::now() + Duration::from_secs(SHUTDOWN_TIMEOUT_SECS);
+    fn wait_or_kill(&mut self, timeout: Duration) {
+        let deadline = Instant::now() + timeout;
         loop {
             match self.child.try_wait() {
                 Ok(Some(_)) => return,
                 Ok(None) => {
                     if Instant::now() >= deadline {
-                        let _ = self.child.kill();
-                        let _ = self.child.wait();
+                        self.kill_and_wait();
                         return;
                     }
                     thread::sleep(Duration::from_millis(100));
                 }
                 Err(_) => {
-                    let _ = self.child.kill();
-                    let _ = self.child.wait();
+                    self.kill_and_wait();
                     return;
                 }
             }
         }
+    }
+
+    fn kill_and_wait(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -284,39 +312,10 @@ impl Drop for SubprocessClient {
                     "warning: {} helper still running, attempting shutdown",
                     self.name
                 );
-                let request = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "method": "shutdown",
-                    "id": self.request_id,
-                });
-                if let Ok(req) = serde_json::to_string(&request) {
-                    let _ = writeln!(self.stdin, "{}", req);
-                    let _ = self.stdin.flush();
-                }
-                let deadline = Instant::now() + Duration::from_secs(2);
-                loop {
-                    match self.child.try_wait() {
-                        Ok(Some(_)) => return,
-                        Ok(None) => {
-                            if Instant::now() >= deadline {
-                                let _ = self.child.kill();
-                                let _ = self.child.wait();
-                                return;
-                            }
-                            thread::sleep(Duration::from_millis(100));
-                        }
-                        Err(_) => {
-                            let _ = self.child.kill();
-                            let _ = self.child.wait();
-                            return;
-                        }
-                    }
-                }
+                self.send_shutdown();
+                self.wait_or_kill(Duration::from_secs(2));
             }
-            Err(_) => {
-                let _ = self.child.kill();
-                let _ = self.child.wait();
-            }
+            Err(_) => self.kill_and_wait(),
         }
     }
 }

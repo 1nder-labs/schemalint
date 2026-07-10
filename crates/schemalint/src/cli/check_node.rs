@@ -5,9 +5,10 @@ use crate::cli::args::{CheckNodeArgs, OutputFormat};
 use crate::cli::discovery_policy::discover_batch;
 use crate::cli::node_config;
 use crate::cli::pipeline::{
-    append_envelope_diagnostics, attach_source_spans, build_report, emit_output, process_schemas,
+    append_envelope_diagnostics, attach_source_spans, build_report, build_rulesets, emit_output,
+    process_schemas, schema_entries,
 };
-use crate::ingest::{DiscoveredModel, Provider, ProviderCertainty};
+use crate::ingest::{DiscoveredModel, Provider, ProviderResolution};
 use crate::rules::registry::RuleSet;
 
 use super::{load_profiles_from_ids, ANTHROPIC_PROFILE_ID, OPENAI_PROFILE_ID};
@@ -160,12 +161,7 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
         },
     };
 
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = match profiles
-        .iter()
-        .map(|p| (p, RuleSet::from_profile(p)))
-        .map(|(profile, ruleset)| ruleset.map(|ruleset| (profile, ruleset)))
-        .collect()
-    {
+    let profile_rulesets = match build_rulesets(&profiles) {
         Ok(rulesets) => rulesets,
         Err(e) => {
             eprintln!("error: failed to construct profile rules: {e}");
@@ -214,14 +210,12 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
 }
 
 fn automatic_profile_ids(models: &[DiscoveredModel]) -> Vec<String> {
-    let has_openai = models.iter().any(|model| {
-        model.provider.certainty != ProviderCertainty::Ambiguous
-            && model.provider.provider == Some(Provider::Openai)
-    });
-    let has_anthropic = models.iter().any(|model| {
-        model.provider.certainty != ProviderCertainty::Ambiguous
-            && model.provider.provider == Some(Provider::Anthropic)
-    });
+    let has_openai = models
+        .iter()
+        .any(|model| model.provider.provider() == Some(Provider::Openai));
+    let has_anthropic = models
+        .iter()
+        .any(|model| model.provider.provider() == Some(Provider::Anthropic));
     [
         (has_openai, OPENAI_PROFILE_ID),
         (has_anthropic, ANTHROPIC_PROFILE_ID),
@@ -230,19 +224,6 @@ fn automatic_profile_ids(models: &[DiscoveredModel]) -> Vec<String> {
     .filter(|(present, _)| *present)
     .map(|(_, profile)| profile.to_string())
     .collect()
-}
-
-fn schema_entries(models: &[DiscoveredModel]) -> Vec<(PathBuf, String, serde_json::Value)> {
-    models
-        .iter()
-        .map(|model| {
-            (
-                PathBuf::from(&model.module_path),
-                model.name.clone(),
-                model.schema.clone(),
-            )
-        })
-        .collect()
 }
 
 fn process_node_targets(
@@ -256,19 +237,23 @@ fn process_node_targets(
     let mut results = Vec::with_capacity(models.len());
     let inferred_provider = single_owned_provider(models);
     for model in models {
-        let profile_id = match (model.provider.certainty, model.provider.provider) {
-            (
-                ProviderCertainty::Definitive | ProviderCertainty::Inferred,
-                Some(Provider::Openai),
-            ) => OPENAI_PROFILE_ID,
-            (
-                ProviderCertainty::Definitive | ProviderCertainty::Inferred,
-                Some(Provider::Anthropic),
-            ) => ANTHROPIC_PROFILE_ID,
-            (ProviderCertainty::Ambiguous, _) if inferred_provider == Some(Provider::Openai) => {
+        let profile_id = match model.provider {
+            ProviderResolution::Definitive {
+                provider: Provider::Openai,
+            }
+            | ProviderResolution::Inferred {
+                provider: Provider::Openai,
+            } => OPENAI_PROFILE_ID,
+            ProviderResolution::Definitive {
+                provider: Provider::Anthropic,
+            }
+            | ProviderResolution::Inferred {
+                provider: Provider::Anthropic,
+            } => ANTHROPIC_PROFILE_ID,
+            ProviderResolution::Ambiguous {} if inferred_provider == Some(Provider::Openai) => {
                 OPENAI_PROFILE_ID
             }
-            (ProviderCertainty::Ambiguous, _) if inferred_provider == Some(Provider::Anthropic) => {
+            ProviderResolution::Ambiguous {} if inferred_provider == Some(Provider::Anthropic) => {
                 ANTHROPIC_PROFILE_ID
             }
             _ => {
@@ -317,10 +302,10 @@ fn process_node_targets(
 fn single_owned_provider(models: &[DiscoveredModel]) -> Option<Provider> {
     let has_openai = models
         .iter()
-        .any(|model| model.provider.provider == Some(Provider::Openai));
+        .any(|model| model.provider.provider() == Some(Provider::Openai));
     let has_anthropic = models
         .iter()
-        .any(|model| model.provider.provider == Some(Provider::Anthropic));
+        .any(|model| model.provider.provider() == Some(Provider::Anthropic));
     match (has_openai, has_anthropic) {
         (true, false) => Some(Provider::Openai),
         (false, true) => Some(Provider::Anthropic),

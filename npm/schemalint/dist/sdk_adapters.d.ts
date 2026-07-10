@@ -1,9 +1,11 @@
 export type Provider = 'openai' | 'anthropic';
-export type ProviderCertainty = 'definitive' | 'inferred' | 'ambiguous';
-export interface ProviderResolution {
-    certainty: ProviderCertainty;
-    provider?: Provider;
-}
+export type ProviderResolution = {
+    certainty: 'definitive' | 'inferred';
+    provider: Provider;
+} | {
+    certainty: 'ambiguous';
+    provider?: never;
+};
 export interface TargetSpan {
     file: string;
     line: number;
@@ -11,7 +13,6 @@ export interface TargetSpan {
 }
 export interface EnvelopeField {
     required: boolean;
-    resolved: boolean;
     span: TargetSpan;
     value?: string;
 }
@@ -38,5 +39,6 @@ export interface SdkAdapter {
     deprecatedRemoval?: '2.0';
 }
 export declare function adapterFor(module: string, exportPath: string): SdkAdapter | undefined;
+export declare function hasAdapterPrefix(module: string, exportPath: string): boolean;
 export {};
 //# sourceMappingURL=sdk_adapters.d.ts.map

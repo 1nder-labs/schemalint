@@ -1,11 +1,12 @@
 use std::io::IsTerminal;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::cli::args::{CheckPythonArgs, OutputFormat};
 use crate::cli::discovery_policy::discover_batch;
-use crate::cli::pipeline::{attach_source_spans, build_report, emit_output, process_schemas};
+use crate::cli::pipeline::{
+    attach_source_spans, build_report, build_rulesets, emit_output, process_schemas, schema_entries,
+};
 use crate::cli::pyproject;
-use crate::rules::registry::RuleSet;
 
 use super::load_profiles_from_ids;
 
@@ -85,12 +86,7 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
         }
     };
 
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = match profiles
-        .iter()
-        .map(|p| (p, RuleSet::from_profile(p)))
-        .map(|(profile, ruleset)| ruleset.map(|ruleset| (profile, ruleset)))
-        .collect()
-    {
+    let profile_rulesets = match build_rulesets(&profiles) {
         Ok(rulesets) => rulesets,
         Err(e) => {
             eprintln!("error: failed to construct profile rules: {e}");
@@ -148,19 +144,7 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
-    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovery
-        .models
-        .iter()
-        .map(|m| {
-            (
-                PathBuf::from(&m.module_path),
-                m.name.clone(),
-                m.schema.clone(),
-            )
-        })
-        .collect();
-
-    let results = process_schemas(schema_entries, &profile_rulesets);
+    let results = process_schemas(schema_entries(&discovery.models), &profile_rulesets);
 
     // -------------------------------------------------------------------
     // 7. Attach source spans from discovery

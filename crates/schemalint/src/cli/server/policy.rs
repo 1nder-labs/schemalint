@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::cli::args::OutputFormat;
+use crate::cli::pipeline::build_rulesets;
 use crate::profile::{load, Profile};
 use crate::rules::RuleSet;
 
@@ -24,18 +25,18 @@ pub(super) fn output_format(params: &Value) -> Result<OutputFormat, Value> {
     }
 }
 
+pub(super) fn required_string_array(params: &Value, key: &str) -> Option<Vec<String>> {
+    params.get(key).and_then(Value::as_array).map(|values| {
+        values
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect()
+    })
+}
+
 pub(super) fn string_array(params: &Value, key: &str) -> Vec<String> {
-    params
-        .get(key)
-        .and_then(Value::as_array)
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default()
+    required_string_array(params, key).unwrap_or_default()
 }
 
 pub(super) fn load_profiles(
@@ -66,14 +67,7 @@ pub(super) fn load_profiles(
 }
 
 pub(super) fn rulesets(profiles: &[Profile]) -> Result<Vec<(&Profile, RuleSet)>, Value> {
-    profiles
-        .iter()
-        .map(|profile| {
-            RuleSet::from_profile(profile)
-                .map(|rules| (profile, rules))
-                .map_err(|error| {
-                    json!({"success": false, "error": format!("Failed to construct profile rules: {error}")})
-                })
-        })
-        .collect()
+    build_rulesets(profiles).map_err(|error| {
+        json!({"success": false, "error": format!("Failed to construct profile rules: {error}")})
+    })
 }

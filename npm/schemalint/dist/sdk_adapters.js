@@ -31,6 +31,10 @@ const byImport = new Map(adapters.map((adapter) => [`${adapter.module}:${adapter
 export function adapterFor(module, exportPath) {
     return byImport.get(`${module}:${exportPath}`);
 }
+export function hasAdapterPrefix(module, exportPath) {
+    const prefix = `${exportPath}.`;
+    return adapters.some((adapter) => adapter.module === module && adapter.exportPath.startsWith(prefix));
+}
 function objectAdapter(module, exportPath, kind, properties, deprecatedRemoval, envelope = [], provider) {
     return {
         module,

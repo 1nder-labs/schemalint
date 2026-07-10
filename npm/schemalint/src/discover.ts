@@ -197,8 +197,6 @@ export async function discoverZodSchemas(
   const discoveredLocations: SchemaTarget[] = [...callsiteDiscovery.targets];
   const discoveryFailures: DiscoveryFailure[] = [...callsiteDiscovery.failures];
 
-  const nonFatal: DiscoveryWarning[] = [];
-
   if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
     for (const sourceFile of selectedSourceFiles) {
       const exports = findExportedSchemaCalls(sourceFile, tsModule);
@@ -229,7 +227,7 @@ export async function discoverZodSchemas(
   if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
     return {
       models: [],
-      warnings: nonFatal,
+      warnings: [],
       failures: [],
       counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
     };
@@ -270,7 +268,7 @@ export async function discoverZodSchemas(
 
   const response: DiscoverResponse = {
     models,
-    warnings: nonFatal,
+    warnings: [],
     failures,
     counts: {
       attempted: discoveredLocations.length + discoveryFailures.length,

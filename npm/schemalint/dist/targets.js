@@ -66,7 +66,6 @@ function collectFromCall(call, sourceFile, checker, tsModule, imports, targets, 
         if (expression) {
             envelope[selector.name] = {
                 required: selector.required,
-                resolved: value !== undefined,
                 span: spanFor(expression, sourceFile),
                 ...(value === undefined ? {} : { value }),
             };

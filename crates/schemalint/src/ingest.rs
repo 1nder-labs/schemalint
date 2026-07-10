@@ -19,15 +19,6 @@ pub struct DiscoveredModel {
     pub usage_span: Option<SourceSpan>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ProviderCertainty {
-    Definitive,
-    Inferred,
-    #[default]
-    Ambiguous,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
@@ -35,18 +26,32 @@ pub enum Provider {
     Anthropic,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ProviderResolution {
-    #[serde(default)]
-    pub certainty: ProviderCertainty,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider: Option<Provider>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "certainty", rename_all = "lowercase", deny_unknown_fields)]
+pub enum ProviderResolution {
+    Definitive { provider: Provider },
+    Inferred { provider: Provider },
+    Ambiguous {},
+}
+
+impl Default for ProviderResolution {
+    fn default() -> Self {
+        Self::Ambiguous {}
+    }
+}
+
+impl ProviderResolution {
+    pub fn provider(self) -> Option<Provider> {
+        match self {
+            Self::Definitive { provider } | Self::Inferred { provider } => Some(provider),
+            Self::Ambiguous {} => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EnvelopeField {
     pub required: bool,
-    pub resolved: bool,
     pub span: SourceSpan,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
@@ -95,4 +100,40 @@ pub struct DiscoveryCounts {
     pub excluded: usize,
     pub discovered: usize,
     pub failed: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_resolution_rejects_impossible_states() {
+        assert_eq!(
+            serde_json::to_value(ProviderResolution::Ambiguous {}).unwrap(),
+            serde_json::json!({"certainty": "ambiguous"})
+        );
+        assert_eq!(
+            serde_json::from_value::<ProviderResolution>(serde_json::json!({
+                "certainty": "definitive",
+                "provider": "openai"
+            }))
+            .unwrap(),
+            ProviderResolution::Definitive {
+                provider: Provider::Openai
+            }
+        );
+        assert!(
+            serde_json::from_value::<ProviderResolution>(serde_json::json!({
+                "certainty": "definitive"
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<ProviderResolution>(serde_json::json!({
+                "certainty": "ambiguous",
+                "provider": "openai"
+            }))
+            .is_err()
+        );
+    }
 }

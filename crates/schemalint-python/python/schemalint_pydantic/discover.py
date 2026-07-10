@@ -6,6 +6,7 @@ and builds per-field source maps mapping JSON Pointers to source locations.
 
 import importlib
 import inspect
+import pkgutil
 import re
 import sys
 from fnmatch import fnmatchcase
@@ -64,7 +65,7 @@ def discover_models(package: str, exclude: Optional[List[str]] = None) -> Dict[s
     warnings_list = []
     failures = []
 
-    _collect_models(mod, models, warnings_list, failures, counts, exclusions, package)
+    _collect_models(mod, models, warnings_list, failures, counts, exclusions)
     counts["discovered"] = len(models)
 
     result: Dict[str, Any] = {
@@ -84,7 +85,6 @@ def _collect_models(
     failures: List[Dict[str, Any]],
     counts: Dict[str, int],
     exclusions: List[str],
-    root_package: str,
     visited: Optional[set] = None,
 ) -> None:
     if visited is None:
@@ -135,7 +135,9 @@ def _collect_models(
 
     # Recurse into submodules
     if hasattr(mod, "__path__"):
-        for _, submod_name, _ in pkgutil_iter_modules(mod.__path__, mod.__name__ + "."):
+        for _, submod_name, _ in pkgutil.iter_modules(
+            path=mod.__path__, prefix=mod.__name__ + "."
+        ):
             if any(fnmatchcase(submod_name, pattern) for pattern in exclusions):
                 counts["excluded"] += 1
                 continue
@@ -150,15 +152,8 @@ def _collect_models(
                 failures,
                 counts,
                 exclusions,
-                root_package,
                 visited,
             )
-
-
-def pkgutil_iter_modules(path, prefix):
-    """Vendored pkgutil.iter_modules equivalent — avoids importing pkgutil."""
-    import pkgutil
-    return pkgutil.iter_modules(path=path, prefix=prefix)
 
 
 def _extract_model(cls, name: str) -> Dict[str, Any]:
