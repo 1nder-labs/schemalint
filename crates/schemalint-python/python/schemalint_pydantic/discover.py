@@ -142,8 +142,16 @@ def _collect_models(
                 counts["excluded"] += 1
                 continue
             try:
-                submod = importlib.import_module(submod_name)
-            except Exception:
+                with _capture_stdout():
+                    submod = importlib.import_module(submod_name)
+            except Exception as error:
+                counts["attempted"] += 1
+                counts["failed"] += 1
+                failures.append({
+                    "kind": "evaluation",
+                    "target": submod_name,
+                    "message": f"module import failed: {error}",
+                })
                 continue
             _collect_models(
                 submod,

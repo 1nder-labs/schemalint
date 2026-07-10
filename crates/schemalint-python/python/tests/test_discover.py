@@ -191,3 +191,48 @@ class TestDiscoverErrors:
         # A builtin module with no path won't have BaseModel subclasses
         result = discover_models("json")
         assert result["models"] == []
+
+    def test_submodule_import_failure_is_counted_and_visible(self):
+        import uuid
+
+        package_name = f"partialmodels_{uuid.uuid4().hex[:8]}"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            package = os.path.join(tmpdir, package_name)
+            os.makedirs(package)
+            with open(os.path.join(package, "__init__.py"), "w"):
+                pass
+            with open(os.path.join(package, "good.py"), "w") as source:
+                source.write(
+                    "from pydantic import BaseModel\n"
+                    "class RetainedModel(BaseModel):\n"
+                    "    value: str\n"
+                )
+            with open(os.path.join(package, "broken.py"), "w") as source:
+                source.write('raise RuntimeError("intentional import failure")\n')
+
+            sys.path.insert(0, tmpdir)
+            try:
+                result = discover_models(package_name)
+            finally:
+                sys.path.remove(tmpdir)
+                for module_name in list(sys.modules):
+                    if module_name == package_name or module_name.startswith(
+                        package_name + "."
+                    ):
+                        sys.modules.pop(module_name, None)
+                importlib.invalidate_caches()
+
+        assert [model["name"] for model in result["models"]] == ["RetainedModel"]
+        assert result["counts"] == {
+            "attempted": 2,
+            "excluded": 0,
+            "discovered": 1,
+            "failed": 1,
+        }
+        assert result["failures"] == [
+            {
+                "kind": "evaluation",
+                "target": f"{package_name}.broken",
+                "message": "module import failed: intentional import failure",
+            }
+        ]
