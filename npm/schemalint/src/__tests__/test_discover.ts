@@ -114,7 +114,13 @@ describe('discoverZodSchemas', () => {
     const result = await discoverZodSchemas('ai-sdk-calls.ts');
 
     expect(result.warnings).toHaveLength(0);
-    expect(result.models).toHaveLength(5);
+    expect(result.models).toHaveLength(4);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      kind: 'metadata',
+      target: 'ai.generateObject',
+    });
+    expect(result.failures[0].message).toContain('required schema metadata');
     expect(result.models.map((m) => m.name)).toEqual(
       expect.arrayContaining([
         'generateObject:LocalResult',
@@ -130,8 +136,9 @@ describe('discoverZodSchemas', () => {
       Object.keys(m.schema.properties as Record<string, unknown>)
     );
     expect(properties).toEqual(
-      expect.arrayContaining(['conditional', 'variable'])
+      expect.arrayContaining(['variable'])
     );
+    expect(properties).not.toContain('conditional');
   });
 
   it('discovers schemas passed through provider helper factories', async () => {
@@ -233,6 +240,52 @@ describe('discoverZodSchemas', () => {
     const result = await discoverZodSchemas('simple.ts');
 
     expect(result.models[0].provider).toEqual({ certainty: 'ambiguous' });
+  });
+
+  it('never finalizes generic provider ownership per source partition', async () => {
+    const partitioned = await discoverZodSchemas(
+      'provider-partition-openai.ts'
+    );
+    const complete = await discoverZodSchemas('provider-partition-*.ts');
+
+    const partitionedGeneric = partitioned.models.find(
+      (model) => model.canonical_kind === 'ai.Output.object'
+    );
+    const completeGeneric = complete.models.find(
+      (model) => model.canonical_kind === 'ai.Output.object'
+    );
+    expect(partitionedGeneric?.provider).toEqual({ certainty: 'ambiguous' });
+    expect(completeGeneric?.provider).toEqual({ certainty: 'ambiguous' });
+    expect(complete.models.map((model) => model.provider)).toEqual(
+      expect.arrayContaining([
+        { certainty: 'definitive', provider: 'openai' },
+        { certainty: 'definitive', provider: 'anthropic' },
+      ])
+    );
+  });
+
+  it('rejects divergent conditional schema and required-name metadata', async () => {
+    const result = await discoverZodSchemas('conditional-metadata.ts');
+
+    expect(result.models).toHaveLength(2);
+    expect(result.failures).toHaveLength(3);
+    expect(result.failures.map((failure) => failure.target)).toEqual([
+      'ai.generateObject',
+      'openai.zodTextFormat',
+      'openai.zodTextFormat',
+    ]);
+    expect(result.failures[0].message).toContain('required schema metadata');
+    expect(result.failures[1].message).toContain('required schema metadata');
+    expect(result.failures[2].message).toContain("required field 'name'");
+    expect(result.counts).toMatchObject({
+      attempted: 5,
+      discovered: 2,
+      failed: 3,
+    });
+    expect(result.models.map((model) => model.name)).toEqual([
+      'generateObject:First',
+      'zodTextFormat:same_name',
+    ]);
   });
 
   it('discovers inline schema referencing a helper declared after the call site', async () => {

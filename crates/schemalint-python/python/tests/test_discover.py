@@ -236,3 +236,107 @@ class TestDiscoverErrors:
                 "message": "module import failed: intentional import failure",
             }
         ]
+
+    def test_reexported_model_is_discovered_once(self):
+        import uuid
+
+        package_name = f"reexportedmodels_{uuid.uuid4().hex[:8]}"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            package = os.path.join(tmpdir, package_name)
+            os.makedirs(package)
+            with open(os.path.join(package, "__init__.py"), "w") as source:
+                source.write("from .models import ReExportedModel\n")
+            with open(os.path.join(package, "models.py"), "w") as source:
+                source.write(
+                    "from pydantic import BaseModel\n"
+                    "class ReExportedModel(BaseModel):\n"
+                    "    value: str\n"
+                )
+
+            sys.path.insert(0, tmpdir)
+            try:
+                result = discover_models(package_name)
+            finally:
+                sys.path.remove(tmpdir)
+                for module_name in list(sys.modules):
+                    if module_name == package_name or module_name.startswith(
+                        package_name + "."
+                    ):
+                        sys.modules.pop(module_name, None)
+                importlib.invalidate_caches()
+
+        assert [model["name"] for model in result["models"]] == [
+            "ReExportedModel"
+        ]
+        assert result["models"][0]["module_path"] == f"{package_name}.models"
+        assert result["counts"] == {
+            "attempted": 1,
+            "excluded": 0,
+            "discovered": 1,
+            "failed": 0,
+        }
+        assert result["failures"] == []
+
+    def test_introspection_failure_is_visible_and_recursion_continues(self):
+        import uuid
+
+        package_name = f"opaquemodels_{uuid.uuid4().hex[:8]}"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            package = os.path.join(tmpdir, package_name)
+            nested = os.path.join(package, "opaque")
+            os.makedirs(nested)
+            with open(os.path.join(package, "__init__.py"), "w"):
+                pass
+            with open(os.path.join(package, "getter.py"), "w") as source:
+                source.write(
+                    "def __dir__():\n"
+                    "    return ['Explosive']\n"
+                    "def __getattr__(name):\n"
+                    "    raise RuntimeError('intentional getattr failure')\n"
+                )
+            with open(os.path.join(nested, "__init__.py"), "w") as source:
+                source.write(
+                    "def __dir__():\n"
+                    "    raise RuntimeError('intentional introspection failure')\n"
+                )
+            with open(os.path.join(nested, "models.py"), "w") as source:
+                source.write(
+                    "from pydantic import BaseModel\n"
+                    "class RetainedModel(BaseModel):\n"
+                    "    value: str\n"
+                )
+
+            sys.path.insert(0, tmpdir)
+            try:
+                result = discover_models(package_name)
+            finally:
+                sys.path.remove(tmpdir)
+                for module_name in list(sys.modules):
+                    if module_name == package_name or module_name.startswith(
+                        package_name + "."
+                    ):
+                        sys.modules.pop(module_name, None)
+                importlib.invalidate_caches()
+
+        assert [model["name"] for model in result["models"]] == ["RetainedModel"]
+        assert result["counts"] == {
+            "attempted": 3,
+            "excluded": 0,
+            "discovered": 1,
+            "failed": 2,
+        }
+        assert result["failures"] == [
+            {
+                "kind": "evaluation",
+                "target": f"{package_name}.getter",
+                "message": "module introspection failed: intentional getattr failure",
+            },
+            {
+                "kind": "evaluation",
+                "target": f"{package_name}.opaque",
+                "message": (
+                    "module introspection failed: "
+                    "intentional introspection failure"
+                ),
+            }
+        ]

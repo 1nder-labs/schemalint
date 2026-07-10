@@ -17,12 +17,16 @@
 # Adds: build-wheel, smoke-test (ubuntu/macos/windows), publish-crates,
 # publish-pypi, create-github-release, smoke-npm, publish-npm.
 # The cargo-dist host job is superseded by create-github-release which
-# runs after crate and PyPI publishes to ensure the release exists
-# before the npm wrapper auto-downloads from it.
+# creates immutable assets after local smokes and before the npm wrapper's
+# real auto-download smoke; registry publishes remain gated behind that smoke.
 
 name: Release
 permissions:
-  "contents": "write"
+  "contents": "read"
+env:
+  # A tag rerun must use the same compiler rather than resolving today's
+  # mutable `stable` alias and producing different release bytes.
+  RUSTUP_TOOLCHAIN: '1.93.1'
 
 # This task will run whenever you push a git tag that looks like a version
 # like "1.0.0", "v0.1.0-prerelease.1", "my-app/0.1.0", "releases/v1.0.0", etc.
@@ -74,7 +78,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
           submodules: recursive
@@ -83,7 +87,7 @@ jobs:
         # checksum and the release's committed dependency lock.
         run: cargo install cargo-dist --version 0.31.0 --locked
       - name: Cache dist
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/dist
@@ -99,7 +103,7 @@ jobs:
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
       - name: "Upload dist-manifest.json"
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: artifacts-plan-dist-manifest
           path: plan-dist-manifest.json
@@ -134,26 +138,23 @@ jobs:
       - name: enable windows longpaths
         run: |
           git config --global core.longpaths true
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
           submodules: recursive
-      - name: Install Rust non-interactively if not already installed
-        if: ${{ matrix.container }}
-        run: |
-          if ! command -v cargo > /dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-          fi
+      - name: Install pinned release Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable action
+        with:
+          toolchain: '1.93.1'
       - name: Install cached dist
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/dist
       # Get the dist-manifest
       - name: Fetch local artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -180,7 +181,7 @@ jobs:
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
       - name: "Upload artifacts"
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: artifacts-build-local-${{ join(matrix.targets, '_') }}
           path: |
@@ -198,19 +199,19 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
           submodules: recursive
       - name: Install cached dist
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/dist
       # Get all the local artifacts for the global tasks to use (for e.g. checksums)
       - name: Fetch local artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -228,7 +229,7 @@ jobs:
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
       - name: "Upload artifacts"
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: artifacts-build-global
           path: |
@@ -239,8 +240,8 @@ jobs:
   # Custom release pipeline jobs
   #
   # Dependency chain:
-  #   [dist builds + wheel] --> prepare-release (manifest + one npm pack)
-  #       --> smoke-test --> create-github-release --> smoke-npm
+  #   [dist builds + wheel] --> smoke-wheel --> prepare-release
+  #       (manifest + one npm pack) --> smoke-test --> create-github-release --> smoke-npm
   #       --> publish-crates + publish-pypi + publish-npm --> registry-readback
   #
   # All custom jobs gate on startsWith(github.ref, 'refs/tags/v') so they
@@ -264,37 +265,102 @@ jobs:
   #   dist-managed section; cargo-dist regenerates them on `dist init`.
   # ==========================================================================
 
-  # Build Python wheel via maturin
+  # Build one platform wheel for every declared native release target.
   build-wheel:
     needs:
       - build-local-artifacts
       - build-global-artifacts
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            manylinux: '2_28'
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: '2_28'
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            manylinux: '2_28'
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            manylinux: '2_28'
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            manylinux: '2_28'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install pinned maturin
-        run: cargo install maturin --version 1.13.1 --locked
-
       - name: Build wheel
-        run: maturin build --release --out ../../dist
-        working-directory: crates/schemalint-python
+        uses: PyO3/maturin-action@86b9d133d34bc1b40018696f782949dac11bd380 # v1.49.4
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          maturin-version: v1.13.1
+          rust-toolchain: '1.93.1'
+          working-directory: crates/schemalint-python
+          args: --release --locked --compatibility pypi --out ../../dist
 
       - name: Upload wheel artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: wheels
+          name: wheel-${{ matrix.target }}
           path: dist/*.whl
+
+  # Install the exact platform wheel and run the real Pydantic fixture on the
+  # matching architecture before the wheels can enter the release bundle.
+  smoke-wheel:
+    needs:
+      - build-wheel
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Download matching wheel
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: wheel-${{ matrix.target }}
+          path: wheels
+
+      - name: Exercise installed wheel against Pydantic 1 and 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          for SPEC in 'pydantic>=1.10,<2' 'pydantic>=2,<3'; do
+            python -m pip install --force-reinstall "$SPEC"
+            python -m pip install --force-reinstall --no-deps wheels/*.whl
+            python scripts/smoke-installed-wheel.py
+            python -m pip uninstall -y schemalint pydantic
+          done
 
   # Assemble final bytes, generate the npm-shipped digest manifest, and pack
   # npm exactly once. Every later job consumes this immutable bundle.
@@ -303,30 +369,37 @@ jobs:
       - build-local-artifacts
       - build-global-artifacts
       - build-wheel
+      - smoke-wheel
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
 
+      - name: Install pinned release Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable action
+        with:
+          toolchain: '1.93.1'
+
       - name: Download final native artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: artifacts-build-*
           path: release-bundle
           merge-multiple: true
 
-      - name: Download final wheel
-        uses: actions/download-artifact@v7
+      - name: Download final wheels
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: wheels
+          pattern: wheel-*
           path: release-bundle
+          merge-multiple: true
 
       - name: Remove internal dist manifests
         run: rm -f release-bundle/*-dist-manifest.json
@@ -334,6 +407,14 @@ jobs:
       - name: Validate tag and package version parity
         run: node scripts/validate-native-manifest.cjs --versions-only --tag "${{ github.ref_name }}"
         working-directory: npm/schemalint
+
+      - name: Stage and reproduce the crates.io package bytes
+        run: |
+          set -euo pipefail
+          cargo package --locked -p schemalint
+          cp target/package/schemalint-*.crate release-bundle/
+          cargo package --locked -p schemalint
+          cmp target/package/schemalint-*.crate release-bundle/schemalint-*.crate
 
       - name: Generate immutable native manifest from final archives
         run: node scripts/generate-native-manifest.cjs ../../release-bundle native-manifest.json
@@ -348,7 +429,7 @@ jobs:
         working-directory: npm/schemalint
 
       - name: Upload immutable release bundle
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: release-bundle
           path: release-bundle/*
@@ -372,14 +453,14 @@ jobs:
             target: x86_64-pc-windows-msvc
             ext: zip
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
       - name: Download immutable release bundle
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: release-bundle
           path: release-bundle
@@ -433,16 +514,6 @@ jobs:
           & $bin.FullName check test-schema.json --profile openai.so.2026-04-30
           if ($LASTEXITCODE -ne 0) { throw "schemalint check failed (exit $LASTEXITCODE)" }
 
-      - name: Smoke-test Python wheel (ubuntu only)
-        if: ${{ matrix.os == 'ubuntu-latest' }}
-        shell: bash
-        run: |
-          set -e
-          pip install release-bundle/*.whl
-          schemalint --version
-          echo '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false}' > test-schema.json
-          schemalint check test-schema.json --profile openai.so.2026-04-30
-
       - name: Verify staged npm tarball inventory (ubuntu only)
         if: ${{ matrix.os == 'ubuntu-latest' }}
         shell: bash
@@ -464,29 +535,71 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable action
+        with:
+          toolchain: '1.93.1'
 
       - name: Cache cargo dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
+
+      - name: Download staged crates.io package
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-bundle
+          path: release-bundle
+
+      - name: Verify any existing crates.io artifact before reuse
+        id: existing_crate
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! curl --fail --silent \
+            "https://crates.io/api/v1/crates/schemalint/$VERSION" -o crate.json; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          EXPECTED=$(sha256sum release-bundle/schemalint-*.crate | cut -d' ' -f1)
+          ACTUAL=$(jq -r '.version.checksum' crate.json)
+          test "$ACTUAL" = "$EXPECTED"
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+
+      # Cargo's public publish command does not accept a prebuilt .crate path;
+      # pin Cargo, prove its deterministic repack matches the staged bytes, and
+      # enforce exact registry digest readback after publication.
+      - name: Prove pinned Cargo recreates the staged package
+        if: ${{ steps.existing_crate.outputs.exists != 'true' }}
+        run: |
+          cargo package --locked -p schemalint
+          cmp target/package/schemalint-*.crate release-bundle/schemalint-*.crate
 
       - name: Authenticate to crates.io via OIDC (trusted publishing)
-        uses: rust-lang/crates-io-auth-action@v1
+        if: ${{ steps.existing_crate.outputs.exists != 'true' }}
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
         id: auth
 
       - name: Publish schemalint
+        if: ${{ steps.existing_crate.outputs.exists != 'true' }}
         run: |
+          set -euo pipefail
           published=false
           for i in 1 2 3; do
-            out=$(cargo publish -p schemalint 2>&1) && { published=true; echo "$out"; break; }
+            out=$(cargo publish --locked -p schemalint 2>&1) && { published=true; echo "$out"; break; }
             echo "$out"
             if echo "$out" | grep -qiE "already (uploaded|exists)"; then
-              echo "crate version already published; treating as success"
-              published=true; break
+              VERSION="${GITHUB_REF_NAME#v}"
+              EXPECTED=$(sha256sum release-bundle/schemalint-*.crate | cut -d' ' -f1)
+              ACTUAL=$(curl --fail --silent \
+                "https://crates.io/api/v1/crates/schemalint/$VERSION" | jq -r '.version.checksum')
+              test "$ACTUAL" = "$EXPECTED"
+              echo "crate version already published with identical bytes"
+              published=true
+              break
             fi
             echo "cargo publish attempt $i failed, retrying in 10s..."
             sleep 10
@@ -503,19 +616,20 @@ jobs:
     needs:
       - prepare-release
       - smoke-npm
-    # PyPI publishing is gated off (skipped, not failed) so the release stays green
-    # without a PYPI_TOKEN. To enable: wire trusted publishing like publish-npm
-    # (id-token: write + remove the password line + add a pypi pending publisher),
-    # then set repo variable PUBLISH_PYPI=true.
+    # PyPI is an explicit channel. Enable it only after configuring this
+    # environment as a trusted publisher and setting PUBLISH_PYPI=true.
     if: ${{ startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_PYPI == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
     environment:
       name: pypi
       url: https://pypi.org/project/schemalint/
     steps:
       - name: Download wheel artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: release-bundle
           path: release-bundle
@@ -525,10 +639,32 @@ jobs:
           mkdir pypi-dist
           cp release-bundle/*.whl pypi-dist/
 
+      - name: Verify any existing PyPI artifact before reuse
+        id: existing_pypi
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! curl --fail --silent "https://pypi.org/pypi/schemalint/$VERSION/json" -o pypi.json; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          test "$(find pypi-dist -maxdepth 1 -name '*.whl' | wc -l | tr -d ' ')" = \
+            "$(jq '.urls | length' pypi.json)"
+          for WHEEL in pypi-dist/*.whl; do
+            FILENAME=$(basename "$WHEEL")
+            EXPECTED=$(sha256sum "$WHEEL" | cut -d' ' -f1)
+            ACTUAL=$(jq -r --arg filename "$FILENAME" \
+              '.urls[] | select(.filename == $filename) | .digests.sha256' pypi.json)
+            test -n "$ACTUAL"
+            test "$ACTUAL" = "$EXPECTED"
+          done
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        if: ${{ steps.existing_pypi.outputs.exists != 'true' }}
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
-          password: ${{ secrets.PYPI_TOKEN }}
           packages-dir: pypi-dist/
           skip-existing: true
 
@@ -543,25 +679,49 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
           fetch-depth: 0
 
       - name: Download immutable release bundle
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: release-bundle
           path: release-artifacts
 
+      - name: Refuse to replace an existing release bundle
+        id: existing_release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir existing-release
+          gh release download "$GITHUB_REF_NAME" --dir existing-release
+          test "$(find release-artifacts -maxdepth 1 -type f | wc -l)" = \
+            "$(find existing-release -maxdepth 1 -type f | wc -l)"
+          for LOCAL in release-artifacts/*; do
+            REMOTE="existing-release/$(basename "$LOCAL")"
+            test -f "$REMOTE"
+            cmp "$LOCAL" "$REMOTE"
+          done
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        if: ${{ steps.existing_release.outputs.exists != 'true' }}
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
             release-artifacts/*
           generate_release_notes: true
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
+          overwrite_files: false
 
   # Smoke-test npm wrapper auto-download (requires GitHub Release to exist)
   smoke-npm:
@@ -575,17 +735,21 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
       SCHEMALINT_CACHE_DIR: ${{ github.workspace }}/schemalint-cache
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
 
       - name: Download the exact staged npm tarball
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: release-bundle
           path: release-bundle
@@ -600,6 +764,13 @@ jobs:
           schemalint --version
           echo '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false}' > test-schema.json
           schemalint check test-schema.json --profile openai.so.2026-04-30
+
+      - name: Smoke packed structured-output SDK consumers (ubuntu only)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        shell: bash
+        run: |
+          node scripts/smoke-packed-sdk-consumers.cjs \
+            release-bundle/*.tgz current "$(command -v schemalint)"
 
   # Publish all npm packages
   publish-npm:
@@ -619,7 +790,7 @@ jobs:
       url: https://www.npmjs.com/package/@1nder-labs/schemalint
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
@@ -628,7 +799,7 @@ jobs:
         run: npm install -g npm@11.6.2
 
       - name: Download the exact staged npm tarball
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: release-bundle
           path: release-bundle
@@ -660,12 +831,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
 
       - name: Download staged artifacts for digest readback
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: release-bundle
           path: release-bundle
@@ -678,9 +849,28 @@ jobs:
           EXPECTED="sha512-$(openssl dgst -sha512 -binary release-bundle/*.tgz | openssl base64 -A)"
           test "$(npm view "@1nder-labs/schemalint@$VERSION" dist.integrity)" = "$EXPECTED"
 
-      - name: Read back crates.io version
-        run: curl --fail --silent "https://crates.io/api/v1/crates/schemalint/${GITHUB_REF_NAME#v}" > /dev/null
+      - name: Read back crates.io exact package digest
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          EXPECTED=$(sha256sum release-bundle/schemalint-*.crate | cut -d' ' -f1)
+          ACTUAL=$(curl --fail --silent \
+            "https://crates.io/api/v1/crates/schemalint/$VERSION" | jq -r '.version.checksum')
+          test "$ACTUAL" = "$EXPECTED"
 
-      - name: Read back PyPI version when published
+      - name: Read back PyPI exact wheel digest when published
         if: ${{ needs.publish-pypi.result == 'success' }}
-        run: curl --fail --silent "https://pypi.org/pypi/schemalint/${GITHUB_REF_NAME#v}/json" > /dev/null
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          curl --fail --silent "https://pypi.org/pypi/schemalint/$VERSION/json" -o pypi.json
+          test "$(find release-bundle -maxdepth 1 -name '*.whl' | wc -l | tr -d ' ')" = \
+            "$(jq '.urls | length' pypi.json)"
+          for WHEEL in release-bundle/*.whl; do
+            FILENAME=$(basename "$WHEEL")
+            EXPECTED=$(sha256sum "$WHEEL" | cut -d' ' -f1)
+            ACTUAL=$(jq -r --arg filename "$FILENAME" \
+              '.urls[] | select(.filename == $filename) | .digests.sha256' pypi.json)
+            test -n "$ACTUAL"
+            test "$ACTUAL" = "$EXPECTED"
+          done

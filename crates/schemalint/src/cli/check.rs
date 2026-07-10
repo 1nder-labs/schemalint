@@ -7,7 +7,9 @@ use rayon::prelude::*;
 use crate::cache::{hash_bytes, Cache};
 use crate::cli::args::{CheckArgs, OutputFormat};
 use crate::cli::discover;
-use crate::cli::pipeline::{build_report, build_rulesets, check_rulesets, emit_output};
+use crate::cli::pipeline::{
+    build_report, build_rulesets, check_rulesets, emit_failure, emit_output, raw_check_result,
+};
 use crate::normalize::normalize;
 use crate::rules::registry::Diagnostic;
 
@@ -15,6 +17,13 @@ use super::load_profiles_from_ids;
 
 pub(super) fn run_check(args: CheckArgs) -> i32 {
     let start = std::time::Instant::now();
+    let format = args.format.unwrap_or_else(|| {
+        if std::io::stdout().is_terminal() {
+            OutputFormat::Human
+        } else {
+            OutputFormat::Json
+        }
+    });
     let mut profile_args: Vec<String> = args
         .profiles
         .iter()
@@ -36,38 +45,47 @@ pub(super) fn run_check(args: CheckArgs) -> i32 {
     let profiles = match load_profiles_from_ids(&profile_args) {
         Ok(profiles) => profiles,
         Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "profiles",
+                e.to_string(),
+                vec![],
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
+    let profile_names: Vec<String> = profiles
+        .iter()
+        .map(|profile| profile.name.clone())
+        .collect();
 
     let profile_rulesets = match build_rulesets(&profiles) {
         Ok(rulesets) => rulesets,
         Err(e) => {
-            eprintln!("error: failed to construct profile rules: {e}");
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "profiles",
+                format!("failed to construct profile rules: {e}"),
+                profile_names,
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
-
-    let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
-
-    // -----------------------------------------------------------------------
-    // Determine output format
-    // -----------------------------------------------------------------------
-    let format = args.format.unwrap_or_else(|| {
-        if std::io::stdout().is_terminal() {
-            OutputFormat::Human
-        } else {
-            OutputFormat::Json
-        }
-    });
 
     // -----------------------------------------------------------------------
     // Discover schema files
     // -----------------------------------------------------------------------
     if args.paths.is_empty() {
-        eprintln!("error: no schema files or directories provided");
-        return 1;
+        return emit_failure(
+            format,
+            args.output.as_deref(),
+            "input",
+            "no schema files or directories provided",
+            profile_names,
+            start.elapsed().as_millis() as u64,
+        );
     }
     let discovery = discover::discover(&args.paths, &args.excludes);
 
@@ -114,14 +132,15 @@ pub(super) fn run_check(args: CheckArgs) -> i32 {
     // -----------------------------------------------------------------------
     // Aggregate results
     // -----------------------------------------------------------------------
+    let check_results = results
+        .into_iter()
+        .map(|(path, result)| raw_check_result(path, String::new(), result, &profile_names))
+        .collect();
     let report = build_report(
         discovery.coverage,
         discovery.failures,
         vec![],
-        results
-            .into_iter()
-            .map(|(path, result)| (path, String::new(), result))
-            .collect(),
+        check_results,
         profile_names,
         Some(start.elapsed().as_millis() as u64),
     );

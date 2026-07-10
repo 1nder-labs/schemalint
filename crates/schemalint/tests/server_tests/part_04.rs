@@ -77,6 +77,58 @@ export const Bad = z.object({ website: z.string().url() });
     assert!(status.success());
 }
 
+#[test]
+fn server_check_node_omitted_profiles_uses_per_target_provider() {
+    let tmp = TempDir::new().unwrap();
+    setup_ts_project(
+        tmp.path(),
+        &[(
+            "openai.ts",
+            r#"import { z } from "zod";
+import { zodResponseFormat } from "openai/helpers/zod";
+const Bad = z.object({ website: z.string().url() });
+zodResponseFormat(Bad, "response");
+"#,
+        )],
+    );
+
+    let mut child = cmd()
+        .current_dir(tmp.path())
+        .arg("server")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("should spawn server");
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "checkNode",
+        "params": {"sources": ["src/**/*.ts"], "format": "json"},
+        "id": 5
+    });
+
+    let response = send_request(&mut child, &request.to_string());
+    let result = &response["result"];
+    assert_eq!(result["success"], false, "{result}");
+    assert_eq!(result["report"]["coverage"]["status"], "complete");
+    assert_eq!(result["report"]["targets"][0]["provider"]["provider"], "openai");
+    assert_eq!(
+        result["report"]["targets"][0]["effective_profiles"][0],
+        "openai.so.2026-04-30"
+    );
+    let output: serde_json::Value =
+        serde_json::from_str(result["output"].as_str().unwrap()).unwrap();
+    assert!(output["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "OAI-K-format-restricted"));
+
+    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 6});
+    let _ = send_request(&mut child, &shutdown.to_string());
+    assert!(child.wait().unwrap().success());
+}
+
 // ---------------------------------------------------------------------------
 // checkNode — clean schema: no diagnostics
 // ---------------------------------------------------------------------------
@@ -186,7 +238,7 @@ fn server_check_node_missing_sources_returns_error() {
 }
 
 #[test]
-fn server_check_node_missing_profiles_returns_error() {
+fn server_check_node_empty_profiles_returns_error() {
     let mut child = cmd()
         .arg("server")
         .stdin(Stdio::piped())
@@ -199,7 +251,8 @@ fn server_check_node_missing_profiles_returns_error() {
         "jsonrpc": "2.0",
         "method": "checkNode",
         "params": {
-            "sources": ["src/**/*.ts"]
+            "sources": ["src/**/*.ts"],
+            "profiles": []
         },
         "id": 22
     });

@@ -42,6 +42,40 @@ expression: "normalize_temp_paths(&stdout, dir.path())"
     },
     "failures": [],
     "success": false,
+    "targets": [
+      {
+        "canonical_kind": "json-schema",
+        "effective_profiles": [
+          "test"
+        ],
+        "envelope": {},
+        "module_path": "[TEMP_DIR]/a.json",
+        "name": "",
+        "provider": {
+          "certainty": "ambiguous"
+        },
+        "status": "checked",
+        "usage_span": {
+          "file": "[TEMP_DIR]/a.json"
+        }
+      },
+      {
+        "canonical_kind": "json-schema",
+        "effective_profiles": [
+          "test"
+        ],
+        "envelope": {},
+        "module_path": "[TEMP_DIR]/b.json",
+        "name": "",
+        "provider": {
+          "certainty": "ambiguous"
+        },
+        "status": "checked",
+        "usage_span": {
+          "file": "[TEMP_DIR]/b.json"
+        }
+      }
+    ],
     "warnings": []
   }
 }

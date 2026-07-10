@@ -114,11 +114,13 @@ fn cli_missing_profile_file() {
         .arg("check")
         .arg("--profile")
         .arg("nonexistent.toml")
+        .arg("--format")
+        .arg("human")
         .arg(&schema)
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("failed to read profile"));
+        .stdout(predicate::str::contains("failed to read profile"));
 }
 
 #[test]
@@ -133,6 +135,8 @@ fn cli_invalid_json_schema() {
         .arg("check")
         .arg("--profile")
         .arg(&profile)
+        .arg("--format")
+        .arg("human")
         .arg(&schema)
         .assert()
         .failure()
@@ -152,11 +156,13 @@ fn cli_invalid_profile_toml() {
         .arg("check")
         .arg("--profile")
         .arg(&profile)
+        .arg("--format")
+        .arg("human")
         .arg(&schema)
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("failed to load profile"));
+        .stdout(predicate::str::contains("failed to load profile"));
 }
 
 #[test]
@@ -282,10 +288,47 @@ fn cli_no_paths_provided() {
         .arg("check")
         .arg("--profile")
         .arg(&profile)
+        .arg("--format")
+        .arg("human")
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("no schema files"));
+        .stdout(predicate::str::contains("no schema files"));
+}
+
+#[test]
+fn early_profile_failures_emit_json_1_1_for_every_check_command() {
+    let cases = [
+        vec!["check", "--profile", "missing-profile", "schema.json"],
+        vec![
+            "check-node",
+            "--source",
+            "src/**/*.ts",
+            "--profile",
+            "missing-profile",
+        ],
+        vec![
+            "check-python",
+            "--package",
+            "models",
+            "--profile",
+            "missing-profile",
+        ],
+    ];
+
+    for arguments in cases {
+        let output = cmd()
+            .args(arguments)
+            .args(["--format", "json"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(payload["schema_version"], "1.1");
+        assert_eq!(payload["report"]["success"], false);
+        assert_eq!(payload["report"]["coverage"]["status"], "failed");
+        assert!(!payload["report"]["failures"].as_array().unwrap().is_empty());
+    }
 }
 
 // ---------------------------------------------------------------------------

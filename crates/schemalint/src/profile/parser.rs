@@ -48,7 +48,7 @@ pub struct Restriction {
 
 /// Structural limits from the profile `[structural]` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct StructuralLimits {
     pub require_object_root: bool,
     pub require_additional_properties_false: bool,

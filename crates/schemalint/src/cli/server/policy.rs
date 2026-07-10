@@ -8,11 +8,17 @@ use crate::rules::RuleSet;
 use super::ProfileCache;
 
 pub(super) fn output_format(params: &Value) -> Result<OutputFormat, Value> {
-    match params
-        .get("format")
-        .and_then(Value::as_str)
-        .unwrap_or("json")
-    {
+    let format = match params.get("format") {
+        None => "json",
+        Some(Value::String(format)) => format,
+        Some(_) => {
+            return Err(json!({
+                "success": false,
+                "error": "Invalid 'format' parameter (expected string)"
+            }))
+        }
+    };
+    match format {
         "human" => Ok(OutputFormat::Human),
         "json" => Ok(OutputFormat::Json),
         "sarif" => Ok(OutputFormat::Sarif),
@@ -25,18 +31,33 @@ pub(super) fn output_format(params: &Value) -> Result<OutputFormat, Value> {
     }
 }
 
-pub(super) fn required_string_array(params: &Value, key: &str) -> Option<Vec<String>> {
-    params.get(key).and_then(Value::as_array).map(|values| {
-        values
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect()
-    })
+pub(super) fn required_string_array(params: &Value, key: &str) -> Result<Vec<String>, Value> {
+    let values = params
+        .get(key)
+        .ok_or_else(|| json!({"success": false, "error": format!("Missing '{key}' parameter")}))?
+        .as_array()
+        .ok_or_else(|| {
+            json!({"success": false, "error": format!("Invalid '{key}' parameter (expected string array)")})
+        })?;
+    if !values.iter().all(Value::is_string) {
+        return Err(json!({
+            "success": false,
+            "error": format!("Invalid '{key}' parameter (expected string array)")
+        }));
+    }
+    Ok(values
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect())
 }
 
-pub(super) fn string_array(params: &Value, key: &str) -> Vec<String> {
-    required_string_array(params, key).unwrap_or_default()
+pub(super) fn optional_string_array(params: &Value, key: &str) -> Result<Vec<String>, Value> {
+    if params.get(key).is_none() {
+        Ok(Vec::new())
+    } else {
+        required_string_array(params, key)
+    }
 }
 
 pub(super) fn load_profiles(

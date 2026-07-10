@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import { buildRootSourceMap, buildSourceMapFromObjectLiteral, findZObjectCall, hasExportModifier, } from './discover_ast.js';
-import { resolveVariableDeclaration, } from './target_resolution.js';
+import { resolveVariableDeclaration } from './static_expression.js';
 export function resolveTarget(target, checker, tsModule, compilerOptions) {
     const expr = skipParens(target.expression, tsModule);
     const sourceFile = target.sourceFile;

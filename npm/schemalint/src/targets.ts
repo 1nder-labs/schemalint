@@ -16,6 +16,7 @@ import {
   type TargetExpression,
   type TargetMetadata,
 } from './target_resolution.js';
+import { unambiguousExpression } from './static_expression.js';
 import type { EnvelopeField, SdkAdapter } from './sdk_adapters.js';
 
 export type { SchemaTarget } from './target_emit.js';
@@ -82,7 +83,6 @@ export function findSchemaTargets(
     );
   }
 
-  inferSingleProvider(targets);
   return { targets, failures };
 }
 
@@ -206,11 +206,16 @@ function schemaExpression(
         checker,
         tsModule
       );
-      if (found) return found;
+      const stable = unambiguousExpression(found, checker, tsModule);
+      if (stable) return stable;
     }
     return undefined;
   }
-  return call.arguments[adapter.schema.argument];
+  return unambiguousExpression(
+    call.arguments[adapter.schema.argument],
+    checker,
+    tsModule
+  );
 }
 
 function pushTarget(
@@ -223,22 +228,6 @@ function pushTarget(
   if (seen.has(key)) return;
   seen.add(key);
   targets.push(resolved);
-}
-
-function inferSingleProvider(targets: SchemaTarget[]): void {
-  const providers = new Set(
-    targets
-      .filter((target) => target.provider.certainty === 'definitive')
-      .map((target) => target.provider.provider)
-      .filter((provider) => provider !== undefined)
-  );
-  if (providers.size !== 1) return;
-  const [provider] = providers;
-  for (const target of targets) {
-    if (target.provider.certainty === 'ambiguous') {
-      target.provider = { certainty: 'inferred', provider };
-    }
-  }
 }
 
 function formatSpan(span: { file: string; line: number; col: number }): string {

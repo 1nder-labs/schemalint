@@ -1,3 +1,4 @@
+import { resolveVariableDeclaration, sameStaticExpression, unambiguousExpression, } from './static_expression.js';
 export function pushExpressionOrCarrier(targets, carriers, api, expression, sourceFile, tsModule, explicitName, metadata) {
     const carrier = carrierExpression(api, expression, tsModule, explicitName, metadata);
     if (carrier) {
@@ -30,52 +31,31 @@ export function collectCarrierTargets(program, fileSet, checker, tsModule, carri
     }
     return targets;
 }
-export function objectExpression(expr, checker, tsModule) {
-    if (!expr)
-        return undefined;
-    const unwrapped = skipParens(expr, tsModule);
-    if (tsModule.isObjectLiteralExpression(unwrapped))
-        return unwrapped;
-    if (tsModule.isIdentifier(unwrapped)) {
-        const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
-        if (decl?.initializer) {
-            return objectExpression(decl.initializer, checker, tsModule);
-        }
-    }
-    if (tsModule.isConditionalExpression(unwrapped)) {
-        return (objectExpression(unwrapped.whenTrue, checker, tsModule) ??
-            objectExpression(unwrapped.whenFalse, checker, tsModule));
-    }
-    return undefined;
-}
 export function propertyFromExpression(expr, name, checker, tsModule) {
     if (!expr)
         return undefined;
     const unwrapped = skipParens(expr, tsModule);
     if (tsModule.isObjectLiteralExpression(unwrapped)) {
-        return propertyFromObject(unwrapped, name, checker, tsModule);
+        return unambiguousExpression(propertyFromObject(unwrapped, name, checker, tsModule), checker, tsModule);
     }
     if (tsModule.isIdentifier(unwrapped)) {
         const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
         return propertyFromExpression(decl?.initializer, name, checker, tsModule);
     }
     if (tsModule.isConditionalExpression(unwrapped)) {
-        return (propertyFromExpression(unwrapped.whenTrue, name, checker, tsModule) ??
-            propertyFromExpression(unwrapped.whenFalse, name, checker, tsModule));
+        const whenTrue = propertyFromExpression(unwrapped.whenTrue, name, checker, tsModule);
+        const whenFalse = propertyFromExpression(unwrapped.whenFalse, name, checker, tsModule);
+        return whenTrue &&
+            whenFalse &&
+            sameStaticExpression(whenTrue, whenFalse, checker, tsModule)
+            ? whenTrue
+            : undefined;
     }
     return undefined;
 }
 export function stringPropertyFromExpression(expr, name, checker, tsModule) {
     const value = propertyFromExpression(expr, name, checker, tsModule);
     return stringLiteralText(value, tsModule);
-}
-export function resolveVariableDeclaration(id, checker, tsModule) {
-    const symbol = checker.getSymbolAtLocation(id);
-    const aliased = symbol && (symbol.flags & tsModule.SymbolFlags.Alias)
-        ? checker.getAliasedSymbol(symbol)
-        : symbol;
-    const decl = aliased?.valueDeclaration ?? aliased?.declarations?.[0];
-    return decl && tsModule.isVariableDeclaration(decl) ? decl : undefined;
 }
 function carrierExpression(api, expression, tsModule, explicitName, metadata) {
     const expr = skipParens(expression, tsModule);
@@ -176,6 +156,13 @@ export function stringValueFromExpression(expr, checker, tsModule) {
     if (tsModule.isIdentifier(unwrapped)) {
         const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
         return stringValueFromExpression(decl?.initializer, checker, tsModule);
+    }
+    if (tsModule.isConditionalExpression(unwrapped)) {
+        const whenTrue = stringValueFromExpression(unwrapped.whenTrue, checker, tsModule);
+        const whenFalse = stringValueFromExpression(unwrapped.whenFalse, checker, tsModule);
+        return whenTrue !== undefined && whenTrue === whenFalse
+            ? whenTrue
+            : undefined;
     }
     return undefined;
 }

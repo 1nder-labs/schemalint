@@ -203,12 +203,15 @@ impl SubprocessClient {
             .map_err(|e| SubprocessError::RequestFailed(format!("flush error: {}", e)))?;
 
         const MAX_STALE_DRAIN: usize = 4;
+        let timeout = Duration::from_secs(DISCOVER_TIMEOUT_SECS);
+        let deadline = Instant::now() + timeout;
 
         for _ in 0..=MAX_STALE_DRAIN {
-            let line = match self
-                .stdout_rx
-                .recv_timeout(Duration::from_secs(DISCOVER_TIMEOUT_SECS))
-            {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(SubprocessError::Timeout(DISCOVER_TIMEOUT_SECS));
+            }
+            let line = match self.stdout_rx.recv_timeout(remaining) {
                 Ok(Some(line)) => line,
                 Ok(None) => {
                     return Err(SubprocessError::InvalidResponse(

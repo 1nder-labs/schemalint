@@ -198,7 +198,20 @@ fn rule_suffix(limit_name: &str) -> Option<&'static str> {
         "additional_properties_false" | "require_additional_properties_false" => {
             Some("-S-additional-properties-false")
         }
-        "allof_with_ref" => Some("-S-allof-with-ref"),
+        "require_all_properties_in_required" => Some("-S-all-properties-required"),
+        "require_array_items" => Some("-S-array-items"),
+        "forbid_root_any_of" => Some("-S-root-anyof"),
+        "forbid_root_enum" => Some("-S-root-enum"),
+        "forbid_empty_object" => Some("-S-empty-object"),
+        "max_object_depth" => Some("-S-max-depth"),
+        "max_total_properties" => Some("-S-max-total-properties"),
+        "max_total_enum_values" => Some("-S-max-enum-values"),
+        "max_string_length_total" => Some("-S-string-length-budget"),
+        "enum_string_length_budget" => Some("-S-enum-string-length-budget"),
+        "max_optional_properties" => Some("-S-max-optional-properties"),
+        "max_union_properties" => Some("-S-max-union-properties"),
+        "external_refs" => Some("-S-external-refs"),
+        "allof_with_ref" | "forbid_allof_with_ref" => Some("-S-allof-with-ref"),
         _ => None,
     }
 }

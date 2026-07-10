@@ -114,8 +114,8 @@ fn check_python_no_packages_no_config_errors() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("no packages specified."));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no packages specified."));
 }
 
 #[test]
@@ -128,8 +128,8 @@ fn check_python_no_profiles_errors() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("no profiles specified."));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no profiles specified."));
 }
 
 #[test]
@@ -215,8 +215,8 @@ fn check_python_invalid_pyproject_toml_errors() {
     cmd.current_dir(tmp.path());
     let output = cmd.args(["check-python"]).output().unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("invalid TOML in"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("invalid TOML in"));
 }
 
 #[test]
@@ -230,8 +230,8 @@ fn check_python_missing_pyproject_no_config_ok() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("no packages specified."));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no packages specified."));
 }
 
 // ---------------------------------------------------------------------------

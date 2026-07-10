@@ -4,7 +4,8 @@ use std::path::Path;
 use crate::cli::args::{CheckPythonArgs, OutputFormat};
 use crate::cli::discovery_policy::discover_batch;
 use crate::cli::pipeline::{
-    attach_source_spans, build_report, build_rulesets, emit_output, process_schemas, schema_entries,
+    attach_source_spans, build_report, build_rulesets, emit_failure, emit_output, process_schemas,
+    schema_entries,
 };
 use crate::cli::pyproject;
 
@@ -12,6 +13,13 @@ use super::load_profiles_from_ids;
 
 pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     let start = std::time::Instant::now();
+    let format = args.format.unwrap_or_else(|| {
+        if std::io::stdout().is_terminal() {
+            OutputFormat::Human
+        } else {
+            OutputFormat::Json
+        }
+    });
 
     // -------------------------------------------------------------------
     // 1. Load pyproject.toml configuration
@@ -23,8 +31,14 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     let pyproject_config = match pyproject::load_pyproject_config(config_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "config",
+                e.to_string(),
+                vec![],
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
 
@@ -62,17 +76,25 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     };
 
     if packages.is_empty() {
-        eprintln!(
-            "error: no packages specified. Use --package or configure [tool.schemalint] in pyproject.toml"
+        return emit_failure(
+            format,
+            args.output.as_deref(),
+            "packages",
+            "no packages specified. Use --package or configure [tool.schemalint] in pyproject.toml",
+            vec![],
+            start.elapsed().as_millis() as u64,
         );
-        return 1;
     }
 
     if profile_args.is_empty() {
-        eprintln!(
-            "error: no profiles specified. Use --profile or configure [tool.schemalint] in pyproject.toml"
+        return emit_failure(
+            format,
+            args.output.as_deref(),
+            "profiles",
+            "no profiles specified. Use --profile or configure [tool.schemalint] in pyproject.toml",
+            vec![],
+            start.elapsed().as_millis() as u64,
         );
-        return 1;
     }
 
     // -------------------------------------------------------------------
@@ -81,49 +103,50 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     let profiles = match load_profiles_from_ids(&profile_args) {
         Ok(profiles) => profiles,
         Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "profiles",
+                e.to_string(),
+                vec![],
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
+    let profile_names: Vec<String> = profiles
+        .iter()
+        .map(|profile| profile.name.clone())
+        .collect();
 
     let profile_rulesets = match build_rulesets(&profiles) {
         Ok(rulesets) => rulesets,
         Err(e) => {
-            eprintln!("error: failed to construct profile rules: {e}");
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "profiles",
+                format!("failed to construct profile rules: {e}"),
+                profile_names,
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
 
-    let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
-
     // -------------------------------------------------------------------
-    // 4. Determine output format
+    // 5. Discover packages in isolated helpers. User import hangs or protocol
+    //    failures cannot poison continuation for later packages.
     // -------------------------------------------------------------------
-    let format = args.format.unwrap_or_else(|| {
-        if std::io::stdout().is_terminal() {
-            OutputFormat::Human
-        } else {
-            OutputFormat::Json
-        }
-    });
-
-    // -------------------------------------------------------------------
-    // 5. Spawn Python helper and discover models
-    // -------------------------------------------------------------------
-    let mut helper = match crate::python::PythonHelper::spawn(args.python_path.as_deref()) {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
-        }
-    };
-
     let discovery = discover_batch(
         &packages,
         &exclude_globs,
         args.continue_on_discovery_error,
         "package",
-        |package, exclusions| helper.discover_with_exclusions(package, exclusions),
+        |package, exclusions| {
+            let mut helper = crate::python::PythonHelper::spawn(args.python_path.as_deref())?;
+            let result = helper.discover_with_exclusions(package, exclusions);
+            helper.shutdown();
+            result
+        },
     );
     for failure in &discovery.failures {
         eprintln!(
@@ -135,8 +158,6 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
         eprintln!("warning: {}: {}", warning.target, warning.message);
     }
 
-    helper.shutdown();
-
     if discovery.models.is_empty() {
         eprintln!("warning: no Pydantic models discovered in packages");
     }
@@ -144,12 +165,15 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
-    let results = process_schemas(schema_entries(&discovery.models), &profile_rulesets);
+    let results = process_schemas(
+        schema_entries(&discovery.models, &profile_names),
+        &profile_rulesets,
+    );
 
     // -------------------------------------------------------------------
     // 7. Attach source spans from discovery
     // -------------------------------------------------------------------
-    let all_diagnostics = attach_source_spans(results, &discovery.models);
+    let all_diagnostics = attach_source_spans(results);
 
     // -------------------------------------------------------------------
     // 8. Aggregate results

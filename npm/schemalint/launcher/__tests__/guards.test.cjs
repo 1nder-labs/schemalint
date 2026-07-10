@@ -10,6 +10,7 @@ const { assertAllowedUrl, redirectUrl } = require('../download.cjs');
 const {
   assertSafeArchivePath,
   findBinaryInDir,
+  getSystemPowerShellPath,
   selectExtractedBinary,
 } = require('../extract.cjs');
 
@@ -32,4 +33,17 @@ test('archive paths and extracted binary selection reject traversal and links', 
   fs.symlinkSync(outside, path.join(dir, 'schemalint'));
   assert.deepEqual(findBinaryInDir(dir, 'schemalint', 3), []);
   assert.throws(() => selectExtractedBinary(dir, 'schemalint'), /found 0/);
+});
+
+test('Windows extraction resolves PowerShell from the absolute system directory', () => {
+  const executable = getSystemPowerShellPath({ SystemRoot: 'D:\\Windows' });
+  assert.equal(
+    executable,
+    'D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+  );
+  assert(path.win32.isAbsolute(executable));
+  assert.throws(
+    () => getSystemPowerShellPath({ SystemRoot: '.\\Windows' }),
+    /must be absolute/
+  );
 });

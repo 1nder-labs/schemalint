@@ -27,11 +27,25 @@ function validateTarEntries(archivePath) {
   }
 }
 
+function getSystemPowerShellPath(environment = process.env) {
+  const systemRoot = environment.SystemRoot || environment.WINDIR || 'C:\\Windows';
+  if (!path.win32.isAbsolute(systemRoot)) {
+    throw new Error(`Windows system root must be absolute: ${systemRoot}`);
+  }
+  return path.win32.join(
+    systemRoot,
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe'
+  );
+}
+
 function extractArchive(archivePath, destination, platform = process.platform) {
   let result;
   if (platform === 'win32') {
     result = spawnSync(
-      'powershell',
+      getSystemPowerShellPath(),
       ['-NoProfile', '-Command', 'Expand-Archive', '-LiteralPath', archivePath,
         '-DestinationPath', destination],
       { encoding: 'utf8' }
@@ -94,6 +108,7 @@ module.exports = {
   assertSafeArchivePath,
   extractArchive,
   findBinaryInDir,
+  getSystemPowerShellPath,
   selectExtractedBinary,
   validateTarEntries,
 };

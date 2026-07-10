@@ -74,16 +74,30 @@ python scripts/validation/compare_with_openai.py schema_03.json
 
 ### `probe_limits.py`
 
-Runs opt-in boundary probes and writes a dated JSON artifact. The retained
-`probe_limits_2026-06-16.json` result proves inline object nesting at 10 levels
-is accepted and 11 is rejected. It does not contain local `$ref` chain cases,
-so it is not evidence for semantic reference-depth enforcement. Add explicit
-10/11-hop and cyclic local-reference cases before changing the `$ref` rule.
+Runs opt-in boundary probes for inline nesting, 10/11-hop local `$ref` chains,
+self/mutual local-reference cycles, and enum string budgets. Live calls require
+an explicit flag:
+
+```bash
+# Defaults to results/probe_limits_$(date +%Y-%m-%d).json
+python scripts/validation/probe_limits.py --live
+
+# Caller-selected evidence path
+python scripts/validation/probe_limits.py --live \
+    --output scripts/validation/results/probe_limits_review.json
+```
+
+The retained `probe_limits_2026-06-16.json` result (restored from historical
+evidence commit `55d4264`) proves only its recorded
+inline-depth and enum cases. It predates the local-reference probes and remains
+insufficient evidence for reference-depth or cycle semantics until a fresh live
+artifact is deliberately generated.
 
 Missing credentials and transport/authentication failures are infrastructure
-failures: they do not block ordinary CI and must never be recorded as provider
-acceptance or rejection. A dated result is required only before merging a rule
-whose semantics depend on the live probe.
+failures: the probe stops, exits non-zero, and writes no artifact. Only actual
+provider acceptance/schema rejection verdicts enter evidence files. These
+manual probes do not run in ordinary CI. A dated result is required only before
+merging a rule whose semantics depend on the live probe.
 
 ### `check_drift.py`
 

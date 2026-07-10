@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::ingest::{EnvelopeField, ProviderResolution};
+use crate::rules::registry::SourceSpan;
 use crate::rules::Diagnostic;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -60,10 +63,34 @@ pub struct ReportMessage {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TargetStatus {
+    Checked,
+    Failed,
+}
+
+/// One schema usage covered by a run.
+///
+/// This stays separate from diagnostics: a clean target still needs durable
+/// attribution proving which provider/profile contract was actually checked.
+#[derive(Debug, Clone, Serialize)]
+pub struct TargetReport {
+    pub name: String,
+    pub module_path: String,
+    pub canonical_kind: String,
+    pub provider: ProviderResolution,
+    pub effective_profiles: Vec<String>,
+    pub envelope: BTreeMap<String, EnvelopeField>,
+    pub usage_span: Option<SourceSpan>,
+    pub status: TargetStatus,
+}
+
 pub struct CheckReport {
     pub coverage: CoverageCounts,
     pub failures: Vec<ReportMessage>,
     pub warnings: Vec<ReportMessage>,
+    pub targets: Vec<TargetReport>,
     pub diagnostics: Vec<(PathBuf, Vec<Diagnostic>)>,
     pub total_errors: usize,
     pub total_warnings: usize,
@@ -97,6 +124,7 @@ impl CheckReport {
             },
             "failures": self.failures,
             "warnings": self.warnings,
+            "targets": self.targets,
         })
     }
 

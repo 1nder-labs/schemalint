@@ -1,4 +1,7 @@
-use schemalint::profiles::{ANTHROPIC_TRUTH, OPENAI_TRUTH};
+use schemalint::profile::load;
+use schemalint::profiles::{
+    ANTHROPIC_SO_2026_04_30, ANTHROPIC_TRUTH, OPENAI_SO_2026_04_30, OPENAI_TRUTH,
+};
 use schemalint_conformance::{
     evaluate, evaluate_keyword_truth, evaluate_provider, evaluate_structural_truth, parse_truth,
     InfrastructureFailureKind, LiveRefreshState,
@@ -138,62 +141,36 @@ fn every_keyword_has_test_schema() {
 }
 
 #[test]
-fn truth_keywords_cover_profile_keywords() {
-    use std::collections::HashSet;
+fn truth_keywords_exactly_match_profile_keywords_and_restrictions() {
+    use std::collections::BTreeSet;
 
-    let truth = parse_truth(OPENAI_TRUTH).unwrap();
-    let truth_keywords: HashSet<&str> = truth.keywords.iter().map(|k| k.name.as_str()).collect();
-
-    // Every keyword in the profile should have a truth entry.
-    let profile_keywords: &[&str] = &[
-        "type",
-        "properties",
-        "required",
-        "additionalProperties",
-        "items",
-        "prefixItems",
-        "minItems",
-        "maxItems",
-        "uniqueItems",
-        "contains",
-        "minimum",
-        "maximum",
-        "exclusiveMinimum",
-        "exclusiveMaximum",
-        "multipleOf",
-        "minLength",
-        "maxLength",
-        "pattern",
-        "format",
-        "enum",
-        "const",
-        "patternProperties",
-        "unevaluatedProperties",
-        "propertyNames",
-        "minProperties",
-        "maxProperties",
-        "description",
-        "title",
-        "default",
-        "discriminator",
-        "$ref",
-        "$defs",
-        "definitions",
-        "anyOf",
-        "allOf",
-        "oneOf",
-        "not",
-        "if",
-        "then",
-        "else",
-        "dependentRequired",
-        "dependentSchemas",
-    ];
-
-    for kw in profile_keywords {
-        assert!(
-            truth_keywords.contains(kw),
-            "OpenAI truth file missing keyword: {kw}"
+    for (profile_source, truth_source) in [
+        (OPENAI_SO_2026_04_30, OPENAI_TRUTH),
+        (ANTHROPIC_SO_2026_04_30, ANTHROPIC_TRUTH),
+    ] {
+        let profile = load(profile_source.as_bytes()).unwrap();
+        let truth = parse_truth(truth_source).unwrap();
+        let truth_keywords: BTreeSet<&str> = truth
+            .keywords
+            .iter()
+            .map(|keyword| keyword.name.as_str())
+            .collect();
+        assert_eq!(
+            truth_keywords.len(),
+            truth.keywords.len(),
+            "{} truth file contains duplicate keywords",
+            profile.name
+        );
+        let profile_keywords: BTreeSet<&str> = profile
+            .keyword_map
+            .keys()
+            .chain(profile.restrictions.keys())
+            .map(|keyword| keyword.as_str())
+            .collect();
+        assert_eq!(
+            truth_keywords, profile_keywords,
+            "{} truth/profile keyword parity drift",
+            profile.name
         );
     }
 }

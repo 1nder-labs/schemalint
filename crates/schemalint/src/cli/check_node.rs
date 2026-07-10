@@ -1,20 +1,26 @@
 use std::io::IsTerminal;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::cli::args::{CheckNodeArgs, OutputFormat};
 use crate::cli::discovery_policy::discover_batch;
 use crate::cli::node_config;
+use crate::cli::node_policy::{automatic_profile_ids, process_node_targets};
 use crate::cli::pipeline::{
-    append_envelope_diagnostics, attach_source_spans, build_report, build_rulesets, emit_output,
-    process_schemas, schema_entries,
+    append_envelope_diagnostics, attach_source_spans, build_report, build_rulesets, emit_failure,
+    emit_output, process_schemas, schema_entries,
 };
-use crate::ingest::{DiscoveredModel, Provider, ProviderResolution};
-use crate::rules::registry::RuleSet;
 
-use super::{load_profiles_from_ids, ANTHROPIC_PROFILE_ID, OPENAI_PROFILE_ID};
+use super::load_profiles_from_ids;
 
 pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     let start = std::time::Instant::now();
+    let format = args.format.unwrap_or_else(|| {
+        if std::io::stdout().is_terminal() {
+            OutputFormat::Human
+        } else {
+            OutputFormat::Json
+        }
+    });
 
     // -------------------------------------------------------------------
     // 1. Load package.json configuration
@@ -26,8 +32,14 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     let node_config = match node_config::load_node_config(config_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "config",
+                e.to_string(),
+                vec![],
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
 
@@ -65,10 +77,14 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     };
 
     if sources.is_empty() {
-        eprintln!(
-            "error: no sources specified. Use --source or configure \"schemalint\" in package.json"
+        return emit_failure(
+            format,
+            args.output.as_deref(),
+            "sources",
+            "no sources specified. Use --source or configure \"schemalint\" in package.json",
+            vec![],
+            start.elapsed().as_millis() as u64,
         );
-        return 1;
     }
 
     let explicit_profiles = if profile_args.is_empty() {
@@ -77,40 +93,33 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
         match load_profiles_from_ids(&profile_args) {
             Ok(profiles) => Some(profiles),
             Err(e) => {
-                eprintln!("error: {}", e);
-                return 1;
+                return emit_failure(
+                    format,
+                    args.output.as_deref(),
+                    "profiles",
+                    e.to_string(),
+                    vec![],
+                    start.elapsed().as_millis() as u64,
+                );
             }
         }
     };
 
     // -------------------------------------------------------------------
-    // 3. Determine output format
+    // 4. Discover schemas in isolated helpers. One wedged source cannot poison
+    //    continuation for later sources on the serial JSON-RPC transport.
     // -------------------------------------------------------------------
-    let format = args.format.unwrap_or_else(|| {
-        if std::io::stdout().is_terminal() {
-            OutputFormat::Human
-        } else {
-            OutputFormat::Json
-        }
-    });
-
-    // -------------------------------------------------------------------
-    // 4. Spawn Node helper and discover schemas
-    // -------------------------------------------------------------------
-    let mut helper = match crate::node::NodeHelper::spawn(args.node_path.as_deref()) {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
-        }
-    };
-
     let discovery = discover_batch(
         &sources,
         &exclude_globs,
         args.continue_on_discovery_error,
         "source",
-        |source, exclusions| helper.discover_with_exclusions(source, exclusions),
+        |source, exclusions| {
+            let mut helper = crate::node::NodeHelper::spawn(args.node_path.as_deref())?;
+            let result = helper.discover_with_exclusions(source, exclusions);
+            helper.shutdown();
+            result
+        },
     );
     for failure in &discovery.failures {
         eprintln!(
@@ -133,8 +142,6 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
         );
     }
 
-    helper.shutdown();
-
     // -------------------------------------------------------------------
     // 5. Resolve automatic profiles from per-usage ownership. Ambiguous
     //    targets are retained and become typed pipeline failures below.
@@ -155,27 +162,45 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
         None => match load_profiles_from_ids(&profile_args) {
             Ok(profiles) => profiles,
             Err(e) => {
-                eprintln!("error: {}", e);
-                return 1;
+                return emit_failure(
+                    format,
+                    args.output.as_deref(),
+                    "profiles",
+                    e.to_string(),
+                    vec![],
+                    start.elapsed().as_millis() as u64,
+                );
             }
         },
     };
 
+    let profile_names: Vec<String> = profiles
+        .iter()
+        .map(|profile| profile.name.clone())
+        .collect();
+
     let profile_rulesets = match build_rulesets(&profiles) {
         Ok(rulesets) => rulesets,
         Err(e) => {
-            eprintln!("error: failed to construct profile rules: {e}");
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "profiles",
+                format!("failed to construct profile rules: {e}"),
+                profile_names,
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
-
-    let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
 
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
     let results = if uses_explicit_profiles {
-        let mut results = process_schemas(schema_entries(&discovery.models), &profile_rulesets);
+        let mut results = process_schemas(
+            schema_entries(&discovery.models, &profile_names),
+            &profile_rulesets,
+        );
         append_envelope_diagnostics(&mut results, &discovery.models, &profile_rulesets);
         results
     } else {
@@ -185,7 +210,7 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     // -------------------------------------------------------------------
     // 7. Attach source spans from discovery
     // -------------------------------------------------------------------
-    let all_diagnostics = attach_source_spans(results, &discovery.models);
+    let all_diagnostics = attach_source_spans(results);
 
     // -------------------------------------------------------------------
     // 8. Aggregate results
@@ -207,108 +232,4 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     }
 
     report.exit_code()
-}
-
-fn automatic_profile_ids(models: &[DiscoveredModel]) -> Vec<String> {
-    let has_openai = models
-        .iter()
-        .any(|model| model.provider.provider() == Some(Provider::Openai));
-    let has_anthropic = models
-        .iter()
-        .any(|model| model.provider.provider() == Some(Provider::Anthropic));
-    [
-        (has_openai, OPENAI_PROFILE_ID),
-        (has_anthropic, ANTHROPIC_PROFILE_ID),
-    ]
-    .into_iter()
-    .filter(|(present, _)| *present)
-    .map(|(_, profile)| profile.to_string())
-    .collect()
-}
-
-fn process_node_targets(
-    models: &[DiscoveredModel],
-    profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
-) -> Vec<(
-    PathBuf,
-    String,
-    Result<Vec<crate::rules::Diagnostic>, String>,
-)> {
-    let mut results = Vec::with_capacity(models.len());
-    let inferred_provider = single_owned_provider(models);
-    for model in models {
-        let profile_id = match model.provider {
-            ProviderResolution::Definitive {
-                provider: Provider::Openai,
-            }
-            | ProviderResolution::Inferred {
-                provider: Provider::Openai,
-            } => OPENAI_PROFILE_ID,
-            ProviderResolution::Definitive {
-                provider: Provider::Anthropic,
-            }
-            | ProviderResolution::Inferred {
-                provider: Provider::Anthropic,
-            } => ANTHROPIC_PROFILE_ID,
-            ProviderResolution::Ambiguous {} if inferred_provider == Some(Provider::Openai) => {
-                OPENAI_PROFILE_ID
-            }
-            ProviderResolution::Ambiguous {} if inferred_provider == Some(Provider::Anthropic) => {
-                ANTHROPIC_PROFILE_ID
-            }
-            _ => {
-                results.push((
-                    PathBuf::from(&model.module_path),
-                    model.name.clone(),
-                    Err(format!(
-                        "provider is ambiguous for target kind '{}'; pass --profile explicitly",
-                        model.canonical_kind
-                    )),
-                ));
-                continue;
-            }
-        };
-        let Some(index) = profile_rulesets
-            .iter()
-            .position(|(profile, _)| profile.name == profile_id)
-        else {
-            results.push((
-                PathBuf::from(&model.module_path),
-                model.name.clone(),
-                Err(format!(
-                    "no ruleset loaded for provider profile '{profile_id}'"
-                )),
-            ));
-            continue;
-        };
-        results.extend(process_schemas(
-            vec![(
-                PathBuf::from(&model.module_path),
-                model.name.clone(),
-                model.schema.clone(),
-            )],
-            std::slice::from_ref(&profile_rulesets[index]),
-        ));
-        if let Some((_, _, Ok(diagnostics))) = results.last_mut() {
-            diagnostics.extend(crate::rules::envelope::check_envelope(
-                model,
-                profile_rulesets[index].0,
-            ));
-        }
-    }
-    results
-}
-
-fn single_owned_provider(models: &[DiscoveredModel]) -> Option<Provider> {
-    let has_openai = models
-        .iter()
-        .any(|model| model.provider.provider() == Some(Provider::Openai));
-    let has_anthropic = models
-        .iter()
-        .any(|model| model.provider.provider() == Some(Provider::Anthropic));
-    match (has_openai, has_anthropic) {
-        (true, false) => Some(Provider::Openai),
-        (false, true) => Some(Provider::Anthropic),
-        _ => None,
-    }
 }

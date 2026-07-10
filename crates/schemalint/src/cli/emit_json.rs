@@ -63,6 +63,7 @@ pub fn emit_json_to_string(
         },
         failures: vec![],
         warnings: vec![],
+        targets: vec![],
         diagnostics: diagnostics.to_vec(),
         total_errors,
         total_warnings,

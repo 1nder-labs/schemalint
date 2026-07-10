@@ -1,6 +1,6 @@
 import type * as ts from 'typescript';
 import type { SourceMapEntry } from './discover.js';
-import { type TargetExpression } from './target_resolution.js';
+import type { TargetExpression } from './target_resolution.js';
 import type { EnvelopeField, ProviderResolution, TargetSpan } from './sdk_adapters.js';
 export interface SchemaTarget {
     name: string;

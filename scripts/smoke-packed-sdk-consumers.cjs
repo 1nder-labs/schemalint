@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { conditionalFixtures } = require('./packed-sdk-conditional-fixtures.cjs');
 const tarball = process.argv[2] && path.resolve(process.argv[2]);
 const row = process.argv[3];
 const schemalintBinary = process.argv[4] && path.resolve(process.argv[4]);
@@ -160,6 +161,7 @@ const matrix = {
     label: 'current',
     packages: ['ai@7.0.19', 'openai@6.46.0', '@anthropic-ai/sdk@0.110.0', 'zod@4.4.3'],
     fixtures: [
+      ...conditionalFixtures({ field, model, OPENAI, AMBIGUOUS }),
       {
         file: 'partial.ts',
         source: currentPartialSource,
@@ -304,7 +306,7 @@ function assertSidecar(root, fixture, response) {
   assert.deepEqual(response.failures, [{
     kind: 'metadata',
     target: fixture.failure.target,
-    message: `required field 'name' is not statically resolvable at ${failureSpan.file}:${failureSpan.line}:${failureSpan.col}`,
+    message: `${fixture.failure.message || "required field 'name'"} is not statically resolvable at ${failureSpan.file}:${failureSpan.line}:${failureSpan.col}`,
   }]);
 }
 function assertCli(root, helper, fixture) {

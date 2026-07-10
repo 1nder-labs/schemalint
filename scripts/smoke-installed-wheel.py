@@ -70,7 +70,9 @@ def json_report(
 def write_consumer_project(root: Path) -> None:
     package = root / "consumer_models"
     package.mkdir()
-    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "__init__.py").write_text(
+        "from .models import Address, UserProfile\n", encoding="utf-8"
+    )
     (package / "models.py").write_text(
         """from typing import List, Optional
 
@@ -92,7 +94,9 @@ class UserProfile(BaseModel):
 
     partial = root / "partial_models"
     partial.mkdir()
-    (partial / "__init__.py").write_text("", encoding="utf-8")
+    (partial / "__init__.py").write_text(
+        "from .models import BrokenSchema, RetainedModel\n", encoding="utf-8"
+    )
     (partial / "models.py").write_text(
         """from pydantic import BaseModel
 
@@ -118,6 +122,11 @@ class BrokenSchema(BaseModel):
         'raise RuntimeError("intentional submodule import failure")\n',
         encoding="utf-8",
     )
+    (partial / "opaque.py").write_text(
+        "def __dir__():\n"
+        '    raise RuntimeError("intentional introspection failure")\n',
+        encoding="utf-8",
+    )
 
 
 def assert_partial_python_report(payload: dict) -> None:
@@ -127,12 +136,28 @@ def assert_partial_python_report(payload: dict) -> None:
         for diagnostic in payload["diagnostics"]
     ), payload
     failures = payload["report"]["failures"]
-    assert len(failures) == 2, payload
+    assert len(failures) == 3, payload
+    schema_message = (
+        "model_json_schema() failed: intentional model_json_schema failure"
+        if int(package_version("pydantic").split(".", 1)[0]) >= 2
+        else "schema() failed: intentional schema failure"
+    )
+    assert {failure["target"]: failure["message"] for failure in failures} == {
+        "package 'partial_models', target 'BrokenSchema'": schema_message,
+        "package 'partial_models', target 'partial_models.broken_import'": (
+            "module import failed: intentional submodule import failure"
+        ),
+        "package 'partial_models', target 'partial_models.opaque'": (
+            "module introspection failed: intentional introspection failure"
+        ),
+    }, failures
     failure_text = "\n".join(
         f"{failure['target']}: {failure['message']}" for failure in failures
     )
     assert "BrokenSchema" in failure_text, failure_text
     assert "partial_models.broken_import" in failure_text, failure_text
+    assert "partial_models.opaque" in failure_text, failure_text
+    assert "module introspection failed" in failure_text, failure_text
     assert "intentional" in failure_text, failure_text
 
 
@@ -174,11 +199,11 @@ def exercise_server_recovery(root: Path, valid_schema: dict) -> None:
     assert partial["success"] is False, partial
     assert partial["report"]["coverage"] == {
         "status": "partial",
-        "attempted": 3,
+        "attempted": 4,
         "excluded": 0,
         "discovered": 1,
         "checked": 1,
-        "failed": 2,
+        "failed": 3,
     }, partial
     partial_output = json.loads(partial["output"])
     assert_partial_python_report(partial_output)
@@ -309,11 +334,11 @@ def exercise_installed_wheel(root: Path) -> str:
         status="partial",
         success=False,
         counts={
-            "attempted": 3,
+            "attempted": 4,
             "excluded": 0,
             "discovered": 1,
             "checked": 1,
-            "failed": 2,
+            "failed": 3,
         },
     )
     assert_partial_python_report(partial_payload)

@@ -16,6 +16,69 @@ const {
 } = require('./integrity.cjs');
 
 let temporaryCounter = 0;
+const INSTALL_LOCK_POLL_MS = 100;
+const INSTALL_LOCK_STALE_MS = 10 * 60_000;
+const INSTALL_LOCK_TIMEOUT_MS = 10 * 60_000;
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function lockOwnerIsAlive(lockPath) {
+  try {
+    const { pid } = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
+}
+
+async function acquireInstallLock(lockPath, options = {}) {
+  const pollMs = options.pollMs ?? INSTALL_LOCK_POLL_MS;
+  const staleMs = options.staleMs ?? INSTALL_LOCK_STALE_MS;
+  const timeoutMs = options.timeoutMs ?? INSTALL_LOCK_TIMEOUT_MS;
+  const token = `${process.pid}.${crypto.randomBytes(12).toString('hex')}`;
+  const startedAt = Date.now();
+
+  while (true) {
+    try {
+      fs.writeFileSync(
+        lockPath,
+        JSON.stringify({ token, pid: process.pid, createdAt: Date.now() }),
+        { flag: 'wx', mode: 0o600 }
+      );
+      return () => {
+        try {
+          const owner = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+          if (owner.token === token) fs.unlinkSync(lockPath);
+        } catch {}
+      };
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+
+    try {
+      if (
+        Date.now() - fs.statSync(lockPath).mtimeMs >= staleMs
+        && !lockOwnerIsAlive(lockPath)
+      ) {
+        fs.unlinkSync(lockPath);
+        continue;
+      }
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
+
+    const elapsed = Date.now() - startedAt;
+    if (elapsed >= timeoutMs) {
+      throw new Error(`Timed out waiting ${timeoutMs}ms for install lock ${lockPath}`);
+    }
+    await delay(Math.min(pollMs, timeoutMs - elapsed));
+  }
+}
 
 async function readVerifiedCache(binaryPath, sentinelPath, archiveHash) {
   if (!fs.existsSync(binaryPath) || !fs.existsSync(sentinelPath)) return false;
@@ -56,45 +119,58 @@ async function ensureBinary(overrides = {}) {
   if (await readVerifiedCache(binaryPath, sentinelPath, expectedArchiveHash)) {
     return binaryPath;
   }
-  cleanCache(binaryPath, sentinelPath);
 
   const cacheDir = path.dirname(binaryPath);
   fs.mkdirSync(cacheDir, { recursive: true });
-  const workDir = path.join(
-    path.dirname(cacheDir),
-    `schemalint-tmp.${process.pid}.${++temporaryCounter}.` +
-      crypto.randomBytes(4).toString('hex')
+  const releaseLock = await acquireInstallLock(
+    `${binaryPath}.lock`,
+    overrides.lockOptions
   );
-  fs.mkdirSync(workDir, { recursive: true });
-  const archivePath = path.join(workDir, archiveName);
-  const archiveUrl =
-    `https://github.com/${config.REPO}/releases/download/v${config.VERSION}/${archiveName}`;
-  const download = overrides.download || downloadWithRetry;
-  const extract = overrides.extract || extractArchive;
 
   try {
-    await download(archiveUrl, archivePath);
-    await verifyArchive(archivePath, expectedArchiveHash);
-    extract(archivePath, workDir, platform);
-    try { fs.unlinkSync(archivePath); } catch {}
-
-    const binaryName = platform === 'win32' ? 'schemalint.exe' : 'schemalint';
-    const extractedBinary = selectExtractedBinary(workDir, binaryName);
-    if (platform !== 'win32') fs.chmodSync(extractedBinary, 0o755);
-    fs.renameSync(extractedBinary, binaryPath);
-
-    const binarySha256 = await sha256File(binaryPath);
-    fs.writeFileSync(
-      sentinelPath,
-      JSON.stringify({ archiveSha256: expectedArchiveHash, binarySha256 })
-    );
-    return binaryPath;
-  } catch (error) {
+    if (await readVerifiedCache(binaryPath, sentinelPath, expectedArchiveHash)) {
+      return binaryPath;
+    }
     cleanCache(binaryPath, sentinelPath);
-    throw new Error(`Unable to install schemalint ${config.VERSION}: ${error.message}`);
+
+    const workDir = path.join(
+      path.dirname(cacheDir),
+      `schemalint-tmp.${process.pid}.${++temporaryCounter}.` +
+        crypto.randomBytes(4).toString('hex')
+    );
+    fs.mkdirSync(workDir, { recursive: true });
+    const archivePath = path.join(workDir, archiveName);
+    const archiveUrl =
+      `https://github.com/${config.REPO}/releases/download/v${config.VERSION}/${archiveName}`;
+    const download = overrides.download || downloadWithRetry;
+    const extract = overrides.extract || extractArchive;
+
+    try {
+      await download(archiveUrl, archivePath);
+      await verifyArchive(archivePath, expectedArchiveHash);
+      extract(archivePath, workDir, platform);
+      try { fs.unlinkSync(archivePath); } catch {}
+
+      const binaryName = platform === 'win32' ? 'schemalint.exe' : 'schemalint';
+      const extractedBinary = selectExtractedBinary(workDir, binaryName);
+      if (platform !== 'win32') fs.chmodSync(extractedBinary, 0o755);
+      fs.renameSync(extractedBinary, binaryPath);
+
+      const binarySha256 = await sha256File(binaryPath);
+      fs.writeFileSync(
+        sentinelPath,
+        JSON.stringify({ archiveSha256: expectedArchiveHash, binarySha256 })
+      );
+      return binaryPath;
+    } catch (error) {
+      cleanCache(binaryPath, sentinelPath);
+      throw new Error(`Unable to install schemalint ${config.VERSION}: ${error.message}`);
+    } finally {
+      try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
+    }
   } finally {
-    try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
+    releaseLock();
   }
 }
 
-module.exports = { ensureBinary, readVerifiedCache };
+module.exports = { acquireInstallLock, ensureBinary, readVerifiedCache };

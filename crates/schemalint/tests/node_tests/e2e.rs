@@ -381,6 +381,81 @@ export const Translate = betaZodTool({
     );
 }
 
+#[test]
+fn e2e_provider_inference_is_independent_of_source_partitioning() {
+    let tmp = TempDir::new().unwrap();
+    setup_ts_project(
+        tmp.path(),
+        &[
+            (
+                "generic.ts",
+                r#"import { z } from "zod";
+import { Output } from "ai";
+const Generic = z.object({ value: z.string() });
+Output.object({ name: "generic", schema: Generic });
+"#,
+            ),
+            (
+                "openai.ts",
+                r#"import { z } from "zod";
+import { zodResponseFormat } from "openai/helpers/zod";
+const OpenAI = z.object({ value: z.string() });
+zodResponseFormat(OpenAI, "openai_response");
+"#,
+            ),
+            (
+                "anthropic.ts",
+                r#"import { z } from "zod";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+const Anthropic = z.object({ value: z.string() });
+zodOutputFormat(Anthropic);
+"#,
+            ),
+        ],
+    );
+
+    let mut cmd = Command::cargo_bin("schemalint").unwrap();
+    cmd.current_dir(tmp.path());
+    let output = cmd
+        .args([
+            "check-node",
+            "-S",
+            "src/generic.ts",
+            "-S",
+            "src/openai.ts",
+            "-S",
+            "src/anthropic.ts",
+            "-f",
+            "json",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(report["report"]["coverage"]["status"], "partial");
+    assert_eq!(report["report"]["coverage"]["discovered"], 3);
+    assert_eq!(report["report"]["coverage"]["checked"], 2);
+    assert_eq!(report["report"]["coverage"]["failed"], 1);
+    assert!(report["report"]["failures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|failure| failure["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("provider is ambiguous"))));
+    let generic = report["report"]["targets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|target| target["canonical_kind"] == "ai.Output.object")
+        .unwrap();
+    assert_eq!(generic["provider"]["certainty"], "ambiguous");
+    assert_eq!(generic["effective_profiles"], serde_json::json!([]));
+    assert_eq!(generic["status"], "failed");
+}
+
 // ---------------------------------------------------------------------------
 // Ambiguous automatic targets fail instead of guessing from package metadata.
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 ---
-source: crates/schemalint/tests/snapshot_tests.rs
+source: crates/schemalint/tests/snapshot_tests/part_01.rs
 expression: "normalize_temp_paths(&stdout, dir.path())"
 ---
 {
@@ -30,6 +30,24 @@ expression: "normalize_temp_paths(&stdout, dir.path())"
     },
     "failures": [],
     "success": true,
+    "targets": [
+      {
+        "canonical_kind": "json-schema",
+        "effective_profiles": [
+          "test"
+        ],
+        "envelope": {},
+        "module_path": "[TEMP_DIR]/schema.json",
+        "name": "",
+        "provider": {
+          "certainty": "ambiguous"
+        },
+        "status": "checked",
+        "usage_span": {
+          "file": "[TEMP_DIR]/schema.json"
+        }
+      }
+    ],
     "warnings": []
   }
 }

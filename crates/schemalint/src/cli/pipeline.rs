@@ -4,50 +4,48 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use crate::cli::args::OutputFormat;
-use crate::cli::report::{CheckReport, CoverageCounts, ReportMessage};
+use crate::cli::report::{CheckReport, CoverageCounts, ReportMessage, TargetReport, TargetStatus};
 use crate::cli::{emit_gha, emit_human, emit_json, emit_junit, emit_sarif};
 use crate::ingest::DiscoveredModel;
 use crate::normalize::normalize;
 use crate::profile::Profile;
 use crate::rules::registry::{DiagnosticSeverity, RuleSet, RuleSetError, SourceSpan};
 
-pub(crate) type SchemaCheckResult = (
-    PathBuf,
-    String,
-    Result<Vec<crate::rules::Diagnostic>, String>,
-);
+pub(crate) struct SchemaEntry {
+    pub path: PathBuf,
+    pub model_name: String,
+    pub value: serde_json::Value,
+    pub source_map: HashMap<String, SourceSpan>,
+    pub target: TargetReport,
+}
+
+pub(crate) struct SchemaCheckResult {
+    pub path: PathBuf,
+    pub model_name: String,
+    pub diagnostics: Result<Vec<crate::rules::Diagnostic>, String>,
+    pub source_map: HashMap<String, SourceSpan>,
+    pub target: TargetReport,
+}
 
 /// Attach source spans from discovered models to diagnostics.
 ///
-/// Each result carries a `(module_path, model_name)` composite key.
-/// When multiple schemas share the same `module_path` (e.g., `UserSchema` and
-/// `AddressSchema` in `schemas/models.ts`), each model's source map is matched
-/// independently — no merging, no first-write-wins collision.
-pub(crate) fn attach_source_spans(
-    results: Vec<SchemaCheckResult>,
-    models: &[crate::ingest::DiscoveredModel],
-) -> Vec<SchemaCheckResult> {
-    let model_maps: HashMap<(&str, &str), &HashMap<String, SourceSpan>> = models
-        .iter()
-        .map(|m| ((m.module_path.as_str(), m.name.as_str()), &m.source_map))
-        .collect();
-
+/// Each result owns the source map captured for that exact usage. This avoids
+/// joining on non-unique module/name pairs and preserves spans when a provider
+/// diagnostic already points at envelope metadata rather than schema content.
+pub(crate) fn attach_source_spans(results: Vec<SchemaCheckResult>) -> Vec<SchemaCheckResult> {
     results
         .into_iter()
-        .map(|(key, model_name, result)| match result {
-            Ok(mut diags) => {
-                if let Some(source_map) =
-                    model_maps.get(&(key.to_string_lossy().as_ref(), model_name.as_str()))
-                {
-                    for d in &mut diags {
-                        if let Some(span) = source_map.get(&d.pointer) {
-                            d.source = Some(span.clone());
+        .map(|mut result| {
+            if let Ok(diagnostics) = &mut result.diagnostics {
+                for diagnostic in diagnostics {
+                    if diagnostic.source.is_none() {
+                        if let Some(span) = result.source_map.get(&diagnostic.pointer) {
+                            diagnostic.source = Some(span.clone());
                         }
                     }
                 }
-                (key, model_name, Ok(diags))
             }
-            Err(e) => (key, model_name, Err(e)),
+            result
         })
         .collect()
 }
@@ -67,8 +65,8 @@ pub(crate) fn aggregate_results(results: Vec<SchemaCheckResult>) -> AggregateRes
     let mut checked = 0usize;
     let mut failures = Vec::new();
 
-    for (path, model_name, result) in results {
-        match result {
+    for result in results {
+        match result.diagnostics {
             Ok(diags) => {
                 checked += 1;
                 for d in &diags {
@@ -77,15 +75,15 @@ pub(crate) fn aggregate_results(results: Vec<SchemaCheckResult>) -> AggregateRes
                         DiagnosticSeverity::Warning => total_warnings += 1,
                     }
                 }
-                all_diagnostics.push((path, diags));
+                all_diagnostics.push((result.path, diags));
             }
             Err(msg) => {
-                eprintln!("error: {}: {}", path.display(), msg);
+                eprintln!("error: {}: {}", result.path.display(), msg);
                 failures.push(ReportMessage {
-                    target: if model_name.is_empty() {
-                        path.display().to_string()
+                    target: if result.model_name.is_empty() {
+                        result.path.display().to_string()
                     } else {
-                        format!("{} ({model_name})", path.display())
+                        format!("{} ({})", result.path.display(), result.model_name)
                     },
                     message: msg,
                 });
@@ -115,6 +113,18 @@ pub(crate) fn build_report(
     profiles: Vec<String>,
     duration_ms: Option<u64>,
 ) -> CheckReport {
+    let targets = results
+        .iter()
+        .map(|result| {
+            let mut target = result.target.clone();
+            target.status = if result.diagnostics.is_ok() {
+                TargetStatus::Checked
+            } else {
+                TargetStatus::Failed
+            };
+            target
+        })
+        .collect();
     let aggregate = aggregate_results(results);
     coverage.checked = aggregate.checked;
     coverage.failed += aggregate.failures.len();
@@ -123,6 +133,7 @@ pub(crate) fn build_report(
         coverage,
         failures,
         warnings,
+        targets,
         diagnostics: aggregate.diagnostics,
         total_errors: aggregate.total_errors,
         total_warnings: aggregate.total_warnings,
@@ -196,6 +207,36 @@ pub(crate) fn emit_output(
     Ok(())
 }
 
+pub(crate) fn emit_failure(
+    format: OutputFormat,
+    output: Option<&Path>,
+    target: impl Into<String>,
+    message: impl Into<String>,
+    profiles: Vec<String>,
+    duration_ms: u64,
+) -> i32 {
+    let report = CheckReport {
+        coverage: CoverageCounts {
+            attempted: 1,
+            failed: 1,
+            ..CoverageCounts::default()
+        },
+        failures: vec![ReportMessage {
+            target: target.into(),
+            message: message.into(),
+        }],
+        warnings: vec![],
+        targets: vec![],
+        diagnostics: vec![],
+        total_errors: 0,
+        total_warnings: 0,
+        profiles,
+        duration_ms: Some(duration_ms),
+    };
+    let _ = emit_output(format, &report, output);
+    1
+}
+
 // ---------------------------------------------------------------------------
 // Shared pipeline helpers — reused by run_check, handle_check, and run_check_python
 // ---------------------------------------------------------------------------
@@ -214,17 +255,77 @@ pub(crate) fn build_rulesets(
 /// Project discovered models into the normalized schema pipeline's input type.
 pub(crate) fn schema_entries(
     models: &[DiscoveredModel],
-) -> Vec<(PathBuf, String, serde_json::Value)> {
+    effective_profiles: &[String],
+) -> Vec<SchemaEntry> {
     models
         .iter()
-        .map(|model| {
-            (
-                PathBuf::from(&model.module_path),
-                model.name.clone(),
-                model.schema.clone(),
-            )
-        })
+        .map(|model| schema_entry(model, effective_profiles, model.provider))
         .collect()
+}
+
+pub(crate) fn schema_entry(
+    model: &DiscoveredModel,
+    effective_profiles: &[String],
+    provider: crate::ingest::ProviderResolution,
+) -> SchemaEntry {
+    SchemaEntry {
+        path: PathBuf::from(&model.module_path),
+        model_name: model.name.clone(),
+        value: model.schema.clone(),
+        source_map: model.source_map.clone(),
+        target: TargetReport {
+            name: model.name.clone(),
+            module_path: model.module_path.clone(),
+            canonical_kind: model.canonical_kind.clone(),
+            provider,
+            effective_profiles: effective_profiles.to_vec(),
+            envelope: model.envelope.clone().into_iter().collect(),
+            usage_span: model.usage_span.clone(),
+            status: TargetStatus::Checked,
+        },
+    }
+}
+
+pub(crate) fn raw_check_result(
+    path: PathBuf,
+    model_name: String,
+    diagnostics: Result<Vec<crate::rules::Diagnostic>, String>,
+    effective_profiles: &[String],
+) -> SchemaCheckResult {
+    SchemaCheckResult {
+        target: raw_target(&path, &model_name, effective_profiles),
+        path,
+        model_name,
+        diagnostics,
+        source_map: Default::default(),
+    }
+}
+
+pub(crate) fn failed_schema_result(entry: SchemaEntry, message: String) -> SchemaCheckResult {
+    SchemaCheckResult {
+        path: entry.path,
+        model_name: entry.model_name,
+        diagnostics: Err(message),
+        source_map: entry.source_map,
+        target: entry.target,
+    }
+}
+
+fn raw_target(path: &Path, model_name: &str, effective_profiles: &[String]) -> TargetReport {
+    TargetReport {
+        name: model_name.to_string(),
+        module_path: path.display().to_string(),
+        canonical_kind: "json-schema".into(),
+        provider: Default::default(),
+        effective_profiles: effective_profiles.to_vec(),
+        envelope: Default::default(),
+        usage_span: Some(SourceSpan {
+            file: path.display().to_string(),
+            line: None,
+            col: None,
+        }),
+        status: TargetStatus::Checked,
+    }
 }
 
 /// Run all profile rulesets against a normalized arena and collect diagnostics.
@@ -246,18 +347,31 @@ pub(crate) fn check_rulesets(
 /// to enable per-model source span lookups (avoiding collisions when multiple
 /// schemas share a module_path).
 pub(crate) fn process_schemas(
-    schemas: Vec<(PathBuf, String, serde_json::Value)>,
+    schemas: Vec<SchemaEntry>,
     profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
 ) -> Vec<SchemaCheckResult> {
     schemas
         .into_par_iter()
-        .map(|(key, model_name, value)| {
-            let normalized = match normalize(value) {
+        .map(|entry| {
+            let normalized = match normalize(entry.value) {
                 Ok(n) => n,
-                Err(e) => return (key, model_name, Err(format!("normalization failed: {}", e))),
+                Err(error) => {
+                    return SchemaCheckResult {
+                        path: entry.path,
+                        model_name: entry.model_name,
+                        diagnostics: Err(format!("normalization failed: {error}")),
+                        source_map: entry.source_map,
+                        target: entry.target,
+                    }
+                }
             };
-            let diags = check_rulesets(&normalized.arena, profile_rulesets);
-            (key, model_name, Ok(diags))
+            SchemaCheckResult {
+                path: entry.path,
+                model_name: entry.model_name,
+                diagnostics: Ok(check_rulesets(&normalized.arena, profile_rulesets)),
+                source_map: entry.source_map,
+                target: entry.target,
+            }
         })
         .collect()
 }
@@ -267,8 +381,8 @@ pub(crate) fn append_envelope_diagnostics(
     models: &[crate::ingest::DiscoveredModel],
     profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
 ) {
-    for ((_, _, result), model) in results.iter_mut().zip(models) {
-        let Ok(diagnostics) = result else {
+    for (result, model) in results.iter_mut().zip(models) {
+        let Ok(diagnostics) = &mut result.diagnostics else {
             continue;
         };
         for (profile, _) in profile_rulesets {

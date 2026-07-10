@@ -98,10 +98,19 @@ def _collect_models(
     # Collect BaseModel subclasses defined in this module
     try:
         members = inspect.getmembers(mod, inspect.isclass)
-    except Exception:
+    except Exception as error:
+        counts["attempted"] += 1
+        counts["failed"] += 1
+        failures.append({
+            "kind": "evaluation",
+            "target": mod_id,
+            "message": f"module introspection failed: {error}",
+        })
         members = []
 
     for name, cls in members:
+        if getattr(cls, "__module__", None) != mod_id:
+            continue
         if _V2BaseModel is not None and issubclass(cls, _V2BaseModel) and cls is not _V2BaseModel:
             counts["attempted"] += 1
             try:
@@ -134,9 +143,10 @@ def _collect_models(
                 })
 
     # Recurse into submodules
-    if hasattr(mod, "__path__"):
+    module_path = vars(mod).get("__path__")
+    if module_path is not None:
         for _, submod_name, _ in pkgutil.iter_modules(
-            path=mod.__path__, prefix=mod.__name__ + "."
+            path=module_path, prefix=mod_id + "."
         ):
             if any(fnmatchcase(submod_name, pattern) for pattern in exclusions):
                 counts["excluded"] += 1

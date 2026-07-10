@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use crate::cache::hash_bytes;
-use crate::cli::pipeline::{build_report, check_rulesets, render_output};
+use crate::cli::pipeline::{build_report, check_rulesets, raw_check_result, render_output};
 use crate::cli::report::CoverageCounts;
 use crate::normalize::normalize;
 
@@ -22,8 +22,14 @@ pub(super) fn handle(params: Value, cache: &SchemaCache, profiles: &ProfileCache
         None => return json!({"success": false, "error": "Missing 'schema' parameter"}),
     };
     let profile_ids = match required_string_array(&params, "profiles") {
-        Some(values) => values,
-        None => return json!({"success": false, "error": "Missing 'profiles' parameter"}),
+        Ok(values) if !values.is_empty() => values,
+        Ok(_) => {
+            return json!({
+                "success": false,
+                "error": "Empty 'profiles' array; at least one profile is required"
+            })
+        }
+        Err(error) => return error,
     };
     let format = match output_format(&params) {
         Ok(format) => format,
@@ -37,7 +43,7 @@ pub(super) fn handle(params: Value, cache: &SchemaCache, profiles: &ProfileCache
         Ok(rules) => rules,
         Err(error) => return error,
     };
-    let names = loaded.iter().map(|profile| profile.name.clone()).collect();
+    let names: Vec<String> = loaded.iter().map(|profile| profile.name.clone()).collect();
 
     let schema_bytes = serde_json::to_vec(&schema).unwrap_or_default();
     if schema_bytes.len() > MAX_SCHEMA_BYTES {
@@ -90,7 +96,12 @@ pub(super) fn handle(params: Value, cache: &SchemaCache, profiles: &ProfileCache
         },
         vec![],
         vec![],
-        vec![(PathBuf::from("<inline>"), String::new(), Ok(diagnostics))],
+        vec![raw_check_result(
+            PathBuf::from("<inline>"),
+            String::new(),
+            Ok(diagnostics),
+            &names,
+        )],
         names,
         Some(start.elapsed().as_millis() as u64),
     );

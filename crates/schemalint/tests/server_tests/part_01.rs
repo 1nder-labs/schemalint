@@ -22,6 +22,14 @@ fn server_check_single_profile_json() {
     let response = send_request(&mut child, &request.to_string());
     assert_eq!(response["jsonrpc"], "2.0");
     assert!(response["result"]["success"].as_bool().unwrap());
+    assert_eq!(
+        response["result"]["report"]["targets"][0]["effective_profiles"][0],
+        "openai.so.2026-04-30"
+    );
+    assert_eq!(
+        response["result"]["report"]["targets"][0]["status"],
+        "checked"
+    );
     assert_eq!(response["id"], 1);
 
     // Shutdown
@@ -31,6 +39,59 @@ fn server_check_single_profile_json() {
 
     let status = child.wait().expect("should exit cleanly");
     assert!(status.success());
+}
+
+#[test]
+fn server_rejects_empty_or_mixed_profile_arrays_and_recovers() {
+    let mut child = cmd()
+        .arg("server")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("should spawn server");
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {"x": {"type": "string"}},
+        "required": ["x"],
+        "additionalProperties": false
+    });
+
+    for (id, profiles) in [
+        (1, serde_json::json!([])),
+        (2, serde_json::json!(["openai.so.2026-04-30", 7])),
+    ] {
+        let response = send_request(
+            &mut child,
+            &serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "check",
+                "params": {"schema": schema, "profiles": profiles},
+                "id": id
+            })
+            .to_string(),
+        );
+        assert_eq!(response["result"]["success"], false, "{response}");
+        assert!(response["result"]["error"].as_str().is_some_and(|error| {
+            error.contains("profiles")
+        }));
+    }
+
+    let recovered = send_request(
+        &mut child,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "check",
+            "params": {"schema": schema, "profiles": ["openai.so.2026-04-30"]},
+            "id": 3
+        })
+        .to_string(),
+    );
+    assert_eq!(recovered["result"]["success"], true, "{recovered}");
+
+    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 4});
+    let _ = send_request(&mut child, &shutdown.to_string());
+    assert!(child.wait().unwrap().success());
 }
 
 #[test]

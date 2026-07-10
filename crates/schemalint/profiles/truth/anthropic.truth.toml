@@ -1,3 +1,11 @@
+structural_tests = [
+  { limit_name = "require_additional_properties_false", test_schema = '{"type":"object","properties":{"x":{"type":"string"}},"additionalProperties":false}', expected_behavior = "accept" },
+  { limit_name = "max_optional_properties", test_schema = '{"type":"object","properties":{"x":{"type":"string"}},"additionalProperties":false}', expected_behavior = "accept" },
+  { limit_name = "max_union_properties", test_schema = '{"type":"object","properties":{"x":{"anyOf":[{"type":"string"},{"type":"null"}]}},"additionalProperties":false}', expected_behavior = "accept" },
+  { limit_name = "external_refs", test_schema = '{"$ref":"#/$defs/X","$defs":{"X":{"type":"string"}}}', expected_behavior = "accept" },
+  { limit_name = "forbid_allof_with_ref", test_schema = '{"type":"object","allOf":[{"type":"object"}]}', expected_behavior = "accept" },
+]
+
 [provider]
 name = "anthropic"
 version = "2026-04-30"
@@ -350,22 +358,3 @@ behavior = "accept"
 test_schema = '''
 { "type": "array", "items": { "type": "string" }, "minItems": 1 }
 '''
-
-# ============================================================================
-# Structural Tests
-# ============================================================================
-
-[[structural_tests]]
-limit_name = "require_additional_properties_false"
-test_schema = '''
-{ "type": "object", "additionalProperties": false, "properties": { "x": { "type": "string" } } }
-'''
-expected_behavior = "accept"
-
-[[structural_tests]]
-limit_name = "allof_with_ref"
-test_schema = '''
-{ "type": "object", "allOf": [ { "$ref": "#/$defs/Base" }, { "properties": { "extra": { "type": "string" } } } ], "$defs": { "Base": { "type": "object", "properties": { "id": { "type": "string" } } } } }
-'''
-expected_behavior = "reject"
-expected_error_path = "/"

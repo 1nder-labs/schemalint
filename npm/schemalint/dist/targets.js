@@ -1,6 +1,7 @@
 import { resolveTarget } from './target_emit.js';
 import { collectTargetImports, resolveTargetAdapter, } from './target_imports.js';
 import { collectCarrierTargets, propertyFromExpression, pushExpressionOrCarrier, spanFor, stringValueFromExpression, } from './target_resolution.js';
+import { unambiguousExpression } from './static_expression.js';
 export function findSchemaTargets(program, fileSet, tsModule, compilerOptions) {
     const checker = program.getTypeChecker();
     const carrierExpressions = [];
@@ -21,7 +22,6 @@ export function findSchemaTargets(program, fileSet, tsModule, compilerOptions) {
     for (const target of collectCarrierTargets(program, fileSet, checker, tsModule, carrierExpressions)) {
         pushTarget(targets, seen, resolveTarget(target, checker, tsModule, compilerOptions));
     }
-    inferSingleProvider(targets);
     return { targets, failures };
 }
 function collectTargetExpressions(sourceFile, checker, tsModule, carrierExpressions, failures) {
@@ -86,12 +86,13 @@ function schemaExpression(call, adapter, checker, tsModule) {
     if ('properties' in adapter.schema) {
         for (const property of adapter.schema.properties) {
             const found = propertyFromExpression(call.arguments[adapter.schema.argument], property, checker, tsModule);
-            if (found)
-                return found;
+            const stable = unambiguousExpression(found, checker, tsModule);
+            if (stable)
+                return stable;
         }
         return undefined;
     }
-    return call.arguments[adapter.schema.argument];
+    return unambiguousExpression(call.arguments[adapter.schema.argument], checker, tsModule);
 }
 function pushTarget(targets, seen, resolved) {
     const usage = resolved.usageSpan;
@@ -100,20 +101,6 @@ function pushTarget(targets, seen, resolved) {
         return;
     seen.add(key);
     targets.push(resolved);
-}
-function inferSingleProvider(targets) {
-    const providers = new Set(targets
-        .filter((target) => target.provider.certainty === 'definitive')
-        .map((target) => target.provider.provider)
-        .filter((provider) => provider !== undefined));
-    if (providers.size !== 1)
-        return;
-    const [provider] = providers;
-    for (const target of targets) {
-        if (target.provider.certainty === 'ambiguous') {
-            target.provider = { certainty: 'inferred', provider };
-        }
-    }
 }
 function formatSpan(span) {
     return `${span.file}:${span.line}:${span.col}`;

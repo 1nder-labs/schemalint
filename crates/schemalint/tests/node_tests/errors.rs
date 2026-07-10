@@ -14,8 +14,8 @@ fn check_node_no_sources_no_config_errors() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("no sources specified."));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no sources specified."));
 }
 
 /// Missing `--profile` no longer hard-errors with "no profiles specified." —

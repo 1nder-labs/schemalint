@@ -9,10 +9,8 @@ import {
   findZObjectCall,
   hasExportModifier,
 } from './discover_ast.js';
-import {
-  resolveVariableDeclaration,
-  type TargetExpression,
-} from './target_resolution.js';
+import type { TargetExpression } from './target_resolution.js';
+import { resolveVariableDeclaration } from './static_expression.js';
 import type {
   EnvelopeField,
   ProviderResolution,
