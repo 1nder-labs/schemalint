@@ -183,6 +183,45 @@ jobs:
             "$TARBALL" "${{ matrix.zod }}" "${{ matrix.mode }}"
         working-directory: npm/schemalint
 
+  npm-sdk-consumer:
+    name: Packed npm with real SDKs (${{ matrix.row }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        row: [minimum, current]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: npm/schemalint/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build CLI and packed npm package
+        run: |
+          cargo build -p schemalint
+          npm ci
+          npm run build
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
+        working-directory: npm/schemalint
+
+      - name: Smoke installed package with pinned real SDKs
+        run: |
+          TARBALL=$(find "$RUNNER_TEMP" -maxdepth 1 -name '*.tgz' -print -quit)
+          node ../../scripts/smoke-packed-sdk-consumers.cjs \
+            "$TARBALL" "${{ matrix.row }}" "$GITHUB_WORKSPACE/target/debug/schemalint"
+        working-directory: npm/schemalint
+
   python-wheel-build:
     name: Build Python wheel
     runs-on: ubuntu-latest
