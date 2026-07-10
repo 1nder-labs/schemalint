@@ -4,8 +4,8 @@
  * Given a file path and export name, dynamically imports the user's TypeScript
  * file, accesses the exported Zod schema, and converts it to JSON Schema.
  *
- * Uses `zod-to-json-schema` by default, but detects Zod v4's native
- * `toJSONSchema()` method when available.
+ * Uses Zod v4's package-level `toJSONSchema()` API for v4 and Mini schemas,
+ * and `zod-to-json-schema` for Zod v3.
  */
 /**
  * Dynamically import a user's TypeScript file and evaluate an exported

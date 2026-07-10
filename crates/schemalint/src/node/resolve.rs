@@ -63,7 +63,7 @@ pub(super) fn resolve_compiled_helper_path() -> Option<PathBuf> {
         }
     }
     let ws_root = workspace_root().ok()?;
-    let bin_path = ws_root.join("npm/schemalint/dist/main.js");
+    let bin_path = ws_root.join("npm/schemalint/bin/schemalint-zod.js");
     bin_path.exists().then_some(bin_path)
 }
 
