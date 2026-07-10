@@ -5,7 +5,9 @@ use schemalint::profile::{load, Profile};
 use schemalint::profiles::{ANTHROPIC_SO_2026_04_30, OPENAI_SO_2026_04_30};
 use schemalint::rules::registry::{DiagnosticSeverity, RuleSet};
 
-use crate::{evaluate, KeywordBehavior, ProviderTruth, StructuralTest, TruthError, TruthResult};
+use crate::{
+    evaluate, KeywordBehavior, KeywordTruth, ProviderTruth, StructuralTest, TruthError, TruthResult,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProductionEvaluationError {
@@ -26,6 +28,23 @@ pub struct StructuralTruthOutcome {
     pub actual: KeywordBehavior,
     pub expected_error_path: Option<String>,
     pub actual_error_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeywordTruthOutcome {
+    pub keyword: String,
+    pub expected: KeywordBehavior,
+    pub actual: KeywordBehavior,
+    pub expected_error_path: Option<String>,
+    pub actual_error_path: Option<String>,
+}
+
+impl KeywordTruthOutcome {
+    pub fn matches(&self) -> bool {
+        self.expected == self.actual
+            && (self.expected != KeywordBehavior::Reject
+                || self.expected_error_path == self.actual_error_path)
+    }
 }
 
 impl StructuralTruthOutcome {
@@ -79,6 +98,52 @@ pub fn evaluate_structural_truth(
         .iter()
         .map(|case| evaluate_structural_case(&profile, case))
         .collect()
+}
+
+/// Execute every declared keyword truth case through production rules.
+///
+/// Unrelated structural diagnostics are intentionally ignored so each fixture
+/// isolates the keyword contract it declares.
+pub fn evaluate_keyword_truth(
+    truth: &ProviderTruth,
+) -> Result<Vec<KeywordTruthOutcome>, ProductionEvaluationError> {
+    let Some(profile) = profile_for(truth)? else {
+        return Ok(Vec::new());
+    };
+    truth
+        .keywords
+        .iter()
+        .map(|case| evaluate_keyword_case(&profile, case))
+        .collect()
+}
+
+fn evaluate_keyword_case(
+    profile: &Profile,
+    case: &KeywordTruth,
+) -> Result<KeywordTruthOutcome, ProductionEvaluationError> {
+    let schema = serde_json::from_str(&case.test_schema)
+        .map_err(|error| ProductionEvaluationError::Normalize(error.to_string()))?;
+    let code_fragment = format!("-K-{}", case.name);
+    let diagnostic = production_diagnostics(profile, schema)?
+        .into_iter()
+        .find(|diagnostic| {
+            diagnostic.severity == DiagnosticSeverity::Error
+                && diagnostic.code.contains(&code_fragment)
+        });
+    Ok(KeywordTruthOutcome {
+        keyword: case.name.clone(),
+        expected: case.behavior,
+        actual: if diagnostic.is_some() {
+            KeywordBehavior::Reject
+        } else {
+            KeywordBehavior::Accept
+        },
+        expected_error_path: case
+            .expected_error_path
+            .as_deref()
+            .map(keyword_schema_pointer),
+        actual_error_path: diagnostic.map(|item| root_pointer(&item.pointer)),
+    })
 }
 
 fn evaluate_structural_case(
@@ -143,5 +208,15 @@ fn root_pointer(pointer: &str) -> String {
         "/".into()
     } else {
         pointer.into()
+    }
+}
+
+/// Keyword rules point at the schema node that owns the keyword so source-map
+/// lookup remains stable; provider truth paths point at the keyword itself.
+fn keyword_schema_pointer(keyword_pointer: &str) -> String {
+    match keyword_pointer.rsplit_once('/') {
+        Some(("", _)) => "/".into(),
+        Some((parent, _)) => parent.into(),
+        None => root_pointer(keyword_pointer),
     }
 }

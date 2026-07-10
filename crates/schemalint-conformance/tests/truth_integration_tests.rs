@@ -1,7 +1,7 @@
 use schemalint::profiles::{ANTHROPIC_TRUTH, OPENAI_TRUTH};
 use schemalint_conformance::{
-    evaluate, evaluate_provider, evaluate_structural_truth, parse_truth, InfrastructureFailureKind,
-    LiveRefreshState,
+    evaluate, evaluate_keyword_truth, evaluate_provider, evaluate_structural_truth, parse_truth,
+    InfrastructureFailureKind, LiveRefreshState,
 };
 
 #[test]
@@ -206,6 +206,18 @@ fn every_structural_truth_case_matches_production_rules() {
         assert!(!outcomes.is_empty());
         for outcome in outcomes {
             assert!(outcome.matches(), "structural truth drift: {outcome:?}");
+        }
+    }
+}
+
+#[test]
+fn every_keyword_truth_case_matches_production_rules() {
+    for source in [OPENAI_TRUTH, ANTHROPIC_TRUTH] {
+        let truth = parse_truth(source).unwrap();
+        let outcomes = evaluate_keyword_truth(&truth).unwrap();
+        assert_eq!(outcomes.len(), truth.keywords.len());
+        for outcome in outcomes {
+            assert!(outcome.matches(), "keyword truth drift: {outcome:?}");
         }
     }
 }
