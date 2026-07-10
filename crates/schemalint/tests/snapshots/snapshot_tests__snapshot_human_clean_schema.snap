@@ -3,3 +3,4 @@ source: crates/schemalint/tests/snapshot_tests.rs
 expression: "normalize_temp_paths(&stdout, dir.path())"
 ---
 0 issues found (0 errors, 0 warnings) across 1 schema in [DURATION]ms
+coverage complete (1 attempted, 0 excluded, 1 discovered, 1 checked, 0 failed)

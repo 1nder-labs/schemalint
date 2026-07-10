@@ -49,9 +49,13 @@ def _handle_discover(request: dict, req_id) -> None:
     if not package or not isinstance(package, str):
         _send_error(req_id, -32602, "Missing or invalid 'package' parameter")
         return
+    exclude = params.get("exclude", [])
+    if not isinstance(exclude, list) or not all(isinstance(item, str) for item in exclude):
+        _send_error(req_id, -32602, "Invalid 'exclude' parameter (expected string array)")
+        return
 
     try:
-        result = discover_models(package)
+        result = discover_models(package, exclude)
         _send_response(req_id, result)
     except Exception as e:
         _send_error(req_id, -32603, f"Discovery failed: {e}")

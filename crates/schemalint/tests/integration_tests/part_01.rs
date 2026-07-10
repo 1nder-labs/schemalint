@@ -165,16 +165,23 @@ fn cli_empty_directory() {
     let profile = dir.path().join("profile.toml");
     fs::write(&profile, minimal_profile()).unwrap();
 
-    cmd()
+    let output = cmd()
         .arg("check")
         .arg("--profile")
         .arg(&profile)
         .arg("--format")
-        .arg("human")
+        .arg("json")
         .arg(&dir.path())
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("0 issues found"));
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["schema_version"], "1.1");
+    assert_eq!(json["report"]["coverage"]["status"], "empty");
+    assert_eq!(json["report"]["coverage"]["attempted"], 1);
+    assert_eq!(json["report"]["coverage"]["discovered"], 0);
+    assert_eq!(json["report"]["coverage"]["checked"], 0);
 }
 
 #[test]
@@ -227,8 +234,12 @@ fn cli_json_output_structure() {
 
     assert!(!output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["schema_version"], "1.0");
+    assert_eq!(json["schema_version"], "1.1");
     assert_eq!(json["tool"]["name"], "schemalint");
+    assert_eq!(json["report"]["coverage"]["status"], "complete");
+    assert_eq!(json["report"]["coverage"]["attempted"], 1);
+    assert_eq!(json["report"]["coverage"]["discovered"], 1);
+    assert_eq!(json["report"]["coverage"]["checked"], 1);
     assert!(json["summary"]["errors"].as_u64().unwrap() > 0);
     assert!(json["diagnostics"].as_array().unwrap().len() > 0);
     let diag = &json["diagnostics"][0];

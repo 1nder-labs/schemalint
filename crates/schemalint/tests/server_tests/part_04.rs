@@ -49,10 +49,7 @@ export const Bad = z.object({ website: z.string().url() });
     assert_eq!(response["id"], 1);
 
     let result = &response["result"];
-    assert!(
-        result["success"].as_bool().unwrap_or(false),
-        "checkNode should succeed; got: {result}"
-    );
+    assert_eq!(result["success"].as_bool(), Some(false));
 
     // The url() format must fire at least one error under the openai profile.
     let total_errors = result["total_errors"].as_u64().unwrap_or(0);
@@ -487,16 +484,15 @@ fn server_check_python_unknown_profile_returns_error() {
 }
 
 // ---------------------------------------------------------------------------
-// checkNode — partial discovery failure is surfaced in success response
+// checkNode — partial discovery failure is surfaced as incomplete
 //
 // Two sources are sent:
 //  - "src/**/*.ts": valid Zod file with z.string().url() → OAI-K-format-restricted
 //  - "": empty string; the Node sidecar treats a falsy source as invalid and
 //    returns a JSON-RPC error, which the server collects into discovery_errors.
 //
-// The response must be success:true (models were found from the first source),
-// contain at least one diagnostic (OAI-K-format-restricted), AND include a
-// non-empty "discovery_errors" array reporting the failed source.
+// The response checks the surviving model but remains success:false and carries
+// an authoritative partial report plus the legacy discovery_errors field.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -540,11 +536,12 @@ export const Bad = z.object({ website: z.string().url() });
 
     let result = &response["result"];
 
-    // Must remain success:true — models were found from "src/**/*.ts".
-    assert!(
-        result["success"].as_bool().unwrap_or(false),
-        "checkNode should succeed when at least one source produces models; got: {result}"
-    );
+    assert_eq!(result["success"].as_bool(), Some(false));
+    assert_eq!(result["report"]["coverage"]["status"], "partial");
+    assert!(result["report"]["coverage"]["failed"]
+        .as_u64()
+        .unwrap_or(0)
+        >= 1);
 
     // Diagnostics from the good source must be present.
     let total_errors = result["total_errors"].as_u64().unwrap_or(0);
@@ -635,7 +632,7 @@ export const Foo = z.object({ x: z.string() }).strict();
         "jsonrpc": "2.0",
         "method": "check",
         "params": {
-            "schema": {"type": "string"},
+            "schema": {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"], "additionalProperties": false},
             "profiles": ["openai.so.2026-04-30"],
             "format": "json"
         },

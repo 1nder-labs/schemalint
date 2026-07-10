@@ -46,8 +46,11 @@ function handleDiscover(
       sendError(reqId, -32602, "Missing or invalid 'source' parameter")
     );
   }
+  const exclusions = Array.isArray(params.exclude)
+    ? params.exclude.filter((value): value is string => typeof value === 'string')
+    : [];
 
-  return discoverZodSchemas(source)
+  return discoverZodSchemas(source, exclusions)
     .then((result: DiscoverResponse) => {
       sendResponse(reqId, result);
     })

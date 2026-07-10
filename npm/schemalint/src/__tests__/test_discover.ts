@@ -81,6 +81,24 @@ describe('discoverZodSchemas', () => {
 
     expect(result.models).toHaveLength(0);
     expect(result.warnings).toHaveLength(0);
+    expect(result.counts).toEqual({
+      attempted: 0,
+      excluded: 0,
+      discovered: 0,
+      failed: 0,
+    });
+  });
+
+  it('applies exclusions before schema evaluation', async () => {
+    const result = await discoverZodSchemas('simple.ts', ['simple.ts']);
+
+    expect(result.models).toHaveLength(0);
+    expect(result.counts).toEqual({
+      attempted: 0,
+      excluded: 1,
+      discovered: 0,
+      failed: 0,
+    });
   });
 
   it('produces 1-indexed source lines', async () => {

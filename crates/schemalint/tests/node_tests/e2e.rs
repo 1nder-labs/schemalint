@@ -259,11 +259,8 @@ export const Combo = z.intersection(Person, Employee);
         )],
     );
 
-    // z.intersection() is NOT discovered — the AST walker only finds
-    // z.object() call expressions. This is documented behavior (scope
-    // boundary: "Schemas constructed from imported factory functions...
-    // are not discoverable via AST walking"). The pipeline should exit
-    // cleanly with 0 schemas rather than crashing.
+    // z.intersection() is NOT discovered — an explicitly requested source
+    // that yields no checkable target is incomplete, not a clean run.
     let mut cmd = Command::cargo_bin("schemalint").unwrap();
     cmd.current_dir(tmp.path());
     let output = cmd
@@ -280,12 +277,14 @@ export const Combo = z.intersection(Person, Employee);
         .unwrap();
 
     assert!(
-        output.status.success(),
-        "should exit 0 (no schemas found, no error)"
+        !output.status.success(),
+        "zero-target discovery must exit 1"
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let out: JsonOutput = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(out.summary.schemas_checked, 0);
+    let out: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(out["schema_version"], "1.1");
+    assert_eq!(out["report"]["coverage"]["status"], "empty");
+    assert_eq!(out["report"]["coverage"]["checked"], 0);
 }
 
 // ---------------------------------------------------------------------------

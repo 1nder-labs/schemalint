@@ -26,7 +26,7 @@ import { findSchemaTargets } from './targets.js';
  * 5. Dynamically imports each file and evaluates schemas at runtime.
  * 6. Converts schemas to JSON Schema via zod-to-json-schema or native.
  */
-export async function discoverZodSchemas(sourceGlob) {
+export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     const tsModule = await import('typescript');
     const pm = await import('picomatch');
     // Resolve tsconfig.json
@@ -72,8 +72,20 @@ export async function discoverZodSchemas(sourceGlob) {
         const relPath = toPosixPath(path.relative(projectRoot, f));
         return isMatch(relPath);
     });
+    const matchedFiles = fileNames.length;
+    const excludeMatchers = exclusions.map((pattern) => picomatch(pattern, { dot: true }));
+    fileNames = fileNames.filter((file) => {
+        const relative = toPosixPath(path.relative(projectRoot, file));
+        return !excludeMatchers.some((matches) => matches(relative));
+    });
+    const excluded = matchedFiles - fileNames.length;
     if (fileNames.length === 0) {
-        return { models: [], warnings: [] };
+        return {
+            models: [],
+            warnings: [],
+            failures: [],
+            counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
+        };
     }
     // Create program and walk ASTs to discover schemas
     const program = tsModule.createProgram(fileNames, compilerOptions);
@@ -112,10 +124,16 @@ export async function discoverZodSchemas(sourceGlob) {
         }
     }
     if (discoveredLocations.length === 0) {
-        return { models: [], warnings: nonFatal };
+        return {
+            models: [],
+            warnings: nonFatal,
+            failures: [],
+            counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
+        };
     }
     // Step 3: Runtime evaluation — import each file and evaluate schemas
     const models = [];
+    const failures = [];
     for (const loc of discoveredLocations) {
         try {
             const schemaJson = loc.syntheticSource
@@ -130,13 +148,23 @@ export async function discoverZodSchemas(sourceGlob) {
         }
         catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            nonFatal.push({
-                model: loc.name,
+            failures.push({
+                target: loc.name,
                 message: `Failed to evaluate schema '${loc.name}' in ${loc.filePath}: ${message}`,
             });
         }
     }
-    const response = { models, warnings: nonFatal };
+    const response = {
+        models,
+        warnings: nonFatal,
+        failures,
+        counts: {
+            attempted: discoveredLocations.length,
+            excluded,
+            discovered: models.length,
+            failed: failures.length,
+        },
+    };
     if (providerHint) {
         response.provider_hint = providerHint;
     }

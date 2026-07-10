@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use crate::cache::{hash_bytes, Cache};
 use crate::cli::args::{CheckArgs, OutputFormat};
 use crate::cli::discover;
-use crate::cli::pipeline::{aggregate_results, check_rulesets, emit_empty_output, emit_output};
+use crate::cli::pipeline::{build_report, check_rulesets, emit_output};
 use crate::normalize::normalize;
 use crate::rules::registry::{Diagnostic, RuleSet};
 
@@ -74,17 +74,15 @@ pub(super) fn run_check(args: CheckArgs) -> i32 {
         eprintln!("error: no schema files or directories provided");
         return 1;
     }
-    let files = discover::discover(&args.paths);
-    if files.is_empty() {
-        return emit_empty_output(format, &profile_names, args.output.as_deref());
-    }
+    let discovery = discover::discover(&args.paths, &args.excludes);
 
     // -----------------------------------------------------------------------
     // Process schemas (parallel)
     // -----------------------------------------------------------------------
     let cache = Mutex::new(Cache::new());
 
-    let results: Vec<(PathBuf, Result<Vec<Diagnostic>, String>)> = files
+    let results: Vec<(PathBuf, Result<Vec<Diagnostic>, String>)> = discovery
+        .files
         .into_par_iter()
         .map(|path| {
             let bytes = match std::fs::read(&path) {
@@ -121,35 +119,27 @@ pub(super) fn run_check(args: CheckArgs) -> i32 {
     // -----------------------------------------------------------------------
     // Aggregate results
     // -----------------------------------------------------------------------
-    let (all_diagnostics, total_errors, total_warnings, fatal_errors) = aggregate_results(
+    let report = build_report(
+        discovery.coverage,
+        discovery.failures,
+        vec![],
         results
             .into_iter()
-            .map(|(p, r)| (p, String::new(), r))
+            .map(|(path, result)| (path, String::new(), result))
             .collect(),
+        profile_names,
+        Some(start.elapsed().as_millis() as u64),
     );
 
     // -----------------------------------------------------------------------
     // Emit output
     // -----------------------------------------------------------------------
-    let duration_ms = Some(start.elapsed().as_millis() as u64);
-    if let Err(exit_code) = emit_output(
-        format,
-        &all_diagnostics,
-        total_errors,
-        total_warnings,
-        &profile_names,
-        duration_ms,
-        args.output.as_deref(),
-    ) {
+    if let Err(exit_code) = emit_output(format, &report, args.output.as_deref()) {
         return exit_code;
     }
 
     // -----------------------------------------------------------------------
     // Exit code
     // -----------------------------------------------------------------------
-    if total_errors > 0 || fatal_errors > 0 {
-        1
-    } else {
-        0
-    }
+    report.exit_code()
 }

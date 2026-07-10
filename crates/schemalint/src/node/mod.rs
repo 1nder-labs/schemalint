@@ -98,7 +98,15 @@ impl NodeHelper {
     /// After `MAX_STALE_DRAIN` mismatches, an error is returned to prevent
     /// infinite loops in a corrupted protocol state.
     pub fn discover(&mut self, source: &str) -> Result<DiscoverResponse, NodeError> {
-        let params = serde_json::json!({ "source": source });
+        self.discover_with_exclusions(source, &[])
+    }
+
+    pub(crate) fn discover_with_exclusions(
+        &mut self,
+        source: &str,
+        exclusions: &[String],
+    ) -> Result<DiscoverResponse, NodeError> {
+        let params = serde_json::json!({ "source": source, "exclude": exclusions });
         let result = self.client.send_discover(params);
         result.map_err(|e| match e {
             // serialize/write/flush: no stderr augmentation

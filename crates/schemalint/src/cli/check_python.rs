@@ -2,9 +2,8 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::cli::args::{CheckPythonArgs, OutputFormat};
-use crate::cli::pipeline::{
-    aggregate_results, attach_source_spans, emit_empty_output, emit_output, process_schemas,
-};
+use crate::cli::discovery_policy::discover_batch;
+use crate::cli::pipeline::{attach_source_spans, build_report, emit_output, process_schemas};
 use crate::cli::pyproject;
 use crate::rules::registry::RuleSet;
 
@@ -50,6 +49,15 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
             .iter()
             .map(|p| p.to_string_lossy().to_string())
             .collect()
+    };
+
+    let exclude_globs = if args.excludes.is_empty() {
+        pyproject_config
+            .as_ref()
+            .map(|config| config.exclude.clone())
+            .unwrap_or_default()
+    } else {
+        args.excludes.clone()
     };
 
     if packages.is_empty() {
@@ -114,40 +122,34 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
         }
     };
 
-    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
-    let mut discovery_failures = 0usize;
-    for package in &packages {
-        match helper.discover(package) {
-            Ok(resp) => {
-                for model in resp.models {
-                    discovered_models.push(model);
-                }
-            }
-            Err(e) => {
-                eprintln!("error: discovery failed for package '{}': {}", package, e);
-                discovery_failures += 1;
-            }
-        }
+    let discovery = discover_batch(
+        &packages,
+        &exclude_globs,
+        args.continue_on_discovery_error,
+        "package",
+        |package, exclusions| helper.discover_with_exclusions(package, exclusions),
+    );
+    for failure in &discovery.failures {
+        eprintln!(
+            "error: discovery failed for {}: {}",
+            failure.target, failure.message
+        );
+    }
+    for warning in &discovery.warnings {
+        eprintln!("warning: {}: {}", warning.target, warning.message);
     }
 
     helper.shutdown();
 
-    if discovered_models.is_empty() {
-        if discovery_failures > 0 {
-            eprintln!(
-                "error: all {} package(s) failed discovery",
-                discovery_failures
-            );
-            return 1;
-        }
+    if discovery.models.is_empty() {
         eprintln!("warning: no Pydantic models discovered in packages");
-        return emit_empty_output(format, &profile_names, args.output.as_deref());
     }
 
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
-    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovered_models
+    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovery
+        .models
         .iter()
         .map(|m| {
             (
@@ -163,33 +165,26 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     // -------------------------------------------------------------------
     // 7. Attach source spans from discovery
     // -------------------------------------------------------------------
-    let all_diagnostics = attach_source_spans(results, &discovered_models);
+    let all_diagnostics = attach_source_spans(results, &discovery.models);
 
     // -------------------------------------------------------------------
     // 8. Aggregate results
     // -------------------------------------------------------------------
-    let (all_diagnostics, total_errors, total_warnings, fatal_errors) =
-        aggregate_results(all_diagnostics);
+    let report = build_report(
+        discovery.coverage,
+        discovery.failures,
+        discovery.warnings,
+        all_diagnostics,
+        profile_names,
+        Some(start.elapsed().as_millis() as u64),
+    );
 
     // -------------------------------------------------------------------
     // 9. Emit output
     // -------------------------------------------------------------------
-    let duration_ms = Some(start.elapsed().as_millis() as u64);
-    if let Err(exit_code) = emit_output(
-        format,
-        &all_diagnostics,
-        total_errors,
-        total_warnings,
-        &profile_names,
-        duration_ms,
-        args.output.as_deref(),
-    ) {
+    if let Err(exit_code) = emit_output(format, &report, args.output.as_deref()) {
         return exit_code;
     }
 
-    if total_errors > 0 || fatal_errors > 0 || discovery_failures > 0 {
-        1
-    } else {
-        0
-    }
+    report.exit_code()
 }

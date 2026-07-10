@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use crate::cli::args::OutputFormat;
+use crate::cli::report::{CheckReport, CoverageCounts, ReportMessage};
 use crate::cli::{emit_gha, emit_human, emit_json, emit_junit, emit_sarif};
 use crate::normalize::normalize;
-use crate::rules::registry::{Diagnostic, DiagnosticSeverity, RuleSet, SourceSpan};
+use crate::rules::registry::{DiagnosticSeverity, RuleSet, SourceSpan};
 
 /// Attach source spans from discovered models to diagnostics.
 ///
@@ -51,26 +52,31 @@ pub(crate) fn attach_source_spans(
         .collect()
 }
 
+pub(crate) struct AggregateResults {
+    pub diagnostics: Vec<(PathBuf, Vec<crate::rules::Diagnostic>)>,
+    pub total_errors: usize,
+    pub total_warnings: usize,
+    pub checked: usize,
+    pub failures: Vec<ReportMessage>,
+}
+
 pub(crate) fn aggregate_results(
     results: Vec<(
         PathBuf,
         String,
         Result<Vec<crate::rules::Diagnostic>, String>,
     )>,
-) -> (
-    Vec<(PathBuf, Vec<crate::rules::Diagnostic>)>,
-    usize,
-    usize,
-    usize,
-) {
+) -> AggregateResults {
     let mut all_diagnostics: Vec<(PathBuf, Vec<crate::rules::Diagnostic>)> = Vec::new();
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;
-    let mut fatal_errors = 0usize;
+    let mut checked = 0usize;
+    let mut failures = Vec::new();
 
-    for (path, _model_name, result) in results {
+    for (path, model_name, result) in results {
         match result {
             Ok(diags) => {
+                checked += 1;
                 for d in &diags {
                     match d.severity {
                         DiagnosticSeverity::Error => total_errors += 1,
@@ -81,7 +87,14 @@ pub(crate) fn aggregate_results(
             }
             Err(msg) => {
                 eprintln!("error: {}: {}", path.display(), msg);
-                fatal_errors += 1;
+                failures.push(ReportMessage {
+                    target: if model_name.is_empty() {
+                        path.display().to_string()
+                    } else {
+                        format!("{} ({model_name})", path.display())
+                    },
+                    message: msg,
+                });
             }
         }
     }
@@ -91,7 +104,41 @@ pub(crate) fn aggregate_results(
         diags.sort_by(|a, b| a.profile.cmp(&b.profile));
     }
 
-    (all_diagnostics, total_errors, total_warnings, fatal_errors)
+    AggregateResults {
+        diagnostics: all_diagnostics,
+        total_errors,
+        total_warnings,
+        checked,
+        failures,
+    }
+}
+
+pub(crate) fn build_report(
+    mut coverage: CoverageCounts,
+    mut failures: Vec<ReportMessage>,
+    warnings: Vec<ReportMessage>,
+    results: Vec<(
+        PathBuf,
+        String,
+        Result<Vec<crate::rules::Diagnostic>, String>,
+    )>,
+    profiles: Vec<String>,
+    duration_ms: Option<u64>,
+) -> CheckReport {
+    let aggregate = aggregate_results(results);
+    coverage.checked = aggregate.checked;
+    coverage.failed += aggregate.failures.len();
+    failures.extend(aggregate.failures);
+    CheckReport {
+        coverage,
+        failures,
+        warnings,
+        diagnostics: aggregate.diagnostics,
+        total_errors: aggregate.total_errors,
+        total_warnings: aggregate.total_warnings,
+        profiles,
+        duration_ms,
+    }
 }
 
 /// Render diagnostics to a String in the requested output format.
@@ -100,83 +147,49 @@ pub(crate) fn aggregate_results(
 /// (which writes to stdout or a file) and the JSON-RPC server handler (which
 /// embeds the result in a response object) call this function so the formatting
 /// logic is never duplicated.
-pub fn render_output(
-    format: OutputFormat,
-    all_diagnostics: &[(PathBuf, Vec<Diagnostic>)],
-    total_errors: usize,
-    total_warnings: usize,
-    profile_names: &[String],
-    duration_ms: Option<u64>,
-) -> String {
-    match format {
+pub fn render_output(format: OutputFormat, report: &CheckReport) -> String {
+    let mut output = match format {
         OutputFormat::Human => emit_human::emit_human_to_string(
-            all_diagnostics,
-            total_errors,
-            total_warnings,
-            duration_ms,
+            &report.diagnostics,
+            report.total_errors,
+            report.total_warnings,
+            report.duration_ms,
         ),
-        OutputFormat::Json => emit_json::emit_json_to_string(
-            all_diagnostics,
-            total_errors,
-            total_warnings,
-            profile_names,
-            duration_ms,
-        ),
-        OutputFormat::Sarif => emit_sarif::emit_sarif_to_string(all_diagnostics),
-        OutputFormat::Gha => emit_gha::emit_gha_to_string(all_diagnostics),
-        OutputFormat::Junit => emit_junit::emit_junit_to_string(all_diagnostics),
-    }
-}
+        OutputFormat::Json => return emit_json::emit_report_to_string(report),
+        OutputFormat::Sarif => emit_sarif::emit_sarif_to_string(&report.diagnostics),
+        OutputFormat::Gha => emit_gha::emit_gha_to_string(&report.diagnostics),
+        OutputFormat::Junit => emit_junit::emit_junit_to_string(&report.diagnostics),
+    };
 
-/// Emit the empty-results output for the given format and return the process exit code.
-pub(crate) fn emit_empty_output(
-    format: OutputFormat,
-    profile_names: &[String],
-    output: Option<&Path>,
-) -> i32 {
     if format == OutputFormat::Human {
-        // The Human empty-run summary is a fixed string, not routed through
-        // emit_human_to_string, because that function appends a duration suffix
-        // (e.g. " in 0ms") when duration_ms is Some — producing a different
-        // string than the intended output.  The literal below is byte-identical
-        // to what `println!` produced before this fix, including the trailing
-        // newline, so stdout behaviour is unchanged when output is None.
-        let text = "0 issues found (0 errors, 0 warnings) across 0 schemas\n";
-        if let Some(out_path) = output {
-            if let Err(e) = std::fs::write(out_path, text) {
-                eprintln!(
-                    "error: failed to write output to '{}': {}",
-                    out_path.display(),
-                    e
-                );
-                return 1;
-            }
-        } else {
-            print!("{}", text);
+        output.push_str(&format!(
+            "coverage {} ({} attempted, {} excluded, {} discovered, {} checked, {} failed)\n",
+            report.coverage.status().as_str(),
+            report.coverage.attempted,
+            report.coverage.excluded,
+            report.coverage.discovered,
+            report.coverage.checked,
+            report.coverage.failed
+        ));
+        for failure in &report.failures {
+            output.push_str(&format!("error: {}: {}\n", failure.target, failure.message));
         }
-    } else if let Err(exit_code) = emit_output(format, &[], 0, 0, profile_names, Some(0), output) {
-        return exit_code;
+        for warning in &report.warnings {
+            output.push_str(&format!(
+                "warning: {}: {}\n",
+                warning.target, warning.message
+            ));
+        }
     }
-    0
+    output
 }
 
 pub(crate) fn emit_output(
     format: OutputFormat,
-    all_diagnostics: &[(PathBuf, Vec<Diagnostic>)],
-    total_errors: usize,
-    total_warnings: usize,
-    profile_names: &[String],
-    duration_ms: Option<u64>,
+    report: &CheckReport,
     output: Option<&Path>,
 ) -> Result<(), i32> {
-    let output_text = render_output(
-        format,
-        all_diagnostics,
-        total_errors,
-        total_warnings,
-        profile_names,
-        duration_ms,
-    );
+    let output_text = render_output(format, report);
 
     if let Some(out_path) = output {
         if let Err(e) = std::fs::write(out_path, &output_text) {

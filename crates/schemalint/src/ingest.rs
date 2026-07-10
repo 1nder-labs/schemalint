@@ -18,6 +18,10 @@ pub struct DiscoverResponse {
     #[serde(default)]
     pub warnings: Vec<DiscoveryWarning>,
     #[serde(default)]
+    pub failures: Vec<DiscoveryFailure>,
+    #[serde(default)]
+    pub counts: DiscoveryCounts,
+    #[serde(default)]
     pub provider_hint: Option<String>,
 }
 
@@ -26,4 +30,20 @@ pub struct DiscoverResponse {
 pub struct DiscoveryWarning {
     pub model: String,
     pub message: String,
+}
+
+/// A target that was located but could not be evaluated into a schema.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DiscoveryFailure {
+    pub target: String,
+    pub message: String,
+}
+
+/// Counts produced by one sidecar discovery request.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
+pub struct DiscoveryCounts {
+    pub attempted: usize,
+    pub excluded: usize,
+    pub discovered: usize,
+    pub failed: usize,
 }

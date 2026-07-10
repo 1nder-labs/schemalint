@@ -61,7 +61,15 @@ impl PythonHelper {
 
     /// Send a `discover` request for the given package and return discovered models.
     pub fn discover(&mut self, package: &str) -> Result<DiscoverResponse, PythonError> {
-        let params = serde_json::json!({ "package": package });
+        self.discover_with_exclusions(package, &[])
+    }
+
+    pub(crate) fn discover_with_exclusions(
+        &mut self,
+        package: &str,
+        exclusions: &[String],
+    ) -> Result<DiscoverResponse, PythonError> {
+        let params = serde_json::json!({ "package": package, "exclude": exclusions });
         let result = self.client.send_discover(params);
         result.map_err(|e| match e {
             // serialize/write/flush: no stderr augmentation

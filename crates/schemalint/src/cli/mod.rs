@@ -51,9 +51,11 @@ pub mod server;
 mod check;
 mod check_node;
 mod check_python;
+mod discovery_policy;
 mod glob;
 mod pipeline;
 mod profiles_cmd;
+mod report;
 
 pub(crate) use pipeline::check_rulesets;
 

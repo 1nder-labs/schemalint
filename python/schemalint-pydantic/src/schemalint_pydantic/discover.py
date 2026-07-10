@@ -8,6 +8,7 @@ import importlib
 import inspect
 import re
 import sys
+from fnmatch import fnmatchcase
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
@@ -34,12 +35,18 @@ def _capture_stdout():
         sys.stdout = old_stdout
 
 
-def discover_models(package: str) -> Dict[str, Any]:
+def discover_models(package: str, exclude: Optional[List[str]] = None) -> Dict[str, Any]:
     """Discover Pydantic BaseModel subclasses in a Python package.
 
     Returns a dict with:
         models: list of model entries, each with name, module_path, schema, source_map
     """
+    exclusions = exclude or []
+    counts = {"attempted": 0, "excluded": 0, "discovered": 0, "failed": 0}
+    if any(fnmatchcase(package, pattern) for pattern in exclusions):
+        counts["excluded"] = 1
+        return {"models": [], "warnings": [], "failures": [], "counts": counts}
+
     with _capture_stdout():
         try:
             mod = importlib.import_module(package)
@@ -48,12 +55,17 @@ def discover_models(package: str) -> Dict[str, Any]:
 
     models = []
     warnings_list = []
+    failures = []
 
-    _collect_models(mod, models, warnings_list, package)
+    _collect_models(mod, models, warnings_list, failures, counts, exclusions, package)
+    counts["discovered"] = len(models)
 
-    result: Dict[str, Any] = {"models": models}
-    if warnings_list:
-        result["warnings"] = warnings_list
+    result: Dict[str, Any] = {
+        "models": models,
+        "warnings": warnings_list,
+        "failures": failures,
+        "counts": counts,
+    }
 
     return result
 
@@ -62,6 +74,9 @@ def _collect_models(
     mod: Any,
     models: List[Dict[str, Any]],
     warnings_list: List[Dict[str, Any]],
+    failures: List[Dict[str, Any]],
+    counts: Dict[str, int],
+    exclusions: List[str],
     root_package: str,
     visited: Optional[set] = None,
 ) -> None:
@@ -81,16 +96,18 @@ def _collect_models(
 
     for name, cls in members:
         if _V2BaseModel is not None and issubclass(cls, _V2BaseModel) and cls is not _V2BaseModel:
+            counts["attempted"] += 1
             try:
                 entry = _extract_model(cls, name)
                 models.append(entry)
             except Exception as e:
-                warnings_list.append({
-                    "type": "extraction_error",
-                    "model": name,
+                counts["failed"] += 1
+                failures.append({
+                    "target": name,
                     "message": str(e),
                 })
         elif _V1BaseModel is not None and issubclass(cls, _V1BaseModel) and cls is not _V1BaseModel:
+            counts["attempted"] += 1
             try:
                 entry = _extract_model_v1(cls, name)
                 models.append(entry)
@@ -103,20 +120,32 @@ def _collect_models(
                     ),
                 })
             except Exception as e:
-                warnings_list.append({
-                    "type": "extraction_error",
-                    "model": name,
+                counts["failed"] += 1
+                failures.append({
+                    "target": name,
                     "message": str(e),
                 })
 
     # Recurse into submodules
     if hasattr(mod, "__path__"):
         for _, submod_name, _ in pkgutil_iter_modules(mod.__path__, mod.__name__ + "."):
+            if any(fnmatchcase(submod_name, pattern) for pattern in exclusions):
+                counts["excluded"] += 1
+                continue
             try:
                 submod = importlib.import_module(submod_name)
             except Exception:
                 continue
-            _collect_models(submod, models, warnings_list, root_package, visited)
+            _collect_models(
+                submod,
+                models,
+                warnings_list,
+                failures,
+                counts,
+                exclusions,
+                root_package,
+                visited,
+            )
 
 
 def pkgutil_iter_modules(path, prefix):

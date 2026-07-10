@@ -40,9 +40,23 @@ export interface DiscoveryWarning {
   message: string;
 }
 
+export interface DiscoveryFailure {
+  target: string;
+  message: string;
+}
+
+export interface DiscoveryCounts {
+  attempted: number;
+  excluded: number;
+  discovered: number;
+  failed: number;
+}
+
 export interface DiscoverResponse {
   models: DiscoveredModel[];
   warnings: DiscoveryWarning[];
+  failures: DiscoveryFailure[];
+  counts: DiscoveryCounts;
   provider_hint?: string;
 }
 
@@ -57,7 +71,8 @@ export interface DiscoverResponse {
  * 6. Converts schemas to JSON Schema via zod-to-json-schema or native.
  */
 export async function discoverZodSchemas(
-  sourceGlob: string
+  sourceGlob: string,
+  exclusions: string[] = []
 ): Promise<DiscoverResponse> {
   const tsModule = await import('typescript');
   const pm = await import('picomatch');
@@ -132,8 +147,23 @@ export async function discoverZodSchemas(
     return isMatch(relPath);
   });
 
+  const matchedFiles = fileNames.length;
+  const excludeMatchers = exclusions.map(
+    (pattern) => picomatch(pattern, { dot: true }) as (input: string) => boolean
+  );
+  fileNames = fileNames.filter((file) => {
+    const relative = toPosixPath(path.relative(projectRoot, file));
+    return !excludeMatchers.some((matches) => matches(relative));
+  });
+  const excluded = matchedFiles - fileNames.length;
+
   if (fileNames.length === 0) {
-    return { models: [], warnings: [] };
+    return {
+      models: [],
+      warnings: [],
+      failures: [],
+      counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
+    };
   }
 
   // Create program and walk ASTs to discover schemas
@@ -190,11 +220,17 @@ export async function discoverZodSchemas(
   }
 
   if (discoveredLocations.length === 0) {
-    return { models: [], warnings: nonFatal };
+    return {
+      models: [],
+      warnings: nonFatal,
+      failures: [],
+      counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
+    };
   }
 
   // Step 3: Runtime evaluation — import each file and evaluate schemas
   const models: DiscoveredModel[] = [];
+  const failures: DiscoveryFailure[] = [];
 
   for (const loc of discoveredLocations) {
     try {
@@ -213,14 +249,24 @@ export async function discoverZodSchemas(
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      nonFatal.push({
-        model: loc.name,
+      failures.push({
+        target: loc.name,
         message: `Failed to evaluate schema '${loc.name}' in ${loc.filePath}: ${message}`,
       });
     }
   }
 
-  const response: DiscoverResponse = { models, warnings: nonFatal };
+  const response: DiscoverResponse = {
+    models,
+    warnings: nonFatal,
+    failures,
+    counts: {
+      attempted: discoveredLocations.length,
+      excluded,
+      discovered: models.length,
+      failed: failures.length,
+    },
+  };
   if (providerHint) {
     response.provider_hint = providerHint;
   }

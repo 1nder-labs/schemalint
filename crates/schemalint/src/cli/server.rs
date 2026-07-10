@@ -9,12 +9,12 @@ use serde_json::{json, Value};
 use crate::cache::{hash_bytes, DiskCache};
 use crate::cli::args::OutputFormat;
 use crate::cli::check_rulesets;
-use crate::cli::pipeline::{
-    aggregate_results, attach_source_spans, process_schemas, render_output,
-};
+use crate::cli::discovery_policy::discover_batch;
+use crate::cli::pipeline::{attach_source_spans, build_report, process_schemas, render_output};
+use crate::cli::report::CoverageCounts;
 use crate::normalize::normalize;
 use crate::profile::load;
-use crate::rules::{Diagnostic, DiagnosticSeverity, RuleSet};
+use crate::rules::RuleSet;
 
 const MAX_PAYLOAD_BYTES: usize = 10_000_000;
 const MAX_CHECK_SECONDS: u64 = 30;
@@ -32,6 +32,20 @@ const MAX_SCHEMA_NODES: usize = 200_000; // recursive object/array/value count
                                          // the server. Bounding depth here prevents that: once rejected, neither the
                                          // counter nor any downstream recursive walk ever receives an over-deep tree.
 const MAX_SCHEMA_DEPTH: usize = 1_000; // real schemas are always well under 50
+
+fn string_array(params: &Value, key: &str) -> Vec<String> {
+    params
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
 /// Run the JSON-RPC 2.0 server over stdin/stdout.
 ///
@@ -226,7 +240,6 @@ fn handle_check(
             });
         }
     };
-
     // Load profiles (cached across requests)
     let mut loaded_profiles = Vec::new();
     {
@@ -361,18 +374,7 @@ fn handle_check(
         }
     };
 
-    // Check rules
-    let mut total_errors = 0usize;
-    let mut total_warnings = 0usize;
-
     let diags = check_rulesets(&normalized.arena, &profile_rulesets);
-    for d in &diags {
-        match d.severity {
-            DiagnosticSeverity::Error => total_errors += 1,
-            DiagnosticSeverity::Warning => total_warnings += 1,
-        }
-    }
-    let all_diagnostics: Vec<(PathBuf, Vec<Diagnostic>)> = vec![(PathBuf::from("<inline>"), diags)];
 
     if start.elapsed() > Duration::from_secs(MAX_CHECK_SECONDS) {
         return json!({
@@ -381,23 +383,20 @@ fn handle_check(
         });
     }
 
-    let duration_ms = Some(start.elapsed().as_millis() as u64);
-
-    let output_text = render_output(
-        format,
-        &all_diagnostics,
-        total_errors,
-        total_warnings,
-        &profile_names,
-        duration_ms,
+    let report = build_report(
+        CoverageCounts {
+            attempted: 1,
+            discovered: 1,
+            ..CoverageCounts::default()
+        },
+        vec![],
+        vec![],
+        vec![(PathBuf::from("<inline>"), String::new(), Ok(diags))],
+        profile_names,
+        Some(start.elapsed().as_millis() as u64),
     );
-
-    json!({
-        "success": true,
-        "output": output_text,
-        "total_errors": total_errors,
-        "total_warnings": total_warnings,
-    })
+    let output_text = render_output(format, &report);
+    report.rpc_result(output_text)
 }
 
 // ---------------------------------------------------------------------------
@@ -475,6 +474,11 @@ fn handle_check_node(
             });
         }
     };
+    let exclusions = string_array(&params, "exclude");
+    let continue_on_error = params
+        .get("continue_on_discovery_error")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
     // --- 2. Load profiles (cached) ---
     let mut loaded_profiles = Vec::new();
@@ -542,61 +546,20 @@ fn handle_check_node(
     };
 
     // --- 4. Discover schemas from each source glob ---
-    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
-    let mut discovery_errors: Vec<String> = Vec::new();
-    let mut discovery_warnings: Vec<String> = Vec::new();
-
-    for source in &sources {
-        match helper.discover(source) {
-            Ok(resp) => {
-                for model in resp.models {
-                    discovered_models.push(model);
-                }
-                for warning in &resp.warnings {
-                    // Log to stderr (doesn't corrupt the JSON-RPC stream) and collect for the response.
-                    eprintln!(
-                        "[checkNode] warning: discovery warning for '{}' in source '{}': {}",
-                        warning.model, source, warning.message
-                    );
-                    discovery_warnings.push(format!(
-                        "source '{}', model '{}': {}",
-                        source, warning.model, warning.message
-                    ));
-                }
-            }
-            Err(e) => {
-                discovery_errors.push(format!("discovery failed for source '{}': {}", source, e));
-            }
-        }
-    }
+    let discovery = discover_batch(
+        &sources,
+        &exclusions,
+        continue_on_error,
+        "source",
+        |source, excludes| helper.discover_with_exclusions(source, excludes),
+    );
 
     // Unconditionally shut down the helper before any failure handling.
     helper.shutdown();
 
-    if discovered_models.is_empty() && !discovery_errors.is_empty() {
-        return json!({
-            "success": false,
-            "error": discovery_errors.join("; ")
-        });
-    }
-
-    if discovered_models.is_empty() {
-        // No models found, no failures — return clean empty result.
-        let output_text = render_output(format, &[], 0, 0, &profile_names, Some(0));
-        let mut response = json!({
-            "success": true,
-            "output": output_text,
-            "total_errors": 0,
-            "total_warnings": 0,
-        });
-        if !discovery_warnings.is_empty() {
-            response["discovery_warnings"] = json!(discovery_warnings);
-        }
-        return response;
-    }
-
     // --- 5. Run the normalize → check → aggregate pipeline ---
-    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovered_models
+    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovery
+        .models
         .iter()
         .map(|m| {
             (
@@ -608,43 +571,17 @@ fn handle_check_node(
         .collect();
 
     let results = process_schemas(schema_entries, &profile_rulesets);
-    let results_with_spans = attach_source_spans(results, &discovered_models);
-    let (all_diagnostics, total_errors, total_warnings, fatal_errors) =
-        aggregate_results(results_with_spans);
-
-    let duration_ms = Some(start.elapsed().as_millis() as u64);
-
-    if fatal_errors > 0 || (!discovery_errors.is_empty() && discovered_models.is_empty()) {
-        return json!({
-            "success": false,
-            "error": format!("{} schema(s) failed normalization/checking", fatal_errors)
-        });
-    }
-
-    let output_text = render_output(
-        format,
-        &all_diagnostics,
-        total_errors,
-        total_warnings,
-        &profile_names,
-        duration_ms,
+    let results_with_spans = attach_source_spans(results, &discovery.models);
+    let report = build_report(
+        discovery.coverage,
+        discovery.failures,
+        discovery.warnings,
+        results_with_spans,
+        profile_names,
+        Some(start.elapsed().as_millis() as u64),
     );
-
-    // Build the success response, adding discovery_errors / discovery_warnings only when non-empty.
-    // This preserves the existing response shape for callers that see no partial failures.
-    let mut response = json!({
-        "success": true,
-        "output": output_text,
-        "total_errors": total_errors,
-        "total_warnings": total_warnings,
-    });
-    if !discovery_errors.is_empty() {
-        response["discovery_errors"] = json!(discovery_errors);
-    }
-    if !discovery_warnings.is_empty() {
-        response["discovery_warnings"] = json!(discovery_warnings);
-    }
-    response
+    let output_text = render_output(format, &report);
+    report.rpc_result(output_text)
 }
 
 // ---------------------------------------------------------------------------
@@ -697,6 +634,11 @@ fn handle_check_python(
             "error": "Empty 'packages' array; at least one package name is required"
         });
     }
+    let exclusions = string_array(&params, "exclude");
+    let continue_on_error = params
+        .get("continue_on_discovery_error")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
     let profiles = match params.get("profiles").and_then(|v| v.as_array()) {
         Some(arr) => arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
@@ -792,56 +734,20 @@ fn handle_check_python(
     };
 
     // --- 4. Discover models from each package ---
-    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
-    let mut discovery_errors: Vec<String> = Vec::new();
-    let mut discovery_warnings: Vec<String> = Vec::new();
-
-    for package in &packages {
-        match helper.discover(package) {
-            Ok(resp) => {
-                for model in resp.models {
-                    discovered_models.push(model);
-                }
-                for warning in &resp.warnings {
-                    discovery_warnings.push(format!(
-                        "package '{}', model '{}': {}",
-                        package, warning.model, warning.message
-                    ));
-                }
-            }
-            Err(e) => {
-                discovery_errors.push(format!("discovery failed for package '{}': {}", package, e));
-            }
-        }
-    }
+    let discovery = discover_batch(
+        &packages,
+        &exclusions,
+        continue_on_error,
+        "package",
+        |package, excludes| helper.discover_with_exclusions(package, excludes),
+    );
 
     // Unconditionally shut down the helper before any failure handling.
     helper.shutdown();
 
-    if discovered_models.is_empty() && !discovery_errors.is_empty() {
-        return json!({
-            "success": false,
-            "error": discovery_errors.join("; ")
-        });
-    }
-
-    if discovered_models.is_empty() {
-        // No models found, no failures — return clean empty result.
-        let output_text = render_output(format, &[], 0, 0, &profile_names, Some(0));
-        let mut response = json!({
-            "success": true,
-            "output": output_text,
-            "total_errors": 0,
-            "total_warnings": 0,
-        });
-        if !discovery_warnings.is_empty() {
-            response["discovery_warnings"] = json!(discovery_warnings);
-        }
-        return response;
-    }
-
     // --- 5. Run the normalize → check → aggregate pipeline ---
-    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovered_models
+    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovery
+        .models
         .iter()
         .map(|m| {
             (
@@ -853,41 +759,15 @@ fn handle_check_python(
         .collect();
 
     let results = process_schemas(schema_entries, &profile_rulesets);
-    let results_with_spans = attach_source_spans(results, &discovered_models);
-    let (all_diagnostics, total_errors, total_warnings, fatal_errors) =
-        aggregate_results(results_with_spans);
-
-    let duration_ms = Some(start.elapsed().as_millis() as u64);
-
-    if fatal_errors > 0 || (!discovery_errors.is_empty() && discovered_models.is_empty()) {
-        return json!({
-            "success": false,
-            "error": format!("{} schema(s) failed normalization/checking", fatal_errors)
-        });
-    }
-
-    let output_text = render_output(
-        format,
-        &all_diagnostics,
-        total_errors,
-        total_warnings,
-        &profile_names,
-        duration_ms,
+    let results_with_spans = attach_source_spans(results, &discovery.models);
+    let report = build_report(
+        discovery.coverage,
+        discovery.failures,
+        discovery.warnings,
+        results_with_spans,
+        profile_names,
+        Some(start.elapsed().as_millis() as u64),
     );
-
-    // Build the success response, adding discovery_errors / discovery_warnings only when non-empty.
-    // This preserves the existing response shape for callers that see no partial failures.
-    let mut response = json!({
-        "success": true,
-        "output": output_text,
-        "total_errors": total_errors,
-        "total_warnings": total_warnings,
-    });
-    if !discovery_errors.is_empty() {
-        response["discovery_errors"] = json!(discovery_errors);
-    }
-    if !discovery_warnings.is_empty() {
-        response["discovery_warnings"] = json!(discovery_warnings);
-    }
-    response
+    let output_text = render_output(format, &report);
+    report.rpc_result(output_text)
 }

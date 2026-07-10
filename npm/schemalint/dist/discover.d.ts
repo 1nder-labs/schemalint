@@ -24,9 +24,21 @@ export interface DiscoveryWarning {
     model: string;
     message: string;
 }
+export interface DiscoveryFailure {
+    target: string;
+    message: string;
+}
+export interface DiscoveryCounts {
+    attempted: number;
+    excluded: number;
+    discovered: number;
+    failed: number;
+}
 export interface DiscoverResponse {
     models: DiscoveredModel[];
     warnings: DiscoveryWarning[];
+    failures: DiscoveryFailure[];
+    counts: DiscoveryCounts;
     provider_hint?: string;
 }
 /**
@@ -39,5 +51,5 @@ export interface DiscoverResponse {
  * 5. Dynamically imports each file and evaluates schemas at runtime.
  * 6. Converts schemas to JSON Schema via zod-to-json-schema or native.
  */
-export declare function discoverZodSchemas(sourceGlob: string): Promise<DiscoverResponse>;
+export declare function discoverZodSchemas(sourceGlob: string, exclusions?: string[]): Promise<DiscoverResponse>;
 //# sourceMappingURL=discover.d.ts.map

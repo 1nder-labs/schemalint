@@ -3,7 +3,7 @@ source: crates/schemalint/tests/snapshot_tests/part_01.rs
 expression: "normalize_temp_paths(&stdout, dir.path())"
 ---
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "tool": {
     "name": "schemalint",
     "version": "[version]"
@@ -30,5 +30,18 @@ expression: "normalize_temp_paths(&stdout, dir.path())"
       "profile": "test",
       "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/allOf"
     }
-  ]
+  ],
+  "report": {
+    "coverage": {
+      "attempted": 1,
+      "checked": 1,
+      "discovered": 1,
+      "excluded": 0,
+      "failed": 0,
+      "status": "complete"
+    },
+    "failures": [],
+    "success": false,
+    "warnings": []
+  }
 }

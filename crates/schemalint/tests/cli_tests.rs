@@ -215,7 +215,7 @@ fn discover_single_file() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("schema.json");
     fs::write(&file, "{}").unwrap();
-    let files = discover::discover(&[file.to_string_lossy().to_string()]);
+    let files = discover::discover(&[file.to_string_lossy().to_string()], &[]).files;
     assert_eq!(files, vec![file]);
 }
 
@@ -228,7 +228,7 @@ fn discover_recursive_directory() {
     let b = sub.join("b.json");
     fs::write(&a, "{}").unwrap();
     fs::write(&b, "{}").unwrap();
-    let files = discover::discover(&[dir.path().to_string_lossy().to_string()]);
+    let files = discover::discover(&[dir.path().to_string_lossy().to_string()], &[]).files;
     assert_eq!(files, vec![a, b]);
 }
 
@@ -239,7 +239,7 @@ fn discover_ignores_non_json_files() {
     let txt = dir.path().join("readme.txt");
     fs::write(&json, "{}").unwrap();
     fs::write(&txt, "hello").unwrap();
-    let files = discover::discover(&[dir.path().to_string_lossy().to_string()]);
+    let files = discover::discover(&[dir.path().to_string_lossy().to_string()], &[]).files;
     assert_eq!(files, vec![json]);
 }
 
@@ -253,14 +253,14 @@ fn discover_ignores_symlinks() {
     std::os::unix::fs::symlink(&real, &link).unwrap();
     #[cfg(windows)]
     std::os::windows::fs::symlink_file(&real, &link).unwrap();
-    let files = discover::discover(&[dir.path().to_string_lossy().to_string()]);
+    let files = discover::discover(&[dir.path().to_string_lossy().to_string()], &[]).files;
     assert_eq!(files, vec![real]);
 }
 
 #[test]
 fn discover_empty_directory() {
     let dir = tempfile::tempdir().unwrap();
-    let files = discover::discover(&[dir.path().to_string_lossy().to_string()]);
+    let files = discover::discover(&[dir.path().to_string_lossy().to_string()], &[]).files;
     assert!(files.is_empty());
 }
 
@@ -269,10 +269,14 @@ fn discover_deduplicates() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("schema.json");
     fs::write(&file, "{}").unwrap();
-    let files = discover::discover(&[
-        file.to_string_lossy().to_string(),
-        file.to_string_lossy().to_string(),
-    ]);
+    let files = discover::discover(
+        &[
+            file.to_string_lossy().to_string(),
+            file.to_string_lossy().to_string(),
+        ],
+        &[],
+    )
+    .files;
     assert_eq!(files.len(), 1);
 }
 

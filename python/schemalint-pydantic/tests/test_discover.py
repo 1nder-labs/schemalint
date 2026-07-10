@@ -110,6 +110,20 @@ class TestDiscoverModels:
         assert "properties" in schema
         assert "name" in schema["properties"]
         assert "age" in schema["properties"]
+        assert result["counts"]["attempted"] == len(result["models"])
+        assert result["counts"]["discovered"] == len(result["models"])
+        assert result["counts"]["failed"] == 0
+
+    def test_root_package_excluded_before_import(self, temp_package):
+        result = discover_models(temp_package, [temp_package])
+
+        assert result["models"] == []
+        assert result["counts"] == {
+            "attempted": 0,
+            "excluded": 1,
+            "discovered": 0,
+            "failed": 0,
+        }
 
     def test_simple_model_has_source_map(self, temp_package):
         try:

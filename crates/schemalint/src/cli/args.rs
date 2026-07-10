@@ -45,6 +45,10 @@ pub struct CheckArgs {
     #[arg(short, long)]
     pub output: Option<PathBuf>,
 
+    /// Exclude matching files or directories before checking
+    #[arg(long = "exclude")]
+    pub excludes: Vec<String>,
+
     /// Schema files or directories to check
     pub paths: Vec<String>,
 }
@@ -82,6 +86,14 @@ pub struct CheckPythonArgs {
     /// Write output to a file instead of stdout
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+
+    /// Exclude matching packages or modules before importing them
+    #[arg(long = "exclude")]
+    pub excludes: Vec<String>,
+
+    /// Continue discovering remaining packages after a discovery failure
+    #[arg(long)]
+    pub continue_on_discovery_error: bool,
 }
 
 #[derive(Parser)]
@@ -113,6 +125,14 @@ pub struct CheckNodeArgs {
     /// Write output to a file instead of stdout
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+
+    /// Exclude matching source files before importing them
+    #[arg(long = "exclude")]
+    pub excludes: Vec<String>,
+
+    /// Continue discovering remaining source globs after a discovery failure
+    #[arg(long)]
+    pub continue_on_discovery_error: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]

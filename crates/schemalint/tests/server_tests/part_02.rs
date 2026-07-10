@@ -246,7 +246,7 @@ fn server_multiple_errors_then_success() {
             "jsonrpc": "2.0",
             "method": "check",
             "params": {
-                "schema": {"type": "string"},
+                "schema": {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"], "additionalProperties": false},
                 "profiles": ["openai.so.2026-04-30"]
             },
             "id": 4
