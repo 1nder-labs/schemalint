@@ -9,14 +9,14 @@ use crate::cli::report::CoverageCounts;
 use crate::normalize::normalize;
 
 use super::policy::{load_profiles, output_format, required_string_array, rulesets};
-use super::{ProfileCache, SchemaCache};
+use super::ServerState;
 
 const MAX_CHECK_SECONDS: u64 = 30;
 const MAX_SCHEMA_BYTES: usize = 5 * 1024 * 1024;
 const MAX_SCHEMA_NODES: usize = 200_000;
 const MAX_SCHEMA_DEPTH: usize = 1_000;
 
-pub(super) fn handle(params: Value, cache: &SchemaCache, profiles: &ProfileCache) -> Value {
+pub(super) fn handle(params: Value, state: &mut ServerState) -> Value {
     let schema = match params.get("schema") {
         Some(schema) => schema.clone(),
         None => return json!({"success": false, "error": "Missing 'schema' parameter"}),
@@ -35,7 +35,7 @@ pub(super) fn handle(params: Value, cache: &SchemaCache, profiles: &ProfileCache
         Ok(format) => format,
         Err(error) => return error,
     };
-    let loaded = match load_profiles(&profile_ids, profiles) {
+    let loaded = match load_profiles(&profile_ids, &mut state.profiles) {
         Ok(loaded) => loaded,
         Err(error) => return error,
     };
@@ -62,11 +62,7 @@ pub(super) fn handle(params: Value, cache: &SchemaCache, profiles: &ProfileCache
 
     let start = Instant::now();
     let hash = hash_bytes(&schema_bytes);
-    let cached = cache
-        .read()
-        .unwrap_or_else(|error| error.into_inner())
-        .get(hash, &schema_bytes)
-        .cloned();
+    let cached = state.schemas.get(hash, &schema_bytes).cloned();
     let normalized = match cached {
         Some(schema) => schema,
         None => {
@@ -76,10 +72,7 @@ pub(super) fn handle(params: Value, cache: &SchemaCache, profiles: &ProfileCache
                     return json!({"success": false, "error": format!("Normalization failed: {error}")});
                 }
             };
-            cache
-                .write()
-                .unwrap_or_else(|error| error.into_inner())
-                .insert(hash, schema_bytes, normalized.clone());
+            state.schemas.insert(hash, schema_bytes, normalized.clone());
             normalized
         }
     };

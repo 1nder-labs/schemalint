@@ -4,10 +4,10 @@ use serde_json::{json, Value};
 
 use crate::cli::args::OutputFormat;
 use crate::cli::discovery_policy::{discover_batch, DiscoveryBatch};
-use crate::cli::node_policy::{automatic_profile_ids, process_node_targets};
+use crate::cli::node_policy::{automatic_profile_ids, automatic_target_inputs};
 use crate::cli::pipeline::{
-    append_envelope_diagnostics, attach_source_spans, build_report, process_schemas, render_output,
-    schema_entries,
+    build_report, evaluate_targets, explicit_model_inputs, render_output, EnvelopePolicy,
+    TargetInput,
 };
 use crate::profile::Profile;
 use crate::rules::RuleSet;
@@ -15,7 +15,7 @@ use crate::rules::RuleSet;
 use super::policy::{
     load_profiles, optional_string_array, output_format, required_string_array, rulesets,
 };
-use super::ProfileCache;
+use super::ServerState;
 
 struct PreparedRequest {
     targets: Vec<String>,
@@ -25,14 +25,7 @@ struct PreparedRequest {
     profile_ids: Option<Vec<String>>,
 }
 
-#[derive(Clone, Copy)]
-enum DiscoveryMode {
-    NodeAutomatic,
-    NodeExplicit,
-    PythonExplicit,
-}
-
-pub(super) fn handle_node(params: Value, cache: &ProfileCache) -> Value {
+pub(super) fn handle_node(params: Value, state: &mut ServerState) -> Value {
     let prepared = match prepare(params, "sources", "source globs", false) {
         Ok(prepared) => prepared,
         Err(error) => return error,
@@ -50,14 +43,12 @@ pub(super) fn handle_node(params: Value, cache: &ProfileCache) -> Value {
             result
         },
     );
-    let (profile_ids, mode) = match &prepared.profile_ids {
-        Some(profile_ids) => (profile_ids.clone(), DiscoveryMode::NodeExplicit),
-        None => (
-            automatic_profile_ids(&discovery.models),
-            DiscoveryMode::NodeAutomatic,
-        ),
+    let automatic = prepared.profile_ids.is_none();
+    let profile_ids = match &prepared.profile_ids {
+        Some(profile_ids) => profile_ids.clone(),
+        None => automatic_profile_ids(&discovery.models),
     };
-    let profiles = match load_profiles(&profile_ids, cache) {
+    let profiles = match load_profiles(&profile_ids, &mut state.profiles) {
         Ok(profiles) => profiles,
         Err(error) => return error,
     };
@@ -65,15 +56,23 @@ pub(super) fn handle_node(params: Value, cache: &ProfileCache) -> Value {
         Ok(rules) => rules,
         Err(error) => return error,
     };
-    finish(discovery, &prepared, &profiles, &rules, start, mode)
+    let inputs = if automatic {
+        automatic_target_inputs(&discovery.models, &rules)
+    } else {
+        explicit_model_inputs(&discovery.models, &rules, EnvelopePolicy::Validate)
+    };
+    finish(discovery, &prepared, &profiles, &rules, start, inputs)
 }
 
-pub(super) fn handle_python(params: Value, cache: &ProfileCache) -> Value {
+pub(super) fn handle_python(params: Value, state: &mut ServerState) -> Value {
     let prepared = match prepare(params, "packages", "Python package names", true) {
         Ok(prepared) => prepared,
         Err(error) => return error,
     };
-    let profiles = match load_profiles(prepared.profile_ids.as_deref().unwrap_or_default(), cache) {
+    let profiles = match load_profiles(
+        prepared.profile_ids.as_deref().unwrap_or_default(),
+        &mut state.profiles,
+    ) {
         Ok(profiles) => profiles,
         Err(error) => return error,
     };
@@ -94,14 +93,8 @@ pub(super) fn handle_python(params: Value, cache: &ProfileCache) -> Value {
             result
         },
     );
-    finish(
-        discovery,
-        &prepared,
-        &profiles,
-        &rules,
-        start,
-        DiscoveryMode::PythonExplicit,
-    )
+    let inputs = explicit_model_inputs(&discovery.models, &rules, EnvelopePolicy::Ignore);
+    finish(discovery, &prepared, &profiles, &rules, start, inputs)
 }
 
 fn prepare(
@@ -161,27 +154,18 @@ fn finish(
     profiles: &[Profile],
     rules: &[(&Profile, RuleSet)],
     start: Instant,
-    mode: DiscoveryMode,
+    inputs: Vec<TargetInput>,
 ) -> Value {
     let names: Vec<String> = profiles
         .iter()
         .map(|profile| profile.name.clone())
         .collect();
-    let mut results = match mode {
-        DiscoveryMode::NodeAutomatic => process_node_targets(&discovery.models, rules),
-        DiscoveryMode::NodeExplicit | DiscoveryMode::PythonExplicit => {
-            process_schemas(schema_entries(&discovery.models, &names), rules)
-        }
-    };
-    if matches!(mode, DiscoveryMode::NodeExplicit) {
-        append_envelope_diagnostics(&mut results, &discovery.models, rules);
-    }
-    let diagnostics = attach_source_spans(results);
+    let results = evaluate_targets(inputs, rules);
     let report = build_report(
         discovery.coverage,
         discovery.failures,
         discovery.warnings,
-        diagnostics,
+        results,
         names,
         Some(start.elapsed().as_millis() as u64),
     );

@@ -7,17 +7,7 @@ const path = require('path');
 
 const packageMetadata = require('../package.json');
 
-const TARGETS = [
-  'aarch64-apple-darwin',
-  'aarch64-unknown-linux-gnu',
-  'x86_64-apple-darwin',
-  'x86_64-unknown-linux-gnu',
-  'x86_64-pc-windows-msvc',
-];
-
-function archiveName(target) {
-  return `schemalint-${target}${target.endsWith('windows-msvc') ? '.zip' : '.tar.gz'}`;
-}
+const { TARGETS, getArchive: archiveName } = require('../launcher/config.cjs');
 
 function fileSha256(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');

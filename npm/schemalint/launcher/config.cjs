@@ -9,13 +9,17 @@ const PACKAGE = require(PACKAGE_PATH);
 const VERSION = PACKAGE.version;
 const REPO = '1nder-labs/schemalint';
 
-const TARGET_MAP = Object.freeze({
-  'darwin-x64': 'x86_64-apple-darwin',
-  'darwin-arm64': 'aarch64-apple-darwin',
-  'linux-x64': 'x86_64-unknown-linux-gnu',
-  'linux-arm64': 'aarch64-unknown-linux-gnu',
-  'win32-x64': 'x86_64-pc-windows-msvc',
-});
+const NATIVE_TARGETS = Object.freeze([
+  { platform: 'darwin', arch: 'x64', target: 'x86_64-apple-darwin', extension: '.tar.gz' },
+  { platform: 'darwin', arch: 'arm64', target: 'aarch64-apple-darwin', extension: '.tar.gz' },
+  { platform: 'linux', arch: 'x64', target: 'x86_64-unknown-linux-gnu', extension: '.tar.gz' },
+  { platform: 'linux', arch: 'arm64', target: 'aarch64-unknown-linux-gnu', extension: '.tar.gz' },
+  { platform: 'win32', arch: 'x64', target: 'x86_64-pc-windows-msvc', extension: '.zip' },
+].map(Object.freeze));
+const TARGETS = Object.freeze(NATIVE_TARGETS.map(({ target }) => target));
+const TARGET_MAP = Object.freeze(Object.fromEntries(
+  NATIVE_TARGETS.map(({ platform, arch, target }) => [`${platform}-${arch}`, target])
+));
 
 function getTarget(platform = process.platform, arch = process.arch) {
   const key = `${platform}-${arch}`;
@@ -28,9 +32,10 @@ function getTarget(platform = process.platform, arch = process.arch) {
   return target;
 }
 
-function getArchive(target, platform = process.platform) {
-  const extension = platform === 'win32' ? '.zip' : '.tar.gz';
-  return `schemalint-${target}${extension}`;
+function getArchive(target = getTarget()) {
+  const metadata = NATIVE_TARGETS.find((candidate) => candidate.target === target);
+  if (!metadata) throw new Error(`Unsupported native target: ${target}`);
+  return `schemalint-${target}${metadata.extension}`;
 }
 
 function getCacheDir(version = VERSION) {
@@ -46,9 +51,11 @@ function getBinaryPath(target = getTarget(), platform = process.platform) {
 
 module.exports = {
   MANIFEST_PATH,
+  NATIVE_TARGETS,
   PACKAGE,
   REPO,
   TARGET_MAP,
+  TARGETS,
   VERSION,
   getArchive,
   getBinaryPath,

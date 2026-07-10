@@ -1,11 +1,11 @@
+use std::collections::HashMap;
+
 use serde_json::{json, Value};
 
 use crate::cli::args::OutputFormat;
 use crate::cli::pipeline::build_rulesets;
 use crate::profile::{load, Profile};
 use crate::rules::RuleSet;
-
-use super::ProfileCache;
 
 pub(super) fn output_format(params: &Value) -> Result<OutputFormat, Value> {
     let format = match params.get("format") {
@@ -62,10 +62,9 @@ pub(super) fn optional_string_array(params: &Value, key: &str) -> Result<Vec<Str
 
 pub(super) fn load_profiles(
     profile_ids: &[String],
-    cache: &ProfileCache,
+    cache: &mut HashMap<String, Profile>,
 ) -> Result<Vec<Profile>, Value> {
     let mut loaded = Vec::new();
-    let mut cache = cache.lock().unwrap_or_else(|error| error.into_inner());
     for profile_id in profile_ids {
         let profile = if let Some(profile) = cache.get(profile_id) {
             profile.clone()
@@ -81,7 +80,6 @@ pub(super) fn load_profiles(
         };
         loaded.push(profile);
     }
-    drop(cache);
     loaded.sort_by(|left, right| left.name.cmp(&right.name));
     loaded.dedup_by(|left, right| left.name == right.name);
     Ok(loaded)

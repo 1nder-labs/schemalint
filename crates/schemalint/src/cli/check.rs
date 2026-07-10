@@ -1,17 +1,11 @@
 use std::io::IsTerminal;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
-use rayon::prelude::*;
-
-use crate::cache::{hash_bytes, Cache};
 use crate::cli::args::{CheckArgs, OutputFormat};
 use crate::cli::discover;
 use crate::cli::pipeline::{
-    build_report, build_rulesets, check_rulesets, emit_failure, emit_output, raw_check_result,
+    build_report, build_rulesets, emit_failure, emit_output, evaluate_targets, raw_target_input,
 };
-use crate::normalize::normalize;
-use crate::rules::registry::Diagnostic;
 
 use super::load_profiles_from_ids;
 
@@ -92,55 +86,21 @@ pub(super) fn run_check(args: CheckArgs) -> i32 {
     // -----------------------------------------------------------------------
     // Process schemas (parallel)
     // -----------------------------------------------------------------------
-    let cache = Mutex::new(Cache::new());
-
-    let results: Vec<(PathBuf, Result<Vec<Diagnostic>, String>)> = discovery
+    let inputs = discovery
         .files
-        .into_par_iter()
-        .map(|path| {
-            let bytes = match std::fs::read(&path) {
-                Ok(b) => b,
-                Err(e) => return (path, Err(format!("failed to read file: {}", e))),
-            };
-
-            let hash = hash_bytes(&bytes);
-            let cached_schema = {
-                let cache_guard = cache.lock().unwrap();
-                cache_guard.get(hash, &bytes).cloned()
-            };
-            if let Some(cached) = cached_schema {
-                let diags = check_rulesets(&cached.arena, &profile_rulesets);
-                return (path, Ok(diags));
-            }
-
-            let value = match serde_json::from_slice::<serde_json::Value>(&bytes) {
-                Ok(v) => v,
-                Err(e) => return (path, Err(format!("invalid JSON: {}", e))),
-            };
-
-            let normalized = match normalize(value) {
-                Ok(n) => n,
-                Err(e) => return (path, Err(format!("normalization failed: {}", e))),
-            };
-
-            let diags = check_rulesets(&normalized.arena, &profile_rulesets);
-            cache.lock().unwrap().insert(hash, bytes, normalized);
-            (path, Ok(diags))
-        })
+        .into_iter()
+        .map(|path| raw_target_input(path, &profile_names, profile_rulesets.len()))
         .collect();
+    let results = evaluate_targets(inputs, &profile_rulesets);
 
     // -----------------------------------------------------------------------
     // Aggregate results
     // -----------------------------------------------------------------------
-    let check_results = results
-        .into_iter()
-        .map(|(path, result)| raw_check_result(path, String::new(), result, &profile_names))
-        .collect();
     let report = build_report(
         discovery.coverage,
         discovery.failures,
         vec![],
-        check_results,
+        results,
         profile_names,
         Some(start.elapsed().as_millis() as u64),
     );

@@ -1,6 +1,4 @@
-use crate::cli::pipeline::{
-    failed_schema_result, process_schemas, schema_entry, SchemaCheckResult,
-};
+use crate::cli::pipeline::{model_target_input, EnvelopePolicy, TargetInput};
 use crate::ingest::{DiscoveredModel, Provider, ProviderResolution};
 use crate::rules::registry::RuleSet;
 
@@ -23,53 +21,51 @@ pub(crate) fn automatic_profile_ids(models: &[DiscoveredModel]) -> Vec<String> {
     .collect()
 }
 
-pub(crate) fn process_node_targets(
+pub(crate) fn automatic_target_inputs(
     models: &[DiscoveredModel],
     profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
-) -> Vec<SchemaCheckResult> {
-    let mut results = Vec::with_capacity(models.len());
+) -> Vec<TargetInput> {
+    let mut targets = Vec::with_capacity(models.len());
     let inferred_provider = single_owned_provider(models);
     for model in models {
         let Some((profile_id, provider)) = effective_provider(model, inferred_provider) else {
-            let entry = schema_entry(model, &[], model.provider);
-            results.push(failed_schema_result(
-                entry,
-                format!(
+            targets.push(model_target_input(
+                model,
+                model.provider,
+                vec![],
+                Err(format!(
                     "provider is ambiguous for target kind '{}'; pass --profile explicitly",
                     model.canonical_kind
-                ),
+                )),
+                EnvelopePolicy::Validate,
             ));
             continue;
         };
 
-        let effective_profiles = vec![profile_id.to_string()];
-        let entry = schema_entry(model, &effective_profiles, provider);
         let Some(index) = profile_rulesets
             .iter()
             .position(|(profile, _)| profile.name == profile_id)
         else {
-            results.push(failed_schema_result(
-                entry,
-                format!("no ruleset loaded for provider profile '{profile_id}'"),
+            targets.push(model_target_input(
+                model,
+                provider,
+                vec![profile_id.to_string()],
+                Err(format!(
+                    "no ruleset loaded for provider profile '{profile_id}'"
+                )),
+                EnvelopePolicy::Validate,
             ));
             continue;
         };
-        results.extend(process_schemas(
-            vec![entry],
-            std::slice::from_ref(&profile_rulesets[index]),
+        targets.push(model_target_input(
+            model,
+            provider,
+            vec![profile_id.to_string()],
+            Ok(vec![index]),
+            EnvelopePolicy::Validate,
         ));
-        if let Some(SchemaCheckResult {
-            diagnostics: Ok(diagnostics),
-            ..
-        }) = results.last_mut()
-        {
-            diagnostics.extend(crate::rules::envelope::check_envelope(
-                model,
-                profile_rulesets[index].0,
-            ));
-        }
     }
-    results
+    targets
 }
 
 fn effective_provider(

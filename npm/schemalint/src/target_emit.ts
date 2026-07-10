@@ -10,7 +10,10 @@ import {
   hasExportModifier,
 } from './discover_ast.js';
 import type { TargetExpression } from './target_resolution.js';
-import { resolveVariableDeclaration } from './static_expression.js';
+import {
+  resolveVariableDeclaration,
+  unwrapExpression,
+} from './static_expression.js';
 import type {
   EnvelopeField,
   ProviderResolution,
@@ -35,7 +38,7 @@ export function resolveTarget(
   tsModule: typeof ts,
   compilerOptions: ts.CompilerOptions
 ): SchemaTarget {
-  const expr = skipParens(target.expression, tsModule);
+  const expr = unwrapExpression(target.expression, tsModule);
   const sourceFile = target.sourceFile;
   const sourceMap = sourceMapForTarget(expr, sourceFile, checker, tsModule);
 
@@ -205,11 +208,6 @@ function sourceMapForTarget(
   }
 
   return sourceMapForExpression(expr, sourceFile, tsModule);
-}
-
-function skipParens(node: ts.Expression, tsModule: typeof ts): ts.Expression {
-  while (tsModule.isParenthesizedExpression(node)) node = node.expression;
-  return node;
 }
 
 function safeName(name: string): string {

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
-use std::sync::{Arc, Mutex, RwLock};
 
 use serde_json::{json, Value};
 
 use crate::cache::Cache;
+use crate::profile::Profile;
 
 mod check;
 mod discovery;
@@ -12,13 +12,15 @@ mod policy;
 
 const MAX_PAYLOAD_BYTES: usize = 10_000_000;
 
-pub(super) type ProfileCache = Arc<Mutex<HashMap<String, crate::profile::Profile>>>;
-pub(super) type SchemaCache = Arc<RwLock<Cache>>;
+#[derive(Default)]
+pub(super) struct ServerState {
+    schemas: Cache,
+    profiles: HashMap<String, Profile>,
+}
 
 /// Run the line-delimited JSON-RPC 2.0 server over stdin/stdout.
 pub fn run_server() {
-    let schema_cache = Arc::new(RwLock::new(Cache::new()));
-    let profile_cache = Arc::new(Mutex::new(HashMap::new()));
+    let mut state = ServerState::default();
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut output = stdout.lock();
@@ -31,7 +33,7 @@ pub fn run_server() {
                 break;
             }
         };
-        let response = dispatch_line(&line, &schema_cache, &profile_cache);
+        let response = dispatch_line(&line, &mut state);
         let shutdown = response.get("result").is_some_and(Value::is_null)
             && response.get("id").is_some()
             && serde_json::from_str::<Value>(&line)
@@ -44,7 +46,7 @@ pub fn run_server() {
     }
 }
 
-fn dispatch_line(line: &str, schema_cache: &SchemaCache, profile_cache: &ProfileCache) -> Value {
+fn dispatch_line(line: &str, state: &mut ServerState) -> Value {
     if line.len() > MAX_PAYLOAD_BYTES {
         return rpc_error(json!(null), -32600, "Request payload exceeds 10 MB limit");
     }
@@ -63,9 +65,9 @@ fn dispatch_line(line: &str, schema_cache: &SchemaCache, profile_cache: &Profile
     let method = request.get("method").and_then(Value::as_str).unwrap_or("");
     let params = request.get("params").cloned().unwrap_or_else(|| json!({}));
     match method {
-        "check" => rpc_result(id, check::handle(params, schema_cache, profile_cache)),
-        "checkNode" => rpc_result(id, discovery::handle_node(params, profile_cache)),
-        "checkPython" => rpc_result(id, discovery::handle_python(params, profile_cache)),
+        "check" => rpc_result(id, check::handle(params, state)),
+        "checkNode" => rpc_result(id, discovery::handle_node(params, state)),
+        "checkPython" => rpc_result(id, discovery::handle_python(params, state)),
         "shutdown" => rpc_result(id, Value::Null),
         "" => rpc_error(id, -32600, "Invalid JSON-RPC request: missing method"),
         other => rpc_error(id, -32601, &format!("Method not found: {other}")),
@@ -85,17 +87,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn malformed_request_does_not_poison_following_dispatch() {
-        let schemas = Arc::new(RwLock::new(Cache::new()));
-        let profiles = Arc::new(Mutex::new(HashMap::new()));
+    fn malformed_request_does_not_break_following_dispatch() {
+        let mut state = ServerState::default();
         assert_eq!(
-            dispatch_line("not json", &schemas, &profiles)["error"]["code"],
+            dispatch_line("not json", &mut state)["error"]["code"],
             -32700
         );
         let response = dispatch_line(
             r#"{"jsonrpc":"2.0","method":"shutdown","id":2}"#,
-            &schemas,
-            &profiles,
+            &mut state,
         );
         assert_eq!(response["id"], 2);
     }

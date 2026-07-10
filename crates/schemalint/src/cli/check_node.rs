@@ -4,10 +4,10 @@ use std::path::Path;
 use crate::cli::args::{CheckNodeArgs, OutputFormat};
 use crate::cli::discovery_policy::discover_batch;
 use crate::cli::node_config;
-use crate::cli::node_policy::{automatic_profile_ids, process_node_targets};
+use crate::cli::node_policy::{automatic_profile_ids, automatic_target_inputs};
 use crate::cli::pipeline::{
-    append_envelope_diagnostics, attach_source_spans, build_report, build_rulesets, emit_failure,
-    emit_output, process_schemas, schema_entries,
+    build_report, build_rulesets, emit_failure, emit_output, evaluate_targets,
+    explicit_model_inputs, EnvelopePolicy,
 };
 
 use super::load_profiles_from_ids;
@@ -196,21 +196,16 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
-    let results = if uses_explicit_profiles {
-        let mut results = process_schemas(
-            schema_entries(&discovery.models, &profile_names),
+    let inputs = if uses_explicit_profiles {
+        explicit_model_inputs(
+            &discovery.models,
             &profile_rulesets,
-        );
-        append_envelope_diagnostics(&mut results, &discovery.models, &profile_rulesets);
-        results
+            EnvelopePolicy::Validate,
+        )
     } else {
-        process_node_targets(&discovery.models, &profile_rulesets)
+        automatic_target_inputs(&discovery.models, &profile_rulesets)
     };
-
-    // -------------------------------------------------------------------
-    // 7. Attach source spans from discovery
-    // -------------------------------------------------------------------
-    let all_diagnostics = attach_source_spans(results);
+    let results = evaluate_targets(inputs, &profile_rulesets);
 
     // -------------------------------------------------------------------
     // 8. Aggregate results
@@ -219,7 +214,7 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
         discovery.coverage,
         discovery.failures,
         discovery.warnings,
-        all_diagnostics,
+        results,
         profile_names,
         Some(start.elapsed().as_millis() as u64),
     );

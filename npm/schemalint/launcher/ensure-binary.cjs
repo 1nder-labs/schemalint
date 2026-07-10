@@ -109,7 +109,7 @@ function cleanCache(binaryPath, sentinelPath) {
 async function ensureBinary(overrides = {}) {
   const target = overrides.target || config.getTarget();
   const platform = overrides.platform || process.platform;
-  const archiveName = config.getArchive(target, platform);
+  const archiveName = config.getArchive(target);
   const binaryPath = overrides.binaryPath || config.getBinaryPath(target, platform);
   const sentinelPath = `${binaryPath}.verified`;
   const manifest = overrides.manifest

@@ -7,42 +7,52 @@ export function resolveVariableDeclaration(id, checker, tsModule) {
     return decl && tsModule.isVariableDeclaration(decl) ? decl : undefined;
 }
 export function unambiguousExpression(expr, checker, tsModule) {
-    return resolveUnambiguous(expr, checker, tsModule, new Set());
-}
-function resolveUnambiguous(expr, checker, tsModule, seen) {
     if (!expr)
         return undefined;
-    const unwrapped = skipParens(expr, tsModule);
+    const unwrapped = unwrapExpression(expr, tsModule);
+    const alternatives = staticAlternatives(unwrapped, checker, tsModule);
+    if (alternatives.length !== 1)
+        return undefined;
+    return tsModule.isConditionalExpression(unwrapped)
+        ? alternatives[0]
+        : unwrapped;
+}
+export function staticAlternatives(expr, checker, tsModule) {
+    return resolveAlternatives(expr, checker, tsModule, new Set());
+}
+function resolveAlternatives(expr, checker, tsModule, seen) {
+    if (!expr)
+        return [];
+    const unwrapped = unwrapExpression(expr, tsModule);
     if (tsModule.isConditionalExpression(unwrapped)) {
-        const whenTrue = resolveUnambiguous(unwrapped.whenTrue, checker, tsModule, seen);
-        const whenFalse = resolveUnambiguous(unwrapped.whenFalse, checker, tsModule, seen);
-        return whenTrue &&
-            whenFalse &&
-            sameStaticExpression(whenTrue, whenFalse, checker, tsModule)
-            ? whenTrue
-            : undefined;
+        return distinctExpressions([unwrapped.whenTrue, unwrapped.whenFalse].flatMap((branch) => resolveAlternatives(branch, checker, tsModule, seen)), checker, tsModule);
     }
     if (tsModule.isIdentifier(unwrapped)) {
         const declaration = resolveVariableDeclaration(unwrapped, checker, tsModule);
         const initializer = declaration?.initializer;
-        const value = initializer && skipParens(initializer, tsModule);
-        if (declaration &&
-            value &&
-            (tsModule.isConditionalExpression(value) || tsModule.isIdentifier(value))) {
+        if (declaration && initializer) {
             if (seen.has(declaration))
-                return undefined;
+                return [];
             seen.add(declaration);
-            const resolved = resolveUnambiguous(value, checker, tsModule, seen);
+            const resolved = resolveAlternatives(initializer, checker, tsModule, seen);
             seen.delete(declaration);
-            if (!resolved)
-                return undefined;
+            return resolved;
         }
     }
-    return unwrapped;
+    return [unwrapped];
+}
+export function distinctExpressions(expressions, checker, tsModule) {
+    const distinct = [];
+    for (const expression of expressions) {
+        if (!distinct.some((candidate) => sameStaticExpression(candidate, expression, checker, tsModule))) {
+            distinct.push(expression);
+        }
+    }
+    return distinct;
 }
 export function sameStaticExpression(left, right, checker, tsModule) {
-    const a = skipParens(left, tsModule);
-    const b = skipParens(right, tsModule);
+    const a = unwrapExpression(left, tsModule);
+    const b = unwrapExpression(right, tsModule);
     if (a === b)
         return true;
     if (tsModule.isStringLiteralLike(a) && tsModule.isStringLiteralLike(b)) {
@@ -54,7 +64,7 @@ export function sameStaticExpression(left, right, checker, tsModule) {
     }
     return false;
 }
-function skipParens(node, tsModule) {
+export function unwrapExpression(node, tsModule) {
     while (tsModule.isParenthesizedExpression(node))
         node = node.expression;
     return node;

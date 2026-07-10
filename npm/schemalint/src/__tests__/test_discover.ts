@@ -288,6 +288,18 @@ describe('discoverZodSchemas', () => {
     ]);
   });
 
+  it('fails closed when static aliases form a cycle', async () => {
+    const result = await discoverZodSchemas('cyclic-metadata.ts');
+
+    expect(result.models).toEqual([]);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      kind: 'metadata',
+      target: 'openai.zodTextFormat',
+    });
+    expect(result.failures[0].message).toContain('required schema metadata');
+  });
+
   it('discovers inline schema referencing a helper declared after the call site', async () => {
     // Regression: the synthetic module must include all module-level
     // declarations, not just the ones that appear before the target expression.

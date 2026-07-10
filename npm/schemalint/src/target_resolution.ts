@@ -6,9 +6,10 @@ import type {
   TargetSpan,
 } from './sdk_adapters.js';
 import {
-  resolveVariableDeclaration,
-  sameStaticExpression,
+  distinctExpressions,
+  staticAlternatives,
   unambiguousExpression,
+  unwrapExpression,
 } from './static_expression.js';
 
 export interface TargetMetadata {
@@ -109,43 +110,18 @@ export function propertyFromExpression(
   checker: ts.TypeChecker,
   tsModule: typeof ts
 ): ts.Expression | undefined {
-  if (!expr) return undefined;
-  const unwrapped = skipParens(expr, tsModule);
-
-  if (tsModule.isObjectLiteralExpression(unwrapped)) {
-    return unambiguousExpression(
-      propertyFromObject(unwrapped, name, checker, tsModule),
-      checker,
-      tsModule
-    );
+  const candidates: ts.Expression[] = [];
+  const containers = staticAlternatives(expr, checker, tsModule);
+  if (containers.length === 0) return undefined;
+  for (const container of containers) {
+    if (!tsModule.isObjectLiteralExpression(container)) return undefined;
+    const property = propertyFromObject(container, name, checker, tsModule);
+    const stable = unambiguousExpression(property, checker, tsModule);
+    if (!stable) return undefined;
+    candidates.push(stable);
   }
-
-  if (tsModule.isIdentifier(unwrapped)) {
-    const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
-    return propertyFromExpression(decl?.initializer, name, checker, tsModule);
-  }
-
-  if (tsModule.isConditionalExpression(unwrapped)) {
-    const whenTrue = propertyFromExpression(
-      unwrapped.whenTrue,
-      name,
-      checker,
-      tsModule
-    );
-    const whenFalse = propertyFromExpression(
-      unwrapped.whenFalse,
-      name,
-      checker,
-      tsModule
-    );
-    return whenTrue &&
-      whenFalse &&
-      sameStaticExpression(whenTrue, whenFalse, checker, tsModule)
-      ? whenTrue
-      : undefined;
-  }
-
-  return undefined;
+  const distinct = distinctExpressions(candidates, checker, tsModule);
+  return distinct.length === 1 ? distinct[0] : undefined;
 }
 
 export function stringPropertyFromExpression(
@@ -165,7 +141,7 @@ function carrierExpression(
   explicitName: string | undefined,
   metadata: TargetMetadata
 ): CarrierExpression | undefined {
-  const expr = skipParens(expression, tsModule);
+  const expr = unwrapExpression(expression, tsModule);
   if (!tsModule.isPropertyAccessExpression(expr)) return undefined;
   if (!tsModule.isIdentifier(expr.expression)) return undefined;
 
@@ -296,7 +272,7 @@ function namedTarget(
   const { line } = sourceFile.getLineAndCharacterOfPosition(
     expression.getStart(sourceFile)
   );
-  const expr = skipParens(expression, tsModule);
+  const expr = unwrapExpression(expression, tsModule);
   const suffix =
     explicitName ??
     (tsModule.isIdentifier(expr) ? expr.text : `inline:${line + 1}`);
@@ -320,30 +296,14 @@ export function stringValueFromExpression(
   checker: ts.TypeChecker,
   tsModule: typeof ts
 ): string | undefined {
-  if (!expr) return undefined;
-  const unwrapped = skipParens(expr, tsModule);
-  const literal = stringLiteralText(unwrapped, tsModule);
-  if (literal !== undefined) return literal;
-  if (tsModule.isIdentifier(unwrapped)) {
-    const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
-    return stringValueFromExpression(decl?.initializer, checker, tsModule);
+  const values = staticAlternatives(expr, checker, tsModule).map((alternative) =>
+    stringLiteralText(alternative, tsModule)
+  );
+  if (values.length === 0 || values.some((value) => value === undefined)) {
+    return undefined;
   }
-  if (tsModule.isConditionalExpression(unwrapped)) {
-    const whenTrue = stringValueFromExpression(
-      unwrapped.whenTrue,
-      checker,
-      tsModule
-    );
-    const whenFalse = stringValueFromExpression(
-      unwrapped.whenFalse,
-      checker,
-      tsModule
-    );
-    return whenTrue !== undefined && whenTrue === whenFalse
-      ? whenTrue
-      : undefined;
-  }
-  return undefined;
+  const distinct = new Set(values);
+  return distinct.size === 1 ? values[0] : undefined;
 }
 
 function stringLiteralText(
@@ -361,9 +321,4 @@ function propertyName(
     return name.text;
   }
   return undefined;
-}
-
-function skipParens(node: ts.Expression, tsModule: typeof ts): ts.Expression {
-  while (tsModule.isParenthesizedExpression(node)) node = node.expression;
-  return node;
 }

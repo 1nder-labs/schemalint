@@ -206,8 +206,7 @@ function schemaExpression(
         checker,
         tsModule
       );
-      const stable = unambiguousExpression(found, checker, tsModule);
-      if (stable) return stable;
+      if (found) return found;
     }
     return undefined;
   }

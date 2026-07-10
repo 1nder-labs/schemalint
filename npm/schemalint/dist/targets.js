@@ -86,9 +86,8 @@ function schemaExpression(call, adapter, checker, tsModule) {
     if ('properties' in adapter.schema) {
         for (const property of adapter.schema.properties) {
             const found = propertyFromExpression(call.arguments[adapter.schema.argument], property, checker, tsModule);
-            const stable = unambiguousExpression(found, checker, tsModule);
-            if (stable)
-                return stable;
+            if (found)
+                return found;
         }
         return undefined;
     }

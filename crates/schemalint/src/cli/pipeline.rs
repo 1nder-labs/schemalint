@@ -1,54 +1,18 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-
-use rayon::prelude::*;
 
 use crate::cli::args::OutputFormat;
 use crate::cli::report::{CheckReport, CoverageCounts, ReportMessage, TargetReport, TargetStatus};
 use crate::cli::{emit_gha, emit_human, emit_json, emit_junit, emit_sarif};
-use crate::ingest::DiscoveredModel;
-use crate::normalize::normalize;
 use crate::profile::Profile;
-use crate::rules::registry::{DiagnosticSeverity, RuleSet, RuleSetError, SourceSpan};
+use crate::rules::registry::{DiagnosticSeverity, RuleSet, RuleSetError};
 
-pub(crate) struct SchemaEntry {
-    pub path: PathBuf,
-    pub model_name: String,
-    pub value: serde_json::Value,
-    pub source_map: HashMap<String, SourceSpan>,
-    pub target: TargetReport,
-}
-
-pub(crate) struct SchemaCheckResult {
-    pub path: PathBuf,
-    pub model_name: String,
-    pub diagnostics: Result<Vec<crate::rules::Diagnostic>, String>,
-    pub source_map: HashMap<String, SourceSpan>,
-    pub target: TargetReport,
-}
-
-/// Attach source spans from discovered models to diagnostics.
-///
-/// Each result owns the source map captured for that exact usage. This avoids
-/// joining on non-unique module/name pairs and preserves spans when a provider
-/// diagnostic already points at envelope metadata rather than schema content.
-pub(crate) fn attach_source_spans(results: Vec<SchemaCheckResult>) -> Vec<SchemaCheckResult> {
-    results
-        .into_iter()
-        .map(|mut result| {
-            if let Ok(diagnostics) = &mut result.diagnostics {
-                for diagnostic in diagnostics {
-                    if diagnostic.source.is_none() {
-                        if let Some(span) = result.source_map.get(&diagnostic.pointer) {
-                            diagnostic.source = Some(span.clone());
-                        }
-                    }
-                }
-            }
-            result
-        })
-        .collect()
-}
+mod evaluate;
+#[cfg(test)]
+use evaluate::attach_diagnostic_sources;
+pub(crate) use evaluate::{
+    check_rulesets, evaluate_targets, explicit_model_inputs, model_target_input, raw_check_result,
+    raw_target_input, EnvelopePolicy, TargetEvaluation, TargetInput,
+};
 
 pub(crate) struct AggregateResults {
     pub diagnostics: Vec<(PathBuf, Vec<crate::rules::Diagnostic>)>,
@@ -56,17 +20,27 @@ pub(crate) struct AggregateResults {
     pub total_warnings: usize,
     pub checked: usize,
     pub failures: Vec<ReportMessage>,
+    pub targets: Vec<TargetReport>,
 }
 
-pub(crate) fn aggregate_results(results: Vec<SchemaCheckResult>) -> AggregateResults {
+pub(crate) fn aggregate_results(results: Vec<TargetEvaluation>) -> AggregateResults {
     let mut all_diagnostics: Vec<(PathBuf, Vec<crate::rules::Diagnostic>)> = Vec::new();
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;
     let mut checked = 0usize;
     let mut failures = Vec::new();
+    let mut targets = Vec::with_capacity(results.len());
 
     for result in results {
-        match result.diagnostics {
+        let status = if result.outcome.is_ok() {
+            TargetStatus::Checked
+        } else {
+            TargetStatus::Failed
+        };
+        let path = result.target.path.clone();
+        let failure_target = result.target.failure_label();
+        targets.push(result.target.into_report(status));
+        match result.outcome {
             Ok(diags) => {
                 checked += 1;
                 for d in &diags {
@@ -75,16 +49,12 @@ pub(crate) fn aggregate_results(results: Vec<SchemaCheckResult>) -> AggregateRes
                         DiagnosticSeverity::Warning => total_warnings += 1,
                     }
                 }
-                all_diagnostics.push((result.path, diags));
+                all_diagnostics.push((path, diags));
             }
             Err(msg) => {
-                eprintln!("error: {}: {}", result.path.display(), msg);
+                eprintln!("error: {}: {}", path.display(), msg);
                 failures.push(ReportMessage {
-                    target: if result.model_name.is_empty() {
-                        result.path.display().to_string()
-                    } else {
-                        format!("{} ({})", result.path.display(), result.model_name)
-                    },
+                    target: failure_target,
                     message: msg,
                 });
             }
@@ -102,6 +72,7 @@ pub(crate) fn aggregate_results(results: Vec<SchemaCheckResult>) -> AggregateRes
         total_warnings,
         checked,
         failures,
+        targets,
     }
 }
 
@@ -109,22 +80,10 @@ pub(crate) fn build_report(
     mut coverage: CoverageCounts,
     mut failures: Vec<ReportMessage>,
     warnings: Vec<ReportMessage>,
-    results: Vec<SchemaCheckResult>,
+    results: Vec<TargetEvaluation>,
     profiles: Vec<String>,
     duration_ms: Option<u64>,
 ) -> CheckReport {
-    let targets = results
-        .iter()
-        .map(|result| {
-            let mut target = result.target.clone();
-            target.status = if result.diagnostics.is_ok() {
-                TargetStatus::Checked
-            } else {
-                TargetStatus::Failed
-            };
-            target
-        })
-        .collect();
     let aggregate = aggregate_results(results);
     coverage.checked = aggregate.checked;
     coverage.failed += aggregate.failures.len();
@@ -133,7 +92,7 @@ pub(crate) fn build_report(
         coverage,
         failures,
         warnings,
-        targets,
+        targets: aggregate.targets,
         diagnostics: aggregate.diagnostics,
         total_errors: aggregate.total_errors,
         total_warnings: aggregate.total_warnings,
@@ -250,145 +209,6 @@ pub(crate) fn build_rulesets(
         .iter()
         .map(|profile| RuleSet::from_profile(profile).map(|rules| (profile, rules)))
         .collect()
-}
-
-/// Project discovered models into the normalized schema pipeline's input type.
-pub(crate) fn schema_entries(
-    models: &[DiscoveredModel],
-    effective_profiles: &[String],
-) -> Vec<SchemaEntry> {
-    models
-        .iter()
-        .map(|model| schema_entry(model, effective_profiles, model.provider))
-        .collect()
-}
-
-pub(crate) fn schema_entry(
-    model: &DiscoveredModel,
-    effective_profiles: &[String],
-    provider: crate::ingest::ProviderResolution,
-) -> SchemaEntry {
-    SchemaEntry {
-        path: PathBuf::from(&model.module_path),
-        model_name: model.name.clone(),
-        value: model.schema.clone(),
-        source_map: model.source_map.clone(),
-        target: TargetReport {
-            name: model.name.clone(),
-            module_path: model.module_path.clone(),
-            canonical_kind: model.canonical_kind.clone(),
-            provider,
-            effective_profiles: effective_profiles.to_vec(),
-            envelope: model.envelope.clone().into_iter().collect(),
-            usage_span: model.usage_span.clone(),
-            status: TargetStatus::Checked,
-        },
-    }
-}
-
-pub(crate) fn raw_check_result(
-    path: PathBuf,
-    model_name: String,
-    diagnostics: Result<Vec<crate::rules::Diagnostic>, String>,
-    effective_profiles: &[String],
-) -> SchemaCheckResult {
-    SchemaCheckResult {
-        target: raw_target(&path, &model_name, effective_profiles),
-        path,
-        model_name,
-        diagnostics,
-        source_map: Default::default(),
-    }
-}
-
-pub(crate) fn failed_schema_result(entry: SchemaEntry, message: String) -> SchemaCheckResult {
-    SchemaCheckResult {
-        path: entry.path,
-        model_name: entry.model_name,
-        diagnostics: Err(message),
-        source_map: entry.source_map,
-        target: entry.target,
-    }
-}
-
-fn raw_target(path: &Path, model_name: &str, effective_profiles: &[String]) -> TargetReport {
-    TargetReport {
-        name: model_name.to_string(),
-        module_path: path.display().to_string(),
-        canonical_kind: "json-schema".into(),
-        provider: Default::default(),
-        effective_profiles: effective_profiles.to_vec(),
-        envelope: Default::default(),
-        usage_span: Some(SourceSpan {
-            file: path.display().to_string(),
-            line: None,
-            col: None,
-        }),
-        status: TargetStatus::Checked,
-    }
-}
-
-/// Run all profile rulesets against a normalized arena and collect diagnostics.
-pub(crate) fn check_rulesets(
-    arena: &crate::ir::Arena,
-    profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
-) -> Vec<crate::rules::Diagnostic> {
-    let mut diags = Vec::new();
-    for (profile, ruleset) in profile_rulesets {
-        diags.extend(ruleset.check_all(arena, profile));
-    }
-    diags
-}
-
-/// Process schemas through the normalize → check pipeline.
-///
-/// Takes pre-parsed JSON values with their source keys and model names, and
-/// returns diagnostics grouped by source key. The model name is carried through
-/// to enable per-model source span lookups (avoiding collisions when multiple
-/// schemas share a module_path).
-pub(crate) fn process_schemas(
-    schemas: Vec<SchemaEntry>,
-    profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
-) -> Vec<SchemaCheckResult> {
-    schemas
-        .into_par_iter()
-        .map(|entry| {
-            let normalized = match normalize(entry.value) {
-                Ok(n) => n,
-                Err(error) => {
-                    return SchemaCheckResult {
-                        path: entry.path,
-                        model_name: entry.model_name,
-                        diagnostics: Err(format!("normalization failed: {error}")),
-                        source_map: entry.source_map,
-                        target: entry.target,
-                    }
-                }
-            };
-            SchemaCheckResult {
-                path: entry.path,
-                model_name: entry.model_name,
-                diagnostics: Ok(check_rulesets(&normalized.arena, profile_rulesets)),
-                source_map: entry.source_map,
-                target: entry.target,
-            }
-        })
-        .collect()
-}
-
-pub(crate) fn append_envelope_diagnostics(
-    results: &mut [SchemaCheckResult],
-    models: &[crate::ingest::DiscoveredModel],
-    profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
-) {
-    for (result, model) in results.iter_mut().zip(models) {
-        let Ok(diagnostics) = &mut result.diagnostics else {
-            continue;
-        };
-        for (profile, _) in profile_rulesets {
-            diagnostics.extend(crate::rules::envelope::check_envelope(model, profile));
-        }
-    }
 }
 
 #[cfg(test)]

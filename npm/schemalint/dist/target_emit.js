@@ -1,8 +1,8 @@
 import { pathToFileURL } from 'node:url';
 import { buildRootSourceMap, buildSourceMapFromObjectLiteral, findZObjectCall, hasExportModifier, } from './discover_ast.js';
-import { resolveVariableDeclaration } from './static_expression.js';
+import { resolveVariableDeclaration, unwrapExpression, } from './static_expression.js';
 export function resolveTarget(target, checker, tsModule, compilerOptions) {
-    const expr = skipParens(target.expression, tsModule);
+    const expr = unwrapExpression(target.expression, tsModule);
     const sourceFile = target.sourceFile;
     const sourceMap = sourceMapForTarget(expr, sourceFile, checker, tsModule);
     if (tsModule.isIdentifier(expr)) {
@@ -111,11 +111,6 @@ function sourceMapForTarget(expr, sourceFile, checker, tsModule) {
         }
     }
     return sourceMapForExpression(expr, sourceFile, tsModule);
-}
-function skipParens(node, tsModule) {
-    while (tsModule.isParenthesizedExpression(node))
-        node = node.expression;
-    return node;
 }
 function safeName(name) {
     return name.replace(/[^a-zA-Z0-9_]/g, '_');

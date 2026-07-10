@@ -10,12 +10,18 @@ const MAX_PROVIDER_NAME_CHARS: usize = 64;
 /// inserted into the normalized schema arena. Diagnostics retain the span
 /// emitted by the source adapter.
 pub fn check_envelope(model: &DiscoveredModel, profile: &Profile) -> Vec<Diagnostic> {
+    check_envelope_fields(&model.envelope, profile)
+}
+
+pub(crate) fn check_envelope_fields(
+    envelope: &std::collections::HashMap<String, EnvelopeField>,
+    profile: &Profile,
+) -> Vec<Diagnostic> {
     if !profile_has_provider_name_rules(profile) {
         return Vec::new();
     }
 
-    model
-        .envelope
+    envelope
         .get("name")
         .and_then(|field| validate_name(field, profile))
         .into_iter()

@@ -4,8 +4,8 @@ use std::path::Path;
 use crate::cli::args::{CheckPythonArgs, OutputFormat};
 use crate::cli::discovery_policy::discover_batch;
 use crate::cli::pipeline::{
-    attach_source_spans, build_report, build_rulesets, emit_failure, emit_output, process_schemas,
-    schema_entries,
+    build_report, build_rulesets, emit_failure, emit_output, evaluate_targets,
+    explicit_model_inputs, EnvelopePolicy,
 };
 use crate::cli::pyproject;
 
@@ -165,15 +165,9 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
-    let results = process_schemas(
-        schema_entries(&discovery.models, &profile_names),
-        &profile_rulesets,
-    );
-
-    // -------------------------------------------------------------------
-    // 7. Attach source spans from discovery
-    // -------------------------------------------------------------------
-    let all_diagnostics = attach_source_spans(results);
+    let inputs =
+        explicit_model_inputs(&discovery.models, &profile_rulesets, EnvelopePolicy::Ignore);
+    let results = evaluate_targets(inputs, &profile_rulesets);
 
     // -------------------------------------------------------------------
     // 8. Aggregate results
@@ -182,7 +176,7 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
         discovery.coverage,
         discovery.failures,
         discovery.warnings,
-        all_diagnostics,
+        results,
         profile_names,
         Some(start.elapsed().as_millis() as u64),
     );

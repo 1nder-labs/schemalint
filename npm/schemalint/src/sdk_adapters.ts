@@ -43,67 +43,106 @@ export interface SdkAdapter {
 }
 
 const adapters: readonly SdkAdapter[] = [
-  objectAdapter('ai', 'generateObject', 'ai.generateObject', ['schema'], '2.0', [
-    optionalProperty('name', 'schemaName'),
-    optionalProperty('description', 'schemaDescription'),
-  ]),
-  objectAdapter('ai', 'streamObject', 'ai.streamObject', ['schema'], '2.0', [
-    optionalProperty('name', 'schemaName'),
-    optionalProperty('description', 'schemaDescription'),
-  ]),
-  objectAdapter('ai', 'Output.object', 'ai.Output.object', ['schema'], undefined, [
-    optionalProperty('name', 'name'),
-    optionalProperty('description', 'description'),
-  ]),
-  objectAdapter('ai', 'Output.array', 'ai.Output.array', ['element'], undefined, [
-    optionalProperty('name', 'name'),
-    optionalProperty('description', 'description'),
-  ]),
-  objectAdapter('ai', 'tool', 'ai.tool', ['inputSchema', 'parameters'], '2.0', [
-    optionalProperty('description', 'description'),
-  ]),
-  objectAdapter('ai', 'dynamicTool', 'ai.dynamicTool', ['inputSchema'], undefined, [
-    optionalProperty('description', 'description'),
-  ]),
-  argumentAdapter(
-    'openai/helpers/zod',
-    'zodTextFormat',
-    'openai.zodTextFormat',
-    'openai',
-    [requiredArgument('name', 1)]
-  ),
-  argumentAdapter(
-    'openai/helpers/zod',
-    'zodResponseFormat',
-    'openai.zodResponseFormat',
-    'openai',
-    [requiredArgument('name', 1)]
-  ),
-  objectAdapter(
-    'openai/helpers/zod',
-    'zodFunction',
-    'openai.zodFunction',
-    ['parameters'],
-    '2.0',
-    [requiredProperty('name', 'name')],
-    'openai'
-  ),
-  argumentAdapter(
-    '@anthropic-ai/sdk/helpers/zod',
-    'zodOutputFormat',
-    'anthropic.zodOutputFormat',
-    'anthropic'
-  ),
-  objectAdapter(
-    '@anthropic-ai/sdk/helpers/beta/zod',
-    'betaZodTool',
-    'anthropic.betaZodTool',
-    ['inputSchema'],
-    '2.0',
-    [requiredProperty('name', 'name')],
-    'anthropic'
-  ),
-];
+  {
+    module: 'ai',
+    exportPath: 'generateObject',
+    kind: 'ai.generateObject',
+    schema: { argument: 0, properties: ['schema'] },
+    envelope: [
+      optionalProperty('name', 'schemaName'),
+      optionalProperty('description', 'schemaDescription'),
+    ],
+    deprecatedRemoval: '2.0',
+  },
+  {
+    module: 'ai',
+    exportPath: 'streamObject',
+    kind: 'ai.streamObject',
+    schema: { argument: 0, properties: ['schema'] },
+    envelope: [
+      optionalProperty('name', 'schemaName'),
+      optionalProperty('description', 'schemaDescription'),
+    ],
+    deprecatedRemoval: '2.0',
+  },
+  {
+    module: 'ai',
+    exportPath: 'Output.object',
+    kind: 'ai.Output.object',
+    schema: { argument: 0, properties: ['schema'] },
+    envelope: [
+      optionalProperty('name', 'name'),
+      optionalProperty('description', 'description'),
+    ],
+  },
+  {
+    module: 'ai',
+    exportPath: 'Output.array',
+    kind: 'ai.Output.array',
+    schema: { argument: 0, properties: ['element'] },
+    envelope: [
+      optionalProperty('name', 'name'),
+      optionalProperty('description', 'description'),
+    ],
+  },
+  {
+    module: 'ai',
+    exportPath: 'tool',
+    kind: 'ai.tool',
+    schema: { argument: 0, properties: ['inputSchema', 'parameters'] },
+    envelope: [optionalProperty('description', 'description')],
+    deprecatedRemoval: '2.0',
+  },
+  {
+    module: 'ai',
+    exportPath: 'dynamicTool',
+    kind: 'ai.dynamicTool',
+    schema: { argument: 0, properties: ['inputSchema'] },
+    envelope: [optionalProperty('description', 'description')],
+  },
+  {
+    module: 'openai/helpers/zod',
+    exportPath: 'zodTextFormat',
+    kind: 'openai.zodTextFormat',
+    provider: 'openai',
+    schema: { argument: 0 },
+    envelope: [requiredArgument('name', 1)],
+  },
+  {
+    module: 'openai/helpers/zod',
+    exportPath: 'zodResponseFormat',
+    kind: 'openai.zodResponseFormat',
+    provider: 'openai',
+    schema: { argument: 0 },
+    envelope: [requiredArgument('name', 1)],
+  },
+  {
+    module: 'openai/helpers/zod',
+    exportPath: 'zodFunction',
+    kind: 'openai.zodFunction',
+    provider: 'openai',
+    schema: { argument: 0, properties: ['parameters'] },
+    envelope: [requiredProperty('name', 'name')],
+    deprecatedRemoval: '2.0',
+  },
+  {
+    module: '@anthropic-ai/sdk/helpers/zod',
+    exportPath: 'zodOutputFormat',
+    kind: 'anthropic.zodOutputFormat',
+    provider: 'anthropic',
+    schema: { argument: 0 },
+    envelope: [],
+  },
+  {
+    module: '@anthropic-ai/sdk/helpers/beta/zod',
+    exportPath: 'betaZodTool',
+    kind: 'anthropic.betaZodTool',
+    provider: 'anthropic',
+    schema: { argument: 0, properties: ['inputSchema'] },
+    envelope: [requiredProperty('name', 'name')],
+    deprecatedRemoval: '2.0',
+  },
+] satisfies readonly SdkAdapter[];
 
 const byImport = new Map(
   adapters.map((adapter) => [`${adapter.module}:${adapter.exportPath}`, adapter])
@@ -122,43 +161,6 @@ export function hasAdapterPrefix(module: string, exportPath: string): boolean {
     (adapter) =>
       adapter.module === module && adapter.exportPath.startsWith(prefix)
   );
-}
-
-function objectAdapter(
-  module: string,
-  exportPath: string,
-  kind: string,
-  properties: readonly string[],
-  deprecatedRemoval?: '2.0',
-  envelope: readonly EnvelopeSelector[] = [],
-  provider?: Provider
-): SdkAdapter {
-  return {
-    module,
-    exportPath,
-    kind,
-    provider,
-    schema: { argument: 0, properties },
-    envelope,
-    deprecatedRemoval,
-  };
-}
-
-function argumentAdapter(
-  module: string,
-  exportPath: string,
-  kind: string,
-  provider: Provider,
-  envelope: readonly EnvelopeSelector[] = []
-): SdkAdapter {
-  return {
-    module,
-    exportPath,
-    kind,
-    provider,
-    schema: { argument: 0 },
-    envelope,
-  };
 }
 
 function requiredArgument(name: string, argument: number): EnvelopeSelector {

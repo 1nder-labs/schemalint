@@ -11,8 +11,19 @@ import sys
 import tempfile
 from typing import Dict, Optional
 
+from fixtures.installed_wheel import (
+    PROFILE,
+    SCENARIO_COUNTS,
+    VALID_SCHEMA,
+    assert_missing_report,
+    assert_partial_report,
+    assert_pydantic_report,
+    assert_server_responses,
+    assert_valid_report,
+    server_requests,
+    write_consumer_project,
+)
 
-PROFILE = "openai.so.2026-04-30"
 INSTALLED_COMMAND = Path(sys.executable).with_name("schemalint")
 SCHEMALINT = str(
     INSTALLED_COMMAND
@@ -67,124 +78,8 @@ def json_report(
     return payload
 
 
-def write_consumer_project(root: Path) -> None:
-    package = root / "consumer_models"
-    package.mkdir()
-    (package / "__init__.py").write_text(
-        "from .models import Address, UserProfile\n", encoding="utf-8"
-    )
-    (package / "models.py").write_text(
-        """from typing import List, Optional
-
-from pydantic import BaseModel, Field
-
-
-class Address(BaseModel):
-    street: str
-    postal_code: str = Field(alias="postalCode")
-
-
-class UserProfile(BaseModel):
-    address: Address
-    display_name: Optional[str] = Field(default=None, alias="displayName")
-    tags: List[str] = Field(default_factory=list)
-""",
-        encoding="utf-8",
-    )
-
-    partial = root / "partial_models"
-    partial.mkdir()
-    (partial / "__init__.py").write_text(
-        "from .models import BrokenSchema, RetainedModel\n", encoding="utf-8"
-    )
-    (partial / "models.py").write_text(
-        """from pydantic import BaseModel
-
-
-class RetainedModel(BaseModel):
-    value: str
-
-
-class BrokenSchema(BaseModel):
-    value: str
-
-    @classmethod
-    def model_json_schema(cls, *args, **kwargs):
-        raise RuntimeError("intentional model_json_schema failure")
-
-    @classmethod
-    def schema(cls, *args, **kwargs):
-        raise RuntimeError("intentional schema failure")
-""",
-        encoding="utf-8",
-    )
-    (partial / "broken_import.py").write_text(
-        'raise RuntimeError("intentional submodule import failure")\n',
-        encoding="utf-8",
-    )
-    (partial / "opaque.py").write_text(
-        "def __dir__():\n"
-        '    raise RuntimeError("intentional introspection failure")\n',
-        encoding="utf-8",
-    )
-
-
-def assert_partial_python_report(payload: dict) -> None:
-    assert payload["summary"]["errors"] > 0, payload
-    assert any(
-        diagnostic["code"] == "OAI-S-additional-properties-false"
-        for diagnostic in payload["diagnostics"]
-    ), payload
-    failures = payload["report"]["failures"]
-    assert len(failures) == 3, payload
-    schema_message = (
-        "model_json_schema() failed: intentional model_json_schema failure"
-        if int(package_version("pydantic").split(".", 1)[0]) >= 2
-        else "schema() failed: intentional schema failure"
-    )
-    assert {failure["target"]: failure["message"] for failure in failures} == {
-        "package 'partial_models', target 'BrokenSchema'": schema_message,
-        "package 'partial_models', target 'partial_models.broken_import'": (
-            "module import failed: intentional submodule import failure"
-        ),
-        "package 'partial_models', target 'partial_models.opaque'": (
-            "module introspection failed: intentional introspection failure"
-        ),
-    }, failures
-    failure_text = "\n".join(
-        f"{failure['target']}: {failure['message']}" for failure in failures
-    )
-    assert "BrokenSchema" in failure_text, failure_text
-    assert "partial_models.broken_import" in failure_text, failure_text
-    assert "partial_models.opaque" in failure_text, failure_text
-    assert "module introspection failed" in failure_text, failure_text
-    assert "intentional" in failure_text, failure_text
-
-
-def exercise_server_recovery(root: Path, valid_schema: dict) -> None:
-    requests = [
-        {
-            "jsonrpc": "2.0",
-            "method": "checkPython",
-            "params": {
-                "packages": ["partial_models"],
-                "profiles": [PROFILE],
-                "format": "json",
-            },
-            "id": 1,
-        },
-        {
-            "jsonrpc": "2.0",
-            "method": "check",
-            "params": {
-                "schema": valid_schema,
-                "profiles": [PROFILE],
-                "format": "json",
-            },
-            "id": 2,
-        },
-        {"jsonrpc": "2.0", "method": "shutdown", "id": 3},
-    ]
+def exercise_server_recovery(root: Path) -> None:
+    requests = server_requests()
     server = run(
         SCHEMALINT,
         "server",
@@ -193,26 +88,7 @@ def exercise_server_recovery(root: Path, valid_schema: dict) -> None:
     )
     assert server.returncode == 0, server.stdout + server.stderr
     responses = [json.loads(line) for line in server.stdout.splitlines() if line]
-    assert [response["id"] for response in responses] == [1, 2, 3], responses
-
-    partial = responses[0]["result"]
-    assert partial["success"] is False, partial
-    assert partial["report"]["coverage"] == {
-        "status": "partial",
-        "attempted": 4,
-        "excluded": 0,
-        "discovered": 1,
-        "checked": 1,
-        "failed": 3,
-    }, partial
-    partial_output = json.loads(partial["output"])
-    assert_partial_python_report(partial_output)
-
-    recovered = responses[1]["result"]
-    assert recovered["success"] is True, recovered
-    assert recovered["report"]["coverage"]["status"] == "complete", recovered
-    assert recovered["report"]["coverage"]["checked"] == 1, recovered
-    assert responses[2]["result"] is None, responses[2]
+    assert_server_responses(responses)
 
 
 def exercise_installed_wheel(root: Path) -> str:
@@ -220,14 +96,8 @@ def exercise_installed_wheel(root: Path) -> str:
     assert version.returncode == 0, version.stderr
     assert version.stdout.strip(), version
 
-    valid_schema_value = {
-        "type": "object",
-        "properties": {"answer": {"type": "string"}},
-        "required": ["answer"],
-        "additionalProperties": False,
-    }
     valid_schema = root / "valid.json"
-    valid_schema.write_text(json.dumps(valid_schema_value), encoding="utf-8")
+    valid_schema.write_text(json.dumps(VALID_SCHEMA), encoding="utf-8")
     valid = run(
         SCHEMALINT,
         "check",
@@ -243,16 +113,9 @@ def exercise_installed_wheel(root: Path) -> str:
         returncode=0,
         status="complete",
         success=True,
-        counts={
-            "attempted": 1,
-            "excluded": 0,
-            "discovered": 1,
-            "checked": 1,
-            "failed": 0,
-        },
+        counts=SCENARIO_COUNTS["valid"],
     )
-    assert valid_payload["report"]["failures"] == [], valid_payload
-    assert valid_payload["diagnostics"] == [], valid_payload
+    assert_valid_report(valid_payload)
 
     empty = root / "empty"
     empty.mkdir()
@@ -271,13 +134,7 @@ def exercise_installed_wheel(root: Path) -> str:
         returncode=1,
         status="empty",
         success=False,
-        counts={
-            "attempted": 1,
-            "excluded": 0,
-            "discovered": 0,
-            "checked": 0,
-            "failed": 0,
-        },
+        counts=SCENARIO_COUNTS["empty"],
     )
     assert empty_payload["report"]["failures"] == [], empty_payload
 
@@ -300,20 +157,9 @@ def exercise_installed_wheel(root: Path) -> str:
         returncode=1,
         status="complete",
         success=False,
-        counts={
-            "attempted": 2,
-            "excluded": 0,
-            "discovered": 2,
-            "checked": 2,
-            "failed": 0,
-        },
+        counts=SCENARIO_COUNTS["pydantic"],
     )
-    assert pydantic_payload["report"]["failures"] == [], pydantic_payload
-    assert pydantic_payload["summary"]["errors"] > 0, pydantic_payload
-    assert any(
-        diagnostic["code"] == "OAI-S-additional-properties-false"
-        for diagnostic in pydantic_payload["diagnostics"]
-    ), pydantic_payload
+    assert_pydantic_report(pydantic_payload)
 
     partial_result = run(
         SCHEMALINT,
@@ -333,15 +179,9 @@ def exercise_installed_wheel(root: Path) -> str:
         returncode=1,
         status="partial",
         success=False,
-        counts={
-            "attempted": 4,
-            "excluded": 0,
-            "discovered": 1,
-            "checked": 1,
-            "failed": 3,
-        },
+        counts=SCENARIO_COUNTS["partial"],
     )
-    assert_partial_python_report(partial_payload)
+    assert_partial_report(partial_payload)
 
     missing_result = run(
         SCHEMALINT,
@@ -361,19 +201,10 @@ def exercise_installed_wheel(root: Path) -> str:
         returncode=1,
         status="failed",
         success=False,
-        counts={
-            "attempted": 1,
-            "excluded": 0,
-            "discovered": 0,
-            "checked": 0,
-            "failed": 1,
-        },
+        counts=SCENARIO_COUNTS["missing"],
     )
-    failures = missing_payload["report"]["failures"]
-    assert len(failures) == 1, missing_payload
-    assert "consumer_models_missing" in failures[0]["target"], missing_payload
-    assert failures[0]["message"], missing_payload
-    exercise_server_recovery(root, valid_schema_value)
+    assert_missing_report(missing_payload)
+    exercise_server_recovery(root)
     return version.stdout.strip()
 
 

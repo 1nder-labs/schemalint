@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use schemalint::profile::{load, StructuralLimits};
+use schemalint::profile::{load, StructuralLimits, StructuralRuleId};
 use schemalint::profiles::{
     ANTHROPIC_SO_2026_04_30, ANTHROPIC_TRUTH, OPENAI_SO_2026_04_30, OPENAI_TRUTH,
 };
@@ -24,7 +24,7 @@ fn truth_structural_limits_exactly_match_enabled_production_rules() {
         let declared: BTreeSet<_> = truth
             .structural_tests
             .iter()
-            .map(|case| base_name(&case.limit_name))
+            .map(|case| StructuralRuleId::from_name(&case.limit_name).unwrap())
             .collect();
         assert_eq!(
             declared.len(),
@@ -34,7 +34,7 @@ fn truth_structural_limits_exactly_match_enabled_production_rules() {
         );
         assert_eq!(
             declared,
-            enabled_limits(&profile.structural),
+            profile.structural.enabled_rule_ids().into_iter().collect(),
             "{} truth/profile structural parity drift",
             profile.name
         );
@@ -45,11 +45,11 @@ fn truth_structural_limits_exactly_match_enabled_production_rules() {
 fn every_enabled_structural_rule_accepts_boundary_and_rejects_overage() {
     for (profile_source, truth_source) in providers() {
         let profile = load(profile_source.as_bytes()).unwrap();
-        let enabled = enabled_limits(&profile.structural);
+        let enabled = profile.structural.enabled_rule_ids();
         let mut truth = parse_truth(truth_source).unwrap();
         truth.structural_tests = enabled
             .iter()
-            .flat_map(|name| boundary_cases(name, &profile.structural))
+            .flat_map(|rule| boundary_cases(*rule, &profile.structural))
             .collect();
 
         let outcomes = evaluate_structural_truth(&truth).unwrap();
@@ -60,173 +60,124 @@ fn every_enabled_structural_rule_accepts_boundary_and_rejects_overage() {
     }
 }
 
-fn enabled_limits(limits: &StructuralLimits) -> BTreeSet<&'static str> {
-    let StructuralLimits {
-        require_object_root,
-        require_additional_properties_false,
-        require_all_properties_in_required,
-        require_array_items,
-        forbid_root_any_of,
-        forbid_root_enum,
-        forbid_empty_object,
-        max_object_depth,
-        max_total_properties,
-        max_total_enum_values,
-        max_string_length_total,
-        enum_string_length_threshold,
-        max_enum_string_length,
-        max_optional_properties,
-        max_union_properties,
-        external_refs,
-        forbid_allof_with_ref,
-    } = limits;
-    let configured = [
-        (*require_object_root, "require_object_root"),
-        (
-            *require_additional_properties_false,
-            "require_additional_properties_false",
-        ),
-        (
-            *require_all_properties_in_required,
-            "require_all_properties_in_required",
-        ),
-        (*require_array_items, "require_array_items"),
-        (*forbid_root_any_of, "forbid_root_any_of"),
-        (*forbid_root_enum, "forbid_root_enum"),
-        (*forbid_empty_object, "forbid_empty_object"),
-        (*max_object_depth > 0, "max_object_depth"),
-        (*max_total_properties > 0, "max_total_properties"),
-        (*max_total_enum_values > 0, "max_total_enum_values"),
-        (*max_string_length_total > 0, "max_string_length_total"),
-        (
-            *enum_string_length_threshold > 0 && *max_enum_string_length > 0,
-            "enum_string_length_budget",
-        ),
-        (*max_optional_properties > 0, "max_optional_properties"),
-        (*max_union_properties > 0, "max_union_properties"),
-        (*external_refs, "external_refs"),
-        (*forbid_allof_with_ref, "forbid_allof_with_ref"),
-    ];
-    configured
-        .into_iter()
-        .filter_map(|(enabled, name)| enabled.then_some(name))
-        .collect()
-}
-
-fn boundary_cases(name: &str, limits: &StructuralLimits) -> Vec<StructuralTest> {
-    match name {
-        "require_object_root" => pair(
-            name,
+fn boundary_cases(rule: StructuralRuleId, limits: &StructuralLimits) -> Vec<StructuralTest> {
+    match rule {
+        StructuralRuleId::ObjectRoot => pair(
+            rule,
             json!({"type": "object", "properties": {"x": {"type": "string"}}}),
             json!({"type": "array", "items": {"type": "string"}}),
             "/",
         ),
-        "require_additional_properties_false" => pair(
-            name,
+        StructuralRuleId::AdditionalPropertiesFalse => pair(
+            rule,
             object_schema(true, true),
             object_schema(false, true),
             "/",
         ),
-        "require_all_properties_in_required" => pair(
-            name,
+        StructuralRuleId::AllPropertiesRequired => pair(
+            rule,
             object_schema(true, true),
             object_schema(true, false),
             "/",
         ),
-        "require_array_items" => pair(
-            name,
+        StructuralRuleId::ArrayItems => pair(
+            rule,
             json!({"type": "array", "items": {"type": "string"}}),
             json!({"type": "array"}),
             "/",
         ),
-        "forbid_root_any_of" => pair(
-            name,
+        StructuralRuleId::RootAnyOf => pair(
+            rule,
             object_schema(true, true),
             json!({"type": "object", "anyOf": [{"type": "object"}]}),
             "/",
         ),
-        "forbid_root_enum" => pair(
-            name,
+        StructuralRuleId::RootEnum => pair(
+            rule,
             object_schema(true, true),
             json!({"type": "string", "enum": ["x"]}),
             "/",
         ),
-        "forbid_empty_object" => pair(
-            name,
+        StructuralRuleId::EmptyObject => pair(
+            rule,
             object_schema(true, true),
             json!({"type": "object", "properties": {}, "additionalProperties": false}),
             "/",
         ),
-        "max_object_depth" => {
+        StructuralRuleId::MaxDepth => {
             let limit = limits.max_object_depth as usize;
             pair(
-                name,
+                rule,
                 nested_schema(limit),
                 nested_schema(limit + 1),
                 &nested_pointer(limit + 1),
             )
         }
-        "max_total_properties" => pair(
-            name,
+        StructuralRuleId::MaxTotalProperties => pair(
+            rule,
             properties_schema(limits.max_total_properties as usize, false),
             properties_schema(limits.max_total_properties as usize + 1, false),
             "/",
         ),
-        "max_total_enum_values" => pair(
-            name,
+        StructuralRuleId::MaxTotalEnumValues => pair(
+            rule,
             enum_schema(limits.max_total_enum_values as usize, 1),
             enum_schema(limits.max_total_enum_values as usize + 1, 1),
             "/",
         ),
-        "max_string_length_total" => pair(
-            name,
+        StructuralRuleId::StringLengthBudget => pair(
+            rule,
             json!({"const": "x".repeat(limits.max_string_length_total as usize)}),
             json!({"const": "x".repeat(limits.max_string_length_total as usize + 1)}),
             "/",
         ),
-        "enum_string_length_budget" => {
+        StructuralRuleId::EnumStringLengthBudget => {
             let threshold = limits.enum_string_length_threshold as usize;
             let limit = limits.max_enum_string_length as usize;
             pair(
-                name,
+                rule,
                 enum_schema(threshold, limit / threshold + 1),
                 enum_schema(threshold + 1, limit / (threshold + 1) + 1),
                 "/enum",
             )
         }
-        "max_optional_properties" => pair(
-            name,
+        StructuralRuleId::MaxOptionalProperties => pair(
+            rule,
             properties_schema(limits.max_optional_properties as usize, false),
             properties_schema(limits.max_optional_properties as usize + 1, false),
             "/",
         ),
-        "max_union_properties" => pair(
-            name,
+        StructuralRuleId::MaxUnionProperties => pair(
+            rule,
             properties_schema(limits.max_union_properties as usize, true),
             properties_schema(limits.max_union_properties as usize + 1, true),
             "/",
         ),
-        "external_refs" => pair(
-            name,
+        StructuralRuleId::ExternalRefs => pair(
+            rule,
             json!({"$ref": "#/$defs/X", "$defs": {"X": {"type": "string"}}}),
             json!({"$ref": "https://example.com/schema.json"}),
             "/",
         ),
-        "forbid_allof_with_ref" => pair(
-            name,
+        StructuralRuleId::AllOfWithRef => pair(
+            rule,
             json!({"type": "object", "allOf": [{"type": "object"}]}),
             json!({"type": "object", "allOf": [{"$ref": "#/$defs/X"}], "$defs": {"X": {"type": "object"}}}),
             "/",
         ),
-        other => panic!("unmapped enabled structural limit: {other}"),
     }
 }
 
-fn pair(name: &str, accept: Value, reject: Value, reject_path: &str) -> Vec<StructuralTest> {
+fn pair(
+    rule: StructuralRuleId,
+    accept: Value,
+    reject: Value,
+    reject_path: &str,
+) -> Vec<StructuralTest> {
     vec![
-        structural_case(name, "accept", accept, KeywordBehavior::Accept, None),
+        structural_case(rule, "accept", accept, KeywordBehavior::Accept, None),
         structural_case(
-            name,
+            rule,
             "reject",
             reject,
             KeywordBehavior::Reject,
@@ -236,14 +187,14 @@ fn pair(name: &str, accept: Value, reject: Value, reject_path: &str) -> Vec<Stru
 }
 
 fn structural_case(
-    name: &str,
+    rule: StructuralRuleId,
     suffix: &str,
     schema: Value,
     expected_behavior: KeywordBehavior,
     expected_error_path: Option<&str>,
 ) -> StructuralTest {
     StructuralTest {
-        limit_name: format!("{name}__{suffix}"),
+        limit_name: format!("{}__{suffix}", rule.name()),
         test_schema: schema.to_string(),
         expected_behavior,
         expected_error_path: expected_error_path.map(str::to_owned),
@@ -302,8 +253,4 @@ fn nested_pointer(depth: usize) -> String {
     (0..depth)
         .map(|index| format!("/properties/p{index}"))
         .collect()
-}
-
-fn base_name(name: &str) -> &str {
-    name.split("__").next().unwrap_or(name)
 }

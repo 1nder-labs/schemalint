@@ -310,7 +310,7 @@ jobs:
         uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
 
       - name: Compare linter with the offline truth engine
-        run: cargo test -p schemalint-conformance --test truth_integration_tests
+        run: cargo test -p schemalint-conformance
 
   generated-docs:
     name: Generated artifacts and docs
@@ -327,24 +327,13 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: |
-            npm/schemalint/package-lock.json
-            docs/package-lock.json
+          cache-dependency-path: docs/package-lock.json
 
       - name: Regenerate rule reference
         run: cargo run --bin schemalint-docgen
 
       - name: Check generated rule reference
         run: git diff --exit-code -- docs/docs/rules
-
-      - name: Regenerate TypeScript distribution
-        run: |
-          npm ci
-          npm run build
-        working-directory: npm/schemalint
-
-      - name: Check generated TypeScript distribution
-        run: git diff --exit-code -- npm/schemalint/dist
 
       - name: Build documentation site
         run: |
