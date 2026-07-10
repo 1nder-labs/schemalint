@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { betaZodTool } from '@anthropic-ai/sdk/helpers/zod';
+import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 
 betaZodTool({
   name: 'translate',

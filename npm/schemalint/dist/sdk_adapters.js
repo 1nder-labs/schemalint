@@ -25,7 +25,7 @@ const adapters = [
     argumentAdapter('openai/helpers/zod', 'zodResponseFormat', 'openai.zodResponseFormat', 'openai', [requiredArgument('name', 1)]),
     objectAdapter('openai/helpers/zod', 'zodFunction', 'openai.zodFunction', ['parameters'], '2.0', [requiredProperty('name', 'name')], 'openai'),
     argumentAdapter('@anthropic-ai/sdk/helpers/zod', 'zodOutputFormat', 'anthropic.zodOutputFormat', 'anthropic'),
-    objectAdapter('@anthropic-ai/sdk/helpers/zod', 'betaZodTool', 'anthropic.betaZodTool', ['inputSchema'], '2.0', [requiredProperty('name', 'name')], 'anthropic'),
+    objectAdapter('@anthropic-ai/sdk/helpers/beta/zod', 'betaZodTool', 'anthropic.betaZodTool', ['inputSchema'], '2.0', [requiredProperty('name', 'name')], 'anthropic'),
 ];
 const byImport = new Map(adapters.map((adapter) => [`${adapter.module}:${adapter.exportPath}`, adapter]));
 export function adapterFor(module, exportPath) {

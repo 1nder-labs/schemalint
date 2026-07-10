@@ -98,7 +98,7 @@ const adapters: readonly SdkAdapter[] = [
     'anthropic'
   ),
   objectAdapter(
-    '@anthropic-ai/sdk/helpers/zod',
+    '@anthropic-ai/sdk/helpers/beta/zod',
     'betaZodTool',
     'anthropic.betaZodTool',
     ['inputSchema'],
