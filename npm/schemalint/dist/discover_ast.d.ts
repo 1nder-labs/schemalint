@@ -8,11 +8,6 @@ export interface ExportedSchemaCall {
  * Find top-level `const` declarations that are `z.object({...})` calls.
  */
 export declare function findExportedSchemaCalls(sourceFile: ts.SourceFile, tsModule: typeof ts): ExportedSchemaCall[];
-/**
- * Scan a source file's import declarations for provider SDKs.
- * Returns "openai" or "anthropic" if detected, undefined otherwise.
- */
-export declare function scanProviderImports(sourceFile: ts.SourceFile, tsModule: typeof ts): string | undefined;
 export declare function hasExportModifier(node: ts.Node, tsModule: typeof ts): boolean;
 /**
  * Given a node, if it is `z.object({...})`, return the ObjectLiteralExpression argument.

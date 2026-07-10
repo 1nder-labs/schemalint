@@ -287,6 +287,10 @@ mod tests {
             module_path: module_path.to_string(),
             schema: serde_json::json!({}),
             source_map,
+            canonical_kind: String::new(),
+            provider: Default::default(),
+            envelope: Default::default(),
+            usage_span: None,
         }
     }
 

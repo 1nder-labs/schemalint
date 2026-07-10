@@ -13,12 +13,21 @@ import {
   resolveVariableDeclaration,
   type TargetExpression,
 } from './target_resolution.js';
+import type {
+  EnvelopeField,
+  ProviderResolution,
+  TargetSpan,
+} from './sdk_adapters.js';
 
 export interface SchemaTarget {
   name: string;
   filePath: string;
   exportName: string;
   sourceMap: Record<string, SourceMapEntry>;
+  canonicalKind: string;
+  provider: ProviderResolution;
+  envelope: Record<string, EnvelopeField>;
+  usageSpan: TargetSpan;
   syntheticSource?: string;
 }
 
@@ -40,6 +49,10 @@ export function resolveTarget(
         filePath: exported.filePath,
         exportName: exported.exportName,
         sourceMap,
+        canonicalKind: target.metadata.canonicalKind,
+        provider: target.metadata.provider,
+        envelope: target.metadata.envelope,
+        usageSpan: target.metadata.usageSpan,
       };
     }
   }
@@ -50,12 +63,17 @@ export function resolveTarget(
     filePath: sourceFile.fileName,
     exportName,
     sourceMap,
+    canonicalKind: target.metadata.canonicalKind,
+    provider: target.metadata.provider,
+    envelope: target.metadata.envelope,
+    usageSpan: target.metadata.usageSpan,
     syntheticSource: buildSyntheticModule(
       sourceFile,
       expr,
       exportName,
       tsModule,
-      compilerOptions
+      compilerOptions,
+      target.metadata.adapterModule
     ),
   };
 }
@@ -86,7 +104,8 @@ function buildSyntheticModule(
   expr: ts.Expression,
   exportName: string,
   tsModule: typeof ts,
-  compilerOptions: ts.CompilerOptions
+  compilerOptions: ts.CompilerOptions,
+  adapterModule: string
 ): string {
   const parts: string[] = [];
   // Identify the top-level statement that directly contains the target
@@ -99,6 +118,12 @@ function buildSyntheticModule(
 
   for (const stmt of sourceFile.statements) {
     if (tsModule.isImportDeclaration(stmt)) {
+      if (
+        tsModule.isStringLiteral(stmt.moduleSpecifier) &&
+        stmt.moduleSpecifier.text === adapterModule
+      ) {
+        continue;
+      }
       parts.push(rewriteImport(stmt, sourceFile, tsModule, compilerOptions));
       continue;
     }

@@ -39,33 +39,6 @@ export function findExportedSchemaCalls(sourceFile, tsModule) {
     tsModule.forEachChild(sourceFile, walk);
     return results;
 }
-/**
- * Scan a source file's import declarations for provider SDKs.
- * Returns "openai" or "anthropic" if detected, undefined otherwise.
- */
-export function scanProviderImports(sourceFile, tsModule) {
-    for (const stmt of sourceFile.statements) {
-        if (!tsModule.isImportDeclaration(stmt))
-            continue;
-        const spec = stmt.moduleSpecifier;
-        if (!tsModule.isStringLiteral(spec))
-            continue;
-        const mod = spec.text;
-        if (mod === 'openai' || mod.startsWith('openai/')) {
-            return 'openai';
-        }
-        if (mod === '@ai-sdk/openai' || mod.startsWith('@ai-sdk/openai/')) {
-            return 'openai';
-        }
-        if (mod === '@anthropic-ai/sdk' || mod.startsWith('@anthropic-ai/')) {
-            return 'anthropic';
-        }
-        if (mod === '@ai-sdk/anthropic' || mod.startsWith('@ai-sdk/anthropic/')) {
-            return 'anthropic';
-        }
-    }
-    return undefined;
-}
 export function hasExportModifier(node, tsModule) {
     if (!tsModule.canHaveModifiers(node))
         return false;

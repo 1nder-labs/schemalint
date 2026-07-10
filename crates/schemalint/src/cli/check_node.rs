@@ -5,9 +5,10 @@ use crate::cli::args::{CheckNodeArgs, OutputFormat};
 use crate::cli::discovery_policy::discover_batch;
 use crate::cli::node_config;
 use crate::cli::pipeline::{attach_source_spans, build_report, emit_output, process_schemas};
+use crate::ingest::{DiscoveredModel, Provider, ProviderCertainty};
 use crate::rules::registry::RuleSet;
 
-use super::{default_profile_ids, load_profiles_from_ids, ANTHROPIC_PROFILE_ID, OPENAI_PROFILE_ID};
+use super::{load_profiles_from_ids, ANTHROPIC_PROFILE_ID, OPENAI_PROFILE_ID};
 
 pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     let start = std::time::Instant::now();
@@ -19,12 +20,6 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
         .config
         .as_deref()
         .unwrap_or_else(|| Path::new("package.json"));
-    // Directory to search for provider-detection purposes if we fall all the
-    // way through to the deps-based default (step 5 below).
-    let profile_start_dir: &Path = config_path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
     let node_config = match node_config::load_node_config(config_path) {
         Ok(c) => c,
         Err(e) => {
@@ -138,39 +133,22 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     helper.shutdown();
 
     // -------------------------------------------------------------------
-    // 5. Resolve a default profile if none was given yet: source-import
-    //    provider hint first (existing signal), then package.json
-    //    dependencies, then the openai default. This never hard-errors — it
-    //    always resolves to a profile and prints an `info:` line explaining
-    //    the choice.
+    // 5. Resolve automatic profiles from per-usage ownership. Ambiguous
+    //    targets are retained and become typed pipeline failures below.
     // -------------------------------------------------------------------
     if profile_args.is_empty() {
-        match discovery.provider_hint.as_deref() {
-            Some("openai") => {
-                eprintln!(
-                    "info: auto-detected provider 'openai' from source imports → using profile '{}'",
-                    OPENAI_PROFILE_ID
-                );
-                profile_args.push(OPENAI_PROFILE_ID.to_string());
-            }
-            Some("anthropic") => {
-                eprintln!(
-                    "info: auto-detected provider 'anthropic' from source imports → using profile '{}'",
-                    ANTHROPIC_PROFILE_ID
-                );
-                profile_args.push(ANTHROPIC_PROFILE_ID.to_string());
-            }
-            Some(other) => {
-                eprintln!("error: unknown provider hint '{}' from source files", other);
-                return 1;
-            }
-            None => {
-                profile_args = default_profile_ids(profile_start_dir);
-            }
+        profile_args = automatic_profile_ids(&discovery.models);
+        if !profile_args.is_empty() {
+            eprintln!(
+                "info: auto-selected per-target profile(s): {}",
+                profile_args.join(", ")
+            );
         }
     }
+    let uses_explicit_profiles = explicit_profiles.is_some();
     let profiles = match explicit_profiles {
         Some(profiles) => profiles,
+        None if profile_args.is_empty() => Vec::new(),
         None => match load_profiles_from_ids(&profile_args) {
             Ok(profiles) => profiles,
             Err(e) => {
@@ -198,19 +176,11 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
-    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovery
-        .models
-        .iter()
-        .map(|m| {
-            (
-                PathBuf::from(&m.module_path),
-                m.name.clone(),
-                m.schema.clone(),
-            )
-        })
-        .collect();
-
-    let results = process_schemas(schema_entries, &profile_rulesets);
+    let results = if uses_explicit_profiles {
+        process_schemas(schema_entries(&discovery.models), &profile_rulesets)
+    } else {
+        process_node_targets(&discovery.models, &profile_rulesets)
+    };
 
     // -------------------------------------------------------------------
     // 7. Attach source spans from discovery
@@ -237,4 +207,113 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     }
 
     report.exit_code()
+}
+
+fn automatic_profile_ids(models: &[DiscoveredModel]) -> Vec<String> {
+    let has_openai = models.iter().any(|model| {
+        model.provider.certainty != ProviderCertainty::Ambiguous
+            && model.provider.provider == Some(Provider::Openai)
+    });
+    let has_anthropic = models.iter().any(|model| {
+        model.provider.certainty != ProviderCertainty::Ambiguous
+            && model.provider.provider == Some(Provider::Anthropic)
+    });
+    [
+        (has_openai, OPENAI_PROFILE_ID),
+        (has_anthropic, ANTHROPIC_PROFILE_ID),
+    ]
+    .into_iter()
+    .filter(|(present, _)| *present)
+    .map(|(_, profile)| profile.to_string())
+    .collect()
+}
+
+fn schema_entries(models: &[DiscoveredModel]) -> Vec<(PathBuf, String, serde_json::Value)> {
+    models
+        .iter()
+        .map(|model| {
+            (
+                PathBuf::from(&model.module_path),
+                model.name.clone(),
+                model.schema.clone(),
+            )
+        })
+        .collect()
+}
+
+fn process_node_targets(
+    models: &[DiscoveredModel],
+    profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
+) -> Vec<(
+    PathBuf,
+    String,
+    Result<Vec<crate::rules::Diagnostic>, String>,
+)> {
+    let mut results = Vec::with_capacity(models.len());
+    let inferred_provider = single_owned_provider(models);
+    for model in models {
+        let profile_id = match (model.provider.certainty, model.provider.provider) {
+            (
+                ProviderCertainty::Definitive | ProviderCertainty::Inferred,
+                Some(Provider::Openai),
+            ) => OPENAI_PROFILE_ID,
+            (
+                ProviderCertainty::Definitive | ProviderCertainty::Inferred,
+                Some(Provider::Anthropic),
+            ) => ANTHROPIC_PROFILE_ID,
+            (ProviderCertainty::Ambiguous, _) if inferred_provider == Some(Provider::Openai) => {
+                OPENAI_PROFILE_ID
+            }
+            (ProviderCertainty::Ambiguous, _) if inferred_provider == Some(Provider::Anthropic) => {
+                ANTHROPIC_PROFILE_ID
+            }
+            _ => {
+                results.push((
+                    PathBuf::from(&model.module_path),
+                    model.name.clone(),
+                    Err(format!(
+                        "provider is ambiguous for target kind '{}'; pass --profile explicitly",
+                        model.canonical_kind
+                    )),
+                ));
+                continue;
+            }
+        };
+        let Some(index) = profile_rulesets
+            .iter()
+            .position(|(profile, _)| profile.name == profile_id)
+        else {
+            results.push((
+                PathBuf::from(&model.module_path),
+                model.name.clone(),
+                Err(format!(
+                    "no ruleset loaded for provider profile '{profile_id}'"
+                )),
+            ));
+            continue;
+        };
+        results.extend(process_schemas(
+            vec![(
+                PathBuf::from(&model.module_path),
+                model.name.clone(),
+                model.schema.clone(),
+            )],
+            std::slice::from_ref(&profile_rulesets[index]),
+        ));
+    }
+    results
+}
+
+fn single_owned_provider(models: &[DiscoveredModel]) -> Option<Provider> {
+    let has_openai = models
+        .iter()
+        .any(|model| model.provider.provider == Some(Provider::Openai));
+    let has_anthropic = models
+        .iter()
+        .any(|model| model.provider.provider == Some(Provider::Anthropic));
+    match (has_openai, has_anthropic) {
+        (true, false) => Some(Provider::Openai),
+        (false, true) => Some(Provider::Anthropic),
+        _ => None,
+    }
 }

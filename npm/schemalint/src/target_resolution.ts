@@ -1,9 +1,24 @@
 import type * as ts from 'typescript';
 
+import type {
+  EnvelopeField,
+  ProviderResolution,
+  TargetSpan,
+} from './sdk_adapters.js';
+
+export interface TargetMetadata {
+  adapterModule: string;
+  canonicalKind: string;
+  provider: ProviderResolution;
+  envelope: Record<string, EnvelopeField>;
+  usageSpan: TargetSpan;
+}
+
 export interface TargetExpression {
   name: string;
   sourceFile: ts.SourceFile;
   expression: ts.Expression;
+  metadata: TargetMetadata;
 }
 
 export interface CarrierExpression {
@@ -12,6 +27,7 @@ export interface CarrierExpression {
   paramName: string;
   propertyName: string;
   explicitName?: string;
+  metadata: TargetMetadata;
 }
 
 export function pushExpressionOrCarrier(
@@ -21,20 +37,24 @@ export function pushExpressionOrCarrier(
   expression: ts.Expression,
   sourceFile: ts.SourceFile,
   tsModule: typeof ts,
-  explicitName?: string
+  explicitName: string | undefined,
+  metadata: TargetMetadata
 ): void {
   const carrier = carrierExpression(
     api,
     expression,
     tsModule,
-    explicitName
+    explicitName,
+    metadata
   );
   if (carrier) {
     carriers.push(carrier);
     return;
   }
 
-  targets.push(namedTarget(api, expression, sourceFile, tsModule, explicitName));
+  targets.push(
+    namedTarget(api, expression, sourceFile, tsModule, explicitName, metadata)
+  );
 }
 
 export function collectCarrierTargets(
@@ -160,7 +180,8 @@ function carrierExpression(
   api: string,
   expression: ts.Expression,
   tsModule: typeof ts,
-  explicitName?: string
+  explicitName: string | undefined,
+  metadata: TargetMetadata
 ): CarrierExpression | undefined {
   const expr = skipParens(expression, tsModule);
   if (!tsModule.isPropertyAccessExpression(expr)) return undefined;
@@ -176,6 +197,7 @@ function carrierExpression(
     paramName,
     propertyName: expr.name.text,
     explicitName,
+    metadata,
   };
 }
 
@@ -236,7 +258,10 @@ function carrierTargetFromCall(
       checker,
       tsModule
     );
-  return namedTarget(carrier.api, schema, sourceFile, tsModule, name);
+  return namedTarget(carrier.api, schema, sourceFile, tsModule, name, {
+    ...carrier.metadata,
+    usageSpan: spanFor(call, sourceFile),
+  });
 }
 
 function sameSymbol(
@@ -283,7 +308,8 @@ function namedTarget(
   expression: ts.Expression,
   sourceFile: ts.SourceFile,
   tsModule: typeof ts,
-  explicitName?: string
+  explicitName: string | undefined,
+  metadata: TargetMetadata
 ): TargetExpression {
   const { line } = sourceFile.getLineAndCharacterOfPosition(
     expression.getStart(sourceFile)
@@ -296,7 +322,30 @@ function namedTarget(
     name: `${api}:${suffix}`,
     sourceFile,
     expression,
+    metadata,
   };
+}
+
+export function spanFor(node: ts.Node, sourceFile: ts.SourceFile): TargetSpan {
+  const { line, character } = sourceFile.getLineAndCharacterOfPosition(
+    node.getStart(sourceFile)
+  );
+  return { file: sourceFile.fileName, line: line + 1, col: character + 1 };
+}
+
+export function stringValueFromExpression(
+  expr: ts.Expression | undefined,
+  checker: ts.TypeChecker,
+  tsModule: typeof ts
+): string | undefined {
+  if (!expr) return undefined;
+  const unwrapped = skipParens(expr, tsModule);
+  if (tsModule.isStringLiteralLike(unwrapped)) return unwrapped.text;
+  if (tsModule.isIdentifier(unwrapped)) {
+    const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
+    return stringValueFromExpression(decl?.initializer, checker, tsModule);
+  }
+  return undefined;
 }
 
 function stringLiteralText(

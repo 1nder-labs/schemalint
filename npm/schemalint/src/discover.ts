@@ -19,9 +19,13 @@ export function toPosixPath(p: string, sep: string = path.sep): string {
 import {
   buildSourceMapFromObjectLiteral,
   findExportedSchemaCalls,
-  scanProviderImports,
 } from './discover_ast.js';
 import { findSchemaTargets, type SchemaTarget } from './targets.js';
+import type {
+  EnvelopeField,
+  ProviderResolution,
+  TargetSpan,
+} from './sdk_adapters.js';
 
 export interface SourceMapEntry {
   file: string;
@@ -33,6 +37,10 @@ export interface DiscoveredModel {
   module_path: string;
   schema: Record<string, unknown>;
   source_map: Record<string, SourceMapEntry>;
+  canonical_kind: string;
+  provider: ProviderResolution;
+  envelope: Record<string, EnvelopeField>;
+  usage_span: TargetSpan;
 }
 
 export interface DiscoveryWarning {
@@ -41,6 +49,7 @@ export interface DiscoveryWarning {
 }
 
 export interface DiscoveryFailure {
+  kind: 'evaluation' | 'metadata';
   target: string;
   message: string;
 }
@@ -57,7 +66,6 @@ export interface DiscoverResponse {
   warnings: DiscoveryWarning[];
   failures: DiscoveryFailure[];
   counts: DiscoveryCounts;
-  provider_hint?: string;
 }
 
 /**
@@ -176,31 +184,22 @@ export async function discoverZodSchemas(
       fileSet.has(sourceFile.fileName)
   );
 
-  // Step 0: Scan provider imports for auto-detection
-  let providerHint: string | undefined;
-  for (const sourceFile of selectedSourceFiles) {
-    const hint = scanProviderImports(sourceFile, tsModule);
-    if (hint) {
-      providerHint = hint;
-      break;
-    }
-  }
-
   // Step 1: Prefer provider-facing call sites. This catches schemas passed to
   // AI SDK, OpenAI helpers, and Anthropic helper APIs. Legacy exported-schema
   // discovery remains as a fallback for simple projects and explicit schema
   // modules that are not wired to a provider call in the selected source glob.
-  const callsiteTargets = findSchemaTargets(
+  const callsiteDiscovery = findSchemaTargets(
     program,
     fileSet,
     tsModule,
     compilerOptions
   );
-  const discoveredLocations: SchemaTarget[] = [...callsiteTargets];
+  const discoveredLocations: SchemaTarget[] = [...callsiteDiscovery.targets];
+  const discoveryFailures: DiscoveryFailure[] = [...callsiteDiscovery.failures];
 
   const nonFatal: DiscoveryWarning[] = [];
 
-  if (discoveredLocations.length === 0) {
+  if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
     for (const sourceFile of selectedSourceFiles) {
       const exports = findExportedSchemaCalls(sourceFile, tsModule);
       for (const exp of exports) {
@@ -214,12 +213,20 @@ export async function discoverZodSchemas(
           filePath: sourceFile.fileName,
           exportName: exp.name,
           sourceMap,
+          canonicalKind: 'zod.export',
+          provider: { certainty: 'ambiguous' },
+          envelope: {},
+          usageSpan: {
+            file: sourceFile.fileName,
+            line: sourceMap['']?.line ?? 1,
+            col: 1,
+          },
         });
       }
     }
   }
 
-  if (discoveredLocations.length === 0) {
+  if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
     return {
       models: [],
       warnings: nonFatal,
@@ -230,7 +237,7 @@ export async function discoverZodSchemas(
 
   // Step 3: Runtime evaluation — import each file and evaluate schemas
   const models: DiscoveredModel[] = [];
-  const failures: DiscoveryFailure[] = [];
+  const failures: DiscoveryFailure[] = discoveryFailures;
 
   for (const loc of discoveredLocations) {
     try {
@@ -246,10 +253,15 @@ export async function discoverZodSchemas(
         module_path: loc.filePath,
         schema: schemaJson as Record<string, unknown>,
         source_map: loc.sourceMap,
+        canonical_kind: loc.canonicalKind,
+        provider: loc.provider,
+        envelope: loc.envelope,
+        usage_span: loc.usageSpan,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       failures.push({
+        kind: 'evaluation',
         target: loc.name,
         message: `Failed to evaluate schema '${loc.name}' in ${loc.filePath}: ${message}`,
       });
@@ -261,14 +273,11 @@ export async function discoverZodSchemas(
     warnings: nonFatal,
     failures,
     counts: {
-      attempted: discoveredLocations.length,
+      attempted: discoveredLocations.length + discoveryFailures.length,
       excluded,
       discovered: models.length,
       failed: failures.length,
     },
   };
-  if (providerHint) {
-    response.provider_hint = providerHint;
-  }
   return response;
 }

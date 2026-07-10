@@ -10,6 +10,7 @@
  * POSIX machine — pass `'\\'` to simulate Windows `path.sep`.
  */
 export declare function toPosixPath(p: string, sep?: string): string;
+import type { EnvelopeField, ProviderResolution, TargetSpan } from './sdk_adapters.js';
 export interface SourceMapEntry {
     file: string;
     line?: number;
@@ -19,12 +20,17 @@ export interface DiscoveredModel {
     module_path: string;
     schema: Record<string, unknown>;
     source_map: Record<string, SourceMapEntry>;
+    canonical_kind: string;
+    provider: ProviderResolution;
+    envelope: Record<string, EnvelopeField>;
+    usage_span: TargetSpan;
 }
 export interface DiscoveryWarning {
     model: string;
     message: string;
 }
 export interface DiscoveryFailure {
+    kind: 'evaluation' | 'metadata';
     target: string;
     message: string;
 }
@@ -39,7 +45,6 @@ export interface DiscoverResponse {
     warnings: DiscoveryWarning[];
     failures: DiscoveryFailure[];
     counts: DiscoveryCounts;
-    provider_hint?: string;
 }
 /**
  * Discover Zod schemas by walking TypeScript ASTs.

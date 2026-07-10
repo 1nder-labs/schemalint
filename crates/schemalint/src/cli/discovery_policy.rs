@@ -9,7 +9,6 @@ pub struct DiscoveryBatch {
     pub coverage: CoverageCounts,
     pub failures: Vec<ReportMessage>,
     pub warnings: Vec<ReportMessage>,
-    pub provider_hint: Option<String>,
 }
 
 pub fn discover_batch<E: std::fmt::Display>(
@@ -33,9 +32,6 @@ pub fn discover_batch<E: std::fmt::Display>(
                 batch.coverage.excluded += response.counts.excluded;
                 batch.coverage.discovered += response.models.len();
                 batch.coverage.failed += response.failures.len();
-                if batch.provider_hint.is_none() {
-                    batch.provider_hint = response.provider_hint;
-                }
                 batch
                     .warnings
                     .extend(response.warnings.into_iter().map(|warning| ReportMessage {
@@ -93,10 +89,13 @@ mod tests {
                     module_path: "good.ts".into(),
                     schema: serde_json::json!({}),
                     source_map: Default::default(),
+                    canonical_kind: String::new(),
+                    provider: Default::default(),
+                    envelope: Default::default(),
+                    usage_span: None,
                 }],
                 failures: Vec::<DiscoveryFailure>::new(),
                 warnings: vec![],
-                provider_hint: None,
             })
         });
 

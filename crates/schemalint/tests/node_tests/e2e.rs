@@ -288,22 +288,13 @@ export const Combo = z.intersection(Person, Employee);
 }
 
 // ---------------------------------------------------------------------------
-// Provider-hint auto-detection tests (#8)
+// Per-target provider auto-selection tests
 //
-// These tests exercise the auto-detect block in check_node.rs (~line 173):
-//   "openai"    → openai.so.2026-04-30 profile
-//   "anthropic" → anthropic.so.2026-04-30 profile
-//   other       → error + exit 1   (untestable without controlling the sidecar)
-//
-// All three tests omit --profile so the auto-detect path is exercised.
-// The sidecar emits a `provider_hint` field when it detects SDK imports from
-// `openai/helpers/zod` (→ "openai") or `@anthropic-ai/sdk/helpers/zod` (→ "anthropic").
+// Direct SDK adapters carry definitive ownership across the sidecar wire.
 // ---------------------------------------------------------------------------
 
-/// When source imports from `openai/helpers/zod`, the sidecar sets
-/// `provider_hint = "openai"` and the CLI auto-selects openai.so.2026-04-30.
 #[test]
-fn e2e_provider_hint_openai_auto_selects_openai_profile() {
+fn e2e_openai_target_auto_selects_openai_profile() {
     let tmp = TempDir::new().unwrap();
     setup_ts_project(
         tmp.path(),
@@ -319,7 +310,6 @@ export const Lookup = zodFunction({
         )],
     );
 
-    // No --profile flag — rely on auto-detection.
     let mut cmd = Command::cargo_bin("schemalint").unwrap();
     cmd.current_dir(tmp.path());
     let output = cmd
@@ -328,17 +318,15 @@ export const Lookup = zodFunction({
         .unwrap();
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // The CLI must log the auto-detection message.
     assert!(
-        stderr.contains("auto-detected provider 'openai'"),
-        "expected auto-detect log for openai, got stderr:\n{stderr}"
+        stderr.contains("auto-selected per-target profile(s)"),
+        "expected per-target selection log, got stderr:\n{stderr}"
     );
     assert!(
         stderr.contains("openai.so.2026-04-30"),
         "expected profile name in auto-detect log, got stderr:\n{stderr}"
     );
 
-    // Output must be valid JSON and use the openai profile.
     let stdout = String::from_utf8_lossy(&output.stdout);
     let out: JsonOutput = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
@@ -349,10 +337,8 @@ export const Lookup = zodFunction({
     );
 }
 
-/// When source imports only from `@anthropic-ai/sdk/helpers/zod`, the sidecar
-/// sets `provider_hint = "anthropic"` and the CLI auto-selects anthropic.so.2026-04-30.
 #[test]
-fn e2e_provider_hint_anthropic_auto_selects_anthropic_profile() {
+fn e2e_anthropic_target_auto_selects_anthropic_profile() {
     let tmp = TempDir::new().unwrap();
     setup_ts_project(
         tmp.path(),
@@ -368,7 +354,6 @@ export const Translate = betaZodTool({
         )],
     );
 
-    // No --profile flag — rely on auto-detection.
     let mut cmd = Command::cargo_bin("schemalint").unwrap();
     cmd.current_dir(tmp.path());
     let output = cmd
@@ -378,8 +363,8 @@ export const Translate = betaZodTool({
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("auto-detected provider 'anthropic'"),
-        "expected auto-detect log for anthropic, got stderr:\n{stderr}"
+        stderr.contains("auto-selected per-target profile(s)"),
+        "expected per-target selection log, got stderr:\n{stderr}"
     );
     assert!(
         stderr.contains("anthropic.so.2026-04-30"),
@@ -396,15 +381,8 @@ export const Translate = betaZodTool({
     );
 }
 
-// NOTE: The "unknown provider hint" branch (check_node.rs ~line 178, the `other =>` arm)
-// is not exercised here. The sidecar only emits "openai" or "anthropic" hints — there
-// is no fixture that causes it to emit an arbitrary string. Testing that branch would
-// require either mocking the node subprocess or patching the sidecar, neither of which
-// is available in this integration harness. The branch is covered by code inspection.
-
 // ---------------------------------------------------------------------------
-// Default-profile fallback tiers when there is no --profile, no package.json
-// "schemalint" config, and no source-import provider hint.
+// Ambiguous automatic targets fail instead of guessing from package metadata.
 // ---------------------------------------------------------------------------
 
 /// No provider hint (plain `z.object` with no provider SDK import), no
@@ -412,7 +390,7 @@ export const Translate = betaZodTool({
 /// dependency → falls back to `detect_providers_from_deps` and selects the
 /// openai profile.
 #[test]
-fn e2e_no_hint_falls_back_to_package_json_deps_detection() {
+fn e2e_ambiguous_target_does_not_guess_from_package_json() {
     let tmp = TempDir::new().unwrap();
     setup_ts_project(
         tmp.path(),
@@ -438,27 +416,21 @@ export const Plain = z.object({ name: z.string() });
         .output()
         .unwrap();
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("info: no --profile given; detected openai from package.json"),
-        "expected deps-detection info line, got stderr:\n{stderr}"
-    );
-
+    assert!(!output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let out: JsonOutput = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
-    assert!(
-        out.profiles.iter().any(|p| p == "openai.so.2026-04-30"),
-        "expected openai profile in output, got: {:?}",
-        out.profiles
-    );
+    let out: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(out["report"]["coverage"]["status"], "partial");
+    assert!(out["report"]["failures"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("provider is ambiguous"));
 }
 
 /// No provider hint, no "schemalint" config, and no recognized dependency in
 /// package.json → falls all the way through to the openai default rather
 /// than hard-erroring with "no profiles specified.".
 #[test]
-fn e2e_no_hint_no_deps_defaults_to_openai() {
+fn e2e_ambiguous_target_without_deps_requires_explicit_profile() {
     let tmp = TempDir::new().unwrap();
     setup_ts_project(
         tmp.path(),
@@ -477,24 +449,8 @@ export const Plain = z.object({ name: z.string() });
         .output()
         .unwrap();
 
-    assert!(
-        output.status.success(),
-        "should exit 0 on the default profile, not hard-error"
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("no profiles specified."),
-        "the old hard-error message must never appear, got:\n{stderr}"
-    );
-    assert!(
-        stderr.contains(
-            "info: no --profile and no provider detected in package.json; defaulting to openai.so.2026-04-30"
-        ),
-        "expected openai-default info line, got stderr:\n{stderr}"
-    );
-
+    assert!(!output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let out: JsonOutput = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
-    assert!(out.profiles.iter().any(|p| p == "openai.so.2026-04-30"));
+    let out: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(out["report"]["coverage"]["status"], "partial");
 }

@@ -14,7 +14,7 @@ import { evaluateSchema, evaluateSyntheticSchema } from './evaluate.js';
 export function toPosixPath(p, sep = path.sep) {
     return sep === '/' ? p : p.split(sep).join('/');
 }
-import { buildSourceMapFromObjectLiteral, findExportedSchemaCalls, scanProviderImports, } from './discover_ast.js';
+import { buildSourceMapFromObjectLiteral, findExportedSchemaCalls, } from './discover_ast.js';
 import { findSchemaTargets } from './targets.js';
 /**
  * Discover Zod schemas by walking TypeScript ASTs.
@@ -93,23 +93,15 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     const selectedSourceFiles = program.getSourceFiles().filter((sourceFile) => !sourceFile.isDeclarationFile &&
         !sourceFile.fileName.includes('node_modules') &&
         fileSet.has(sourceFile.fileName));
-    // Step 0: Scan provider imports for auto-detection
-    let providerHint;
-    for (const sourceFile of selectedSourceFiles) {
-        const hint = scanProviderImports(sourceFile, tsModule);
-        if (hint) {
-            providerHint = hint;
-            break;
-        }
-    }
     // Step 1: Prefer provider-facing call sites. This catches schemas passed to
     // AI SDK, OpenAI helpers, and Anthropic helper APIs. Legacy exported-schema
     // discovery remains as a fallback for simple projects and explicit schema
     // modules that are not wired to a provider call in the selected source glob.
-    const callsiteTargets = findSchemaTargets(program, fileSet, tsModule, compilerOptions);
-    const discoveredLocations = [...callsiteTargets];
+    const callsiteDiscovery = findSchemaTargets(program, fileSet, tsModule, compilerOptions);
+    const discoveredLocations = [...callsiteDiscovery.targets];
+    const discoveryFailures = [...callsiteDiscovery.failures];
     const nonFatal = [];
-    if (discoveredLocations.length === 0) {
+    if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
         for (const sourceFile of selectedSourceFiles) {
             const exports = findExportedSchemaCalls(sourceFile, tsModule);
             for (const exp of exports) {
@@ -119,11 +111,19 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
                     filePath: sourceFile.fileName,
                     exportName: exp.name,
                     sourceMap,
+                    canonicalKind: 'zod.export',
+                    provider: { certainty: 'ambiguous' },
+                    envelope: {},
+                    usageSpan: {
+                        file: sourceFile.fileName,
+                        line: sourceMap['']?.line ?? 1,
+                        col: 1,
+                    },
                 });
             }
         }
     }
-    if (discoveredLocations.length === 0) {
+    if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
         return {
             models: [],
             warnings: nonFatal,
@@ -133,7 +133,7 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     }
     // Step 3: Runtime evaluation — import each file and evaluate schemas
     const models = [];
-    const failures = [];
+    const failures = discoveryFailures;
     for (const loc of discoveredLocations) {
         try {
             const schemaJson = loc.syntheticSource
@@ -144,11 +144,16 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
                 module_path: loc.filePath,
                 schema: schemaJson,
                 source_map: loc.sourceMap,
+                canonical_kind: loc.canonicalKind,
+                provider: loc.provider,
+                envelope: loc.envelope,
+                usage_span: loc.usageSpan,
             });
         }
         catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             failures.push({
+                kind: 'evaluation',
                 target: loc.name,
                 message: `Failed to evaluate schema '${loc.name}' in ${loc.filePath}: ${message}`,
             });
@@ -159,15 +164,12 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
         warnings: nonFatal,
         failures,
         counts: {
-            attempted: discoveredLocations.length,
+            attempted: discoveredLocations.length + discoveryFailures.length,
             excluded,
             discovered: models.length,
             failed: failures.length,
         },
     };
-    if (providerHint) {
-        response.provider_hint = providerHint;
-    }
     return response;
 }
 //# sourceMappingURL=discover.js.map

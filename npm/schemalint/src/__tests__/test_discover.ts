@@ -175,25 +175,64 @@ describe('discoverZodSchemas', () => {
     ]);
   });
 
-  it('sets provider_hint to "openai" when source imports from openai SDK', async () => {
-    const result = await discoverZodSchemas('provider-helpers.ts');
+  it('canonicalizes current SDK aliases, namespaces, providers, and envelopes', async () => {
+    const result = await discoverZodSchemas('sdk-adapters.ts');
 
-    // provider-helpers.ts imports from 'openai/helpers/zod' (before @anthropic-ai/),
-    // so the first-match wins and the hint should be "openai".
-    expect(result.provider_hint).toBe('openai');
+    expect(result.failures).toEqual([]);
+    expect(result.models).toHaveLength(5);
+    expect(result.models.map((model) => model.canonical_kind)).toEqual([
+      'openai.zodTextFormat',
+      'anthropic.zodOutputFormat',
+      'ai.Output.object',
+      'ai.Output.array',
+      'ai.dynamicTool',
+    ]);
+    expect(result.models.slice(0, 2).map((model) => model.provider)).toEqual([
+      { certainty: 'definitive', provider: 'openai' },
+      { certainty: 'definitive', provider: 'anthropic' },
+    ]);
+    expect(result.models.slice(2).map((model) => model.provider)).toEqual([
+      { certainty: 'ambiguous' },
+      { certainty: 'ambiguous' },
+      { certainty: 'ambiguous' },
+    ]);
+    expect(result.models[0].envelope.name).toMatchObject({
+      value: 'open_response',
+      required: true,
+    });
+    expect(result.models[0].envelope.name.span.line).toBeGreaterThan(0);
+    expect(result.models[2].envelope).toMatchObject({
+      name: { value: 'object_result' },
+      description: { value: 'one object' },
+    });
+    expect(result.models.every((model) => model.usage_span.line! > 0)).toBe(true);
   });
 
-  it('sets provider_hint to "anthropic" when source imports only from @anthropic-ai SDK', async () => {
+  it('reports unresolved required envelope metadata as a typed failure', async () => {
+    const result = await discoverZodSchemas('unresolved-envelope.ts');
+
+    expect(result.models).toEqual([]);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      kind: 'metadata',
+      target: 'openai.zodTextFormat',
+    });
+    expect(result.failures[0].message).toContain("required field 'name'");
+  });
+
+  it('retains provider ownership on each target', async () => {
     const result = await discoverZodSchemas('anthropic-only.ts');
 
-    expect(result.provider_hint).toBe('anthropic');
+    expect(result.models[0].provider).toEqual({
+      certainty: 'definitive',
+      provider: 'anthropic',
+    });
   });
 
-  it('leaves provider_hint undefined when source has no provider SDK imports', async () => {
+  it('marks legacy exported schemas as provider-ambiguous', async () => {
     const result = await discoverZodSchemas('simple.ts');
 
-    // simple.ts only imports from 'zod' — no provider SDK present.
-    expect(result.provider_hint).toBeUndefined();
+    expect(result.models[0].provider).toEqual({ certainty: 'ambiguous' });
   });
 
   it('discovers inline schema referencing a helper declared after the call site', async () => {

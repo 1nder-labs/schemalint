@@ -4,3 +4,8 @@ export function betaZodTool(args: {
 }): unknown {
   return args;
 }
+
+
+export function zodOutputFormat(schema: unknown): unknown {
+  return { schema };
+}

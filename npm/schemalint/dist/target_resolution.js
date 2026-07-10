@@ -1,10 +1,10 @@
-export function pushExpressionOrCarrier(targets, carriers, api, expression, sourceFile, tsModule, explicitName) {
-    const carrier = carrierExpression(api, expression, tsModule, explicitName);
+export function pushExpressionOrCarrier(targets, carriers, api, expression, sourceFile, tsModule, explicitName, metadata) {
+    const carrier = carrierExpression(api, expression, tsModule, explicitName, metadata);
     if (carrier) {
         carriers.push(carrier);
         return;
     }
-    targets.push(namedTarget(api, expression, sourceFile, tsModule, explicitName));
+    targets.push(namedTarget(api, expression, sourceFile, tsModule, explicitName, metadata));
 }
 export function collectCarrierTargets(program, fileSet, checker, tsModule, carriers) {
     if (carriers.length === 0)
@@ -77,7 +77,7 @@ export function resolveVariableDeclaration(id, checker, tsModule) {
     const decl = aliased?.valueDeclaration ?? aliased?.declarations?.[0];
     return decl && tsModule.isVariableDeclaration(decl) ? decl : undefined;
 }
-function carrierExpression(api, expression, tsModule, explicitName) {
+function carrierExpression(api, expression, tsModule, explicitName, metadata) {
     const expr = skipParens(expression, tsModule);
     if (!tsModule.isPropertyAccessExpression(expr))
         return undefined;
@@ -93,6 +93,7 @@ function carrierExpression(api, expression, tsModule, explicitName) {
         paramName,
         propertyName: expr.name.text,
         explicitName,
+        metadata,
     };
 }
 function enclosingCarrierFunction(node, paramName, tsModule) {
@@ -122,7 +123,10 @@ function carrierTargetFromCall(call, sourceFile, checker, tsModule, carrier) {
         return undefined;
     const name = carrier.explicitName ??
         stringPropertyFromExpression(call.arguments[paramIndex], 'name', checker, tsModule);
-    return namedTarget(carrier.api, schema, sourceFile, tsModule, name);
+    return namedTarget(carrier.api, schema, sourceFile, tsModule, name, {
+        ...carrier.metadata,
+        usageSpan: spanFor(call, sourceFile),
+    });
 }
 function sameSymbol(expression, fn, checker, tsModule) {
     const symbol = checker.getSymbolAtLocation(expression);
@@ -146,7 +150,7 @@ function propertyFromObject(obj, name, checker, tsModule) {
     }
     return undefined;
 }
-function namedTarget(api, expression, sourceFile, tsModule, explicitName) {
+function namedTarget(api, expression, sourceFile, tsModule, explicitName, metadata) {
     const { line } = sourceFile.getLineAndCharacterOfPosition(expression.getStart(sourceFile));
     const expr = skipParens(expression, tsModule);
     const suffix = explicitName ??
@@ -155,7 +159,24 @@ function namedTarget(api, expression, sourceFile, tsModule, explicitName) {
         name: `${api}:${suffix}`,
         sourceFile,
         expression,
+        metadata,
     };
+}
+export function spanFor(node, sourceFile) {
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    return { file: sourceFile.fileName, line: line + 1, col: character + 1 };
+}
+export function stringValueFromExpression(expr, checker, tsModule) {
+    if (!expr)
+        return undefined;
+    const unwrapped = skipParens(expr, tsModule);
+    if (tsModule.isStringLiteralLike(unwrapped))
+        return unwrapped.text;
+    if (tsModule.isIdentifier(unwrapped)) {
+        const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
+        return stringValueFromExpression(decl?.initializer, checker, tsModule);
+    }
+    return undefined;
 }
 function stringLiteralText(expr, tsModule) {
     return expr && tsModule.isStringLiteralLike(expr) ? expr.text : undefined;
