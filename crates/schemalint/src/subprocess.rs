@@ -11,7 +11,7 @@
 //!   `PythonHelper`) supply command-resolution and error-type mapping.
 
 use std::collections::VecDeque;
-use std::io::{BufReader, Read, Write};
+use std::io::Write;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -20,6 +20,8 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 
 use crate::ingest::DiscoverResponse;
+
+mod io;
 
 // ── Protocol timeouts ────────────────────────────────────────────────────────
 
@@ -132,121 +134,8 @@ impl SubprocessClient {
             .take()
             .ok_or_else(|| SubprocessError::SpawnFailed("no stdin pipe available".to_string()))?;
 
-        // Drain stderr continuously to prevent pipe-buffer deadlock.
-        // ponytail: keep last 1000 stderr lines; raise if a helper legitimately needs more
-        const STDERR_CAP: usize = 1000;
-        // ponytail: per-line byte cap for stderr — lines longer than this are truncated
-        // to avoid unbounded heap growth from a chatty sidecar. 1 MiB is generous for
-        // any legitimate diagnostic message.
-        const STDERR_MAX_LINE_BYTES: usize = 1 << 20; // 1 MiB
-        let stderr_lines: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
-        let stderr_capture = Arc::clone(&stderr_lines);
-        thread::spawn(move || {
-            let mut reader = BufReader::new(stderr);
-            loop {
-                let mut buf = Vec::with_capacity(256);
-                let mut truncated = false;
-                // Read bytes one at a time until '\n', EOF, or cap exceeded.
-                let mut byte = [0u8; 1];
-                loop {
-                    match reader.read(&mut byte) {
-                        Ok(0) => {
-                            // EOF: flush whatever we have, then exit the outer loop.
-                            if !buf.is_empty() {
-                                let l = String::from_utf8_lossy(&buf).into_owned();
-                                if let Some(prefix) = echo_prefix {
-                                    eprintln!("[{}] {}", prefix, l);
-                                }
-                                let mut lines =
-                                    stderr_capture.lock().unwrap_or_else(|e| e.into_inner());
-                                if lines.len() >= STDERR_CAP {
-                                    lines.pop_front();
-                                }
-                                lines.push_back(l);
-                            }
-                            return;
-                        }
-                        Ok(_) => {
-                            if byte[0] == b'\n' {
-                                break;
-                            }
-                            if buf.len() < STDERR_MAX_LINE_BYTES {
-                                buf.push(byte[0]);
-                            } else {
-                                truncated = true;
-                                // Keep reading past the cap to drain the line without
-                                // buffering any more bytes.
-                            }
-                        }
-                        Err(_) => return,
-                    }
-                }
-                let mut l = String::from_utf8_lossy(&buf).into_owned();
-                if truncated {
-                    l.push_str("\u{2026}[truncated]");
-                }
-                if let Some(prefix) = echo_prefix {
-                    eprintln!("[{}] {}", prefix, l);
-                }
-                let mut lines = stderr_capture.lock().unwrap_or_else(|e| e.into_inner());
-                if lines.len() >= STDERR_CAP {
-                    lines.pop_front();
-                }
-                lines.push_back(l);
-            }
-        });
-
-        // Reader thread: deliver stdout lines to the main thread via channel.
-        // ponytail: per-line byte cap for stdout JSON-RPC frames — a line exceeding
-        // this cannot be a valid framed response and is treated as a protocol error,
-        // closing the channel so send_discover fails cleanly instead of hanging.
-        const STDOUT_MAX_LINE_BYTES: usize = 1 << 20; // 1 MiB
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let mut reader = BufReader::new(stdout);
-            loop {
-                let mut buf = Vec::with_capacity(512);
-                let mut over_limit = false;
-                let mut byte = [0u8; 1];
-                loop {
-                    match reader.read(&mut byte) {
-                        Ok(0) => {
-                            // EOF: send end-of-stream sentinel and exit.
-                            let _ = tx.send(None);
-                            return;
-                        }
-                        Ok(_) => {
-                            if byte[0] == b'\n' {
-                                break;
-                            }
-                            if buf.len() < STDOUT_MAX_LINE_BYTES {
-                                buf.push(byte[0]);
-                            } else {
-                                over_limit = true;
-                                // Keep draining the pipe to unblock the child, but
-                                // we will report a protocol error after the newline.
-                            }
-                        }
-                        Err(_) => {
-                            // I/O error on stdout — send sentinel so send_discover
-                            // fails immediately rather than timing out.
-                            let _ = tx.send(None);
-                            return;
-                        }
-                    }
-                }
-                if over_limit {
-                    // Line exceeded cap: unparseable as JSON-RPC — signal protocol error
-                    // by closing the channel (drop tx by returning without sending None).
-                    // The Disconnected arm in send_discover converts this to InvalidResponse.
-                    return;
-                }
-                let line = String::from_utf8_lossy(&buf).into_owned();
-                if tx.send(Some(line)).is_err() {
-                    return;
-                }
-            }
-        });
+        let stderr_lines = io::spawn_stderr_reader(stderr, echo_prefix);
+        let rx = io::spawn_stdout_reader(stdout);
 
         Ok(SubprocessClient {
             child,
@@ -433,34 +322,4 @@ impl Drop for SubprocessClient {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn probe_command_returns_false_for_absent_binary() {
-        // A guaranteed-absent binary name — must not exist on any real PATH.
-        assert!(!probe_command(
-            "schemalint-definitely-not-a-real-binary-xyz",
-            Duration::from_millis(200),
-        ));
-    }
-
-    #[test]
-    fn stderr_cap_evicts_oldest_entry() {
-        // Pure logic test: verify the cap eviction behaviour without spawning a subprocess.
-        const STDERR_CAP: usize = 1000;
-        let mut lines: VecDeque<String> = VecDeque::new();
-        for i in 0..=STDERR_CAP {
-            if lines.len() >= STDERR_CAP {
-                lines.pop_front();
-            }
-            lines.push_back(format!("line-{}", i));
-        }
-        // After inserting 1001 entries the buffer must be exactly at the cap.
-        assert_eq!(lines.len(), STDERR_CAP);
-        // The very first entry ("line-0") must have been evicted.
-        assert_ne!(lines.front().map(String::as_str), Some("line-0"));
-        // The newest entry must be present at the back.
-        assert_eq!(lines.back().map(String::as_str), Some("line-1000"));
-    }
-}
+mod tests;

@@ -57,8 +57,6 @@ mod pipeline;
 mod profiles_cmd;
 mod report;
 
-pub(crate) use pipeline::check_rulesets;
-
 /// CLI entry point.
 pub fn run() {
     let cli = <Cli as clap::Parser>::parse();

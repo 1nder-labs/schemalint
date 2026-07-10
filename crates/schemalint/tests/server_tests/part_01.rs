@@ -34,6 +34,41 @@ fn server_check_single_profile_json() {
 }
 
 #[test]
+fn server_repeated_cached_check_preserves_diagnostics() {
+    let mut child = cmd()
+        .arg("server")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("should spawn server");
+    let mut request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "check",
+        "params": {
+            "schema": {"type": "object", "properties": {"x": {"type": "string"}}},
+            "profiles": ["openai.so.2026-04-30"],
+            "format": "json"
+        },
+        "id": 1
+    });
+
+    let first = send_request(&mut child, &request.to_string());
+    request["id"] = serde_json::json!(2);
+    let second = send_request(&mut child, &request.to_string());
+    let first_output: serde_json::Value =
+        serde_json::from_str(first["result"]["output"].as_str().unwrap()).unwrap();
+    let second_output: serde_json::Value =
+        serde_json::from_str(second["result"]["output"].as_str().unwrap()).unwrap();
+    assert_eq!(first_output["diagnostics"], second_output["diagnostics"]);
+    assert!(!first_output["diagnostics"].as_array().unwrap().is_empty());
+
+    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 3});
+    let _ = send_request(&mut child, &shutdown.to_string());
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
 fn server_check_multi_profile() {
     let mut child = cmd()
         .arg("server")

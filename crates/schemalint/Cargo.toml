@@ -18,7 +18,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = { version = "0.8", features = ["preserve_order"] }
 indexmap = { version = "2", features = ["serde"] }
-dirs = "5.0"
 linkme = "0.3"
 clap = { version = "4", features = ["derive"] }
 rayon = "1"
