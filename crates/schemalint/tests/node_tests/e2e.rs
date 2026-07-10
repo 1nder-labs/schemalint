@@ -345,7 +345,7 @@ fn e2e_anthropic_target_auto_selects_anthropic_profile() {
         &[(
             "schema.ts",
             r#"import { z } from "zod";
-import { betaZodTool } from "@anthropic-ai/sdk/helpers/zod";
+import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 export const Translate = betaZodTool({
   name: "translate",
   inputSchema: z.object({ text: z.string(), target_language: z.string() }),
