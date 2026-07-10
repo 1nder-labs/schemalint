@@ -10,7 +10,9 @@ use crate::cache::{hash_bytes, DiskCache};
 use crate::cli::args::OutputFormat;
 use crate::cli::check_rulesets;
 use crate::cli::discovery_policy::discover_batch;
-use crate::cli::pipeline::{attach_source_spans, build_report, process_schemas, render_output};
+use crate::cli::pipeline::{
+    append_envelope_diagnostics, attach_source_spans, build_report, process_schemas, render_output,
+};
 use crate::cli::report::CoverageCounts;
 use crate::normalize::normalize;
 use crate::profile::load;
@@ -570,7 +572,8 @@ fn handle_check_node(
         })
         .collect();
 
-    let results = process_schemas(schema_entries, &profile_rulesets);
+    let mut results = process_schemas(schema_entries, &profile_rulesets);
+    append_envelope_diagnostics(&mut results, &discovery.models, &profile_rulesets);
     let results_with_spans = attach_source_spans(results, &discovery.models);
     let report = build_report(
         discovery.coverage,

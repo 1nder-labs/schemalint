@@ -11,7 +11,7 @@ use crate::rules::registry::Rule;
 pub(crate) use helpers::schema_is_object;
 
 use array::ArrayItemsRule;
-use budget::{BudgetRule, MaxDepthRule};
+use budget::{BudgetRule, ConditionalEnumStringBudgetRule, MaxDepthRule};
 use object::{AdditionalPropertiesFalseRule, AllPropertiesRequiredRule, ObjectRootRule};
 use refs::{AllOfWithRefRule, ExternalRefsRule};
 use root::{RootAnyOfRule, RootEnumRule};
@@ -74,6 +74,13 @@ pub fn generate_class_b_rules(profile: &Profile) -> Vec<Box<dyn Rule>> {
             s.max_string_length_total,
             profile.name.clone(),
         )));
+    }
+    if s.enum_string_length_threshold > 0 && s.max_enum_string_length > 0 {
+        rules.push(Box::new(ConditionalEnumStringBudgetRule {
+            threshold: s.enum_string_length_threshold,
+            limit: s.max_enum_string_length,
+            profile_name: profile.name.clone(),
+        }));
     }
     if s.max_optional_properties > 0 {
         rules.push(Box::new(BudgetRule::max_optional_properties(

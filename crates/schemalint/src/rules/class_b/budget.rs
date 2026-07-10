@@ -168,7 +168,17 @@ fn count_string_length(arena: &Arena) -> usize {
         .filter_map(|(_, n)| n.annotations.properties.as_ref())
         .filter_map(|v| v.as_object())
         .flat_map(|props| props.keys())
-        .map(|k| k.len())
+        .map(|k| k.chars().count())
+        .sum();
+    let definition_names: usize = arena
+        .iter()
+        .flat_map(|(_, node)| {
+            [&node.annotations.defs, &node.annotations.definitions]
+                .into_iter()
+                .filter_map(|value| value.as_ref().and_then(Value::as_object))
+                .flat_map(|definitions| definitions.keys())
+        })
+        .map(|name| name.chars().count())
         .sum();
     let enum_strings: usize = arena
         .iter()
@@ -179,9 +189,79 @@ fn count_string_length(arena: &Arena) -> usize {
         })
         .flatten()
         .filter_map(|v| v.as_str())
-        .map(str::len)
+        .map(|value| value.chars().count())
         .sum();
-    property_names + enum_strings
+    let const_strings: usize = arena
+        .iter()
+        .filter_map(|(_, node)| node.annotations.const_value.as_ref())
+        .filter_map(Value::as_str)
+        .map(|value| value.chars().count())
+        .sum();
+    property_names + definition_names + enum_strings + const_strings
+}
+
+/// OpenAI applies a second, per-enum string budget only after an enum crosses
+/// a configured value-count threshold. This cannot use the global
+/// `BudgetRule` counter because each enum is evaluated independently.
+#[derive(Debug, Clone)]
+pub(super) struct ConditionalEnumStringBudgetRule {
+    pub(super) threshold: u32,
+    pub(super) limit: u32,
+    pub(super) profile_name: String,
+}
+
+impl Rule for ConditionalEnumStringBudgetRule {
+    fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
+        let Some(values) = arena[node]
+            .annotations
+            .enum_values
+            .as_ref()
+            .and_then(Value::as_array)
+        else {
+            return Vec::new();
+        };
+        if values.len() <= self.threshold as usize {
+            return Vec::new();
+        }
+        let total: usize = values
+            .iter()
+            .filter_map(Value::as_str)
+            .map(|value| value.chars().count())
+            .sum();
+        if total <= self.limit as usize {
+            return Vec::new();
+        }
+        vec![Diagnostic {
+            code: format!("{}-S-enum-string-length-budget", profile.code_prefix),
+            severity: DiagnosticSeverity::Error,
+            message: format!(
+                "enum string length {} exceeds limit of {} when value count exceeds {}",
+                total, self.limit, self.threshold
+            ),
+            pointer: format!("{}/enum", arena[node].json_pointer),
+            source: None,
+            profile: self.profile_name.clone(),
+            hint: Some("Shorten enum strings or split the enum".into()),
+        }]
+    }
+
+    fn metadata(&self) -> Option<RuleMetadata> {
+        Some(RuleMetadata {
+            name: "enum-string-length-budget".into(),
+            code: "{prefix}-S-enum-string-length-budget".into(),
+            description: format!(
+                "Enum strings must not exceed {} characters after {} values",
+                self.limit, self.threshold
+            ),
+            rationale: format!("{} enforces a conditional enum budget.", self.profile_name),
+            severity: Severity::Forbid,
+            category: RuleCategory::Structural,
+            bad_example: r#"{ "type": "string", "enum": ["...many long values"] }"#.into(),
+            good_example: r#"{ "type": "string", "enum": ["red", "green"] }"#.into(),
+            see_also: Vec::new(),
+            profile: Some(self.profile_name.clone()),
+        })
+    }
 }
 
 fn count_optional_properties(arena: &Arena) -> usize {

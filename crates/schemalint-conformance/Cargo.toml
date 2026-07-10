@@ -16,7 +16,7 @@ toml = "0.8"
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3.4"
+schemalint = { path = "../schemalint" }
 
 [dev-dependencies]
-schemalint = { path = "../schemalint" }
 tempfile = "3"

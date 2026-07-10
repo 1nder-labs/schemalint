@@ -9,6 +9,12 @@ use crate::cli::{emit_gha, emit_human, emit_json, emit_junit, emit_sarif};
 use crate::normalize::normalize;
 use crate::rules::registry::{DiagnosticSeverity, RuleSet, SourceSpan};
 
+pub(crate) type SchemaCheckResult = (
+    PathBuf,
+    String,
+    Result<Vec<crate::rules::Diagnostic>, String>,
+);
+
 /// Attach source spans from discovered models to diagnostics.
 ///
 /// Each result carries a `(module_path, model_name)` composite key.
@@ -16,17 +22,9 @@ use crate::rules::registry::{DiagnosticSeverity, RuleSet, SourceSpan};
 /// `AddressSchema` in `schemas/models.ts`), each model's source map is matched
 /// independently — no merging, no first-write-wins collision.
 pub(crate) fn attach_source_spans(
-    results: Vec<(
-        PathBuf,
-        String,
-        Result<Vec<crate::rules::Diagnostic>, String>,
-    )>,
+    results: Vec<SchemaCheckResult>,
     models: &[crate::ingest::DiscoveredModel],
-) -> Vec<(
-    PathBuf,
-    String,
-    Result<Vec<crate::rules::Diagnostic>, String>,
-)> {
+) -> Vec<SchemaCheckResult> {
     let model_maps: HashMap<(&str, &str), &HashMap<String, SourceSpan>> = models
         .iter()
         .map(|m| ((m.module_path.as_str(), m.name.as_str()), &m.source_map))
@@ -60,13 +58,7 @@ pub(crate) struct AggregateResults {
     pub failures: Vec<ReportMessage>,
 }
 
-pub(crate) fn aggregate_results(
-    results: Vec<(
-        PathBuf,
-        String,
-        Result<Vec<crate::rules::Diagnostic>, String>,
-    )>,
-) -> AggregateResults {
+pub(crate) fn aggregate_results(results: Vec<SchemaCheckResult>) -> AggregateResults {
     let mut all_diagnostics: Vec<(PathBuf, Vec<crate::rules::Diagnostic>)> = Vec::new();
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;
@@ -117,11 +109,7 @@ pub(crate) fn build_report(
     mut coverage: CoverageCounts,
     mut failures: Vec<ReportMessage>,
     warnings: Vec<ReportMessage>,
-    results: Vec<(
-        PathBuf,
-        String,
-        Result<Vec<crate::rules::Diagnostic>, String>,
-    )>,
+    results: Vec<SchemaCheckResult>,
     profiles: Vec<String>,
     duration_ms: Option<u64>,
 ) -> CheckReport {
@@ -231,11 +219,7 @@ pub(crate) fn check_rulesets(
 pub(crate) fn process_schemas(
     schemas: Vec<(PathBuf, String, serde_json::Value)>,
     profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
-) -> Vec<(
-    PathBuf,
-    String,
-    Result<Vec<crate::rules::Diagnostic>, String>,
-)> {
+) -> Vec<SchemaCheckResult> {
     schemas
         .into_par_iter()
         .map(|(key, model_name, value)| {
@@ -247,6 +231,21 @@ pub(crate) fn process_schemas(
             (key, model_name, Ok(diags))
         })
         .collect()
+}
+
+pub(crate) fn append_envelope_diagnostics(
+    results: &mut [SchemaCheckResult],
+    models: &[crate::ingest::DiscoveredModel],
+    profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
+) {
+    for ((_, _, result), model) in results.iter_mut().zip(models) {
+        let Ok(diagnostics) = result else {
+            continue;
+        };
+        for (profile, _) in profile_rulesets {
+            diagnostics.extend(crate::rules::envelope::check_envelope(model, profile));
+        }
+    }
 }
 
 #[cfg(test)]

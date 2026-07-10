@@ -23,7 +23,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from openai_errors import is_openai_schema_error
 from _env import load_env
@@ -32,10 +32,10 @@ from _env import load_env
 load_env()
 
 
-def run_schemalint(schema_path: str) -> List[Dict]:
-    """Run schemalint and return the predicted diagnostics."""
+def run_schemalint(schema_path: str) -> Dict[str, object]:
+    """Run schemalint without turning execution failure into clean lint."""
     workspace_root = Path(__file__).resolve().parent.parent.parent
-    profile = workspace_root / "crates/schemalint-profiles/profiles/openai.so.2026-04-30.toml"
+    profile = workspace_root / "crates/schemalint/profiles/openai.so.2026-04-30.toml"
 
     result = subprocess.run(
         ["cargo", "run", "-p", "schemalint", "--", "check", "--profile", str(profile), "--format", "json", schema_path],
@@ -53,14 +53,29 @@ def run_schemalint(schema_path: str) -> List[Dict]:
         )
         if result.stderr:
             print(result.stderr.rstrip(), file=sys.stderr)
-        return []
+        return {
+            "state": "incomplete_lint_evaluation",
+            "message": result.stderr.strip() or f"exit code {result.returncode}",
+            "diagnostics": [],
+        }
 
     try:
         output = json.loads(result.stdout)
-        return output.get("diagnostics", [])
+        coverage = output.get("report", {}).get("coverage", {})
+        if coverage.get("status") != "complete":
+            return {
+                "state": "incomplete_lint_evaluation",
+                "message": f"coverage was {coverage.get('status', 'missing')}",
+                "diagnostics": output.get("diagnostics", []),
+            }
+        return {"state": "complete", "diagnostics": output.get("diagnostics", [])}
     except json.JSONDecodeError:
         print(f"Failed to parse schemalint output: {result.stdout!r}", file=sys.stderr)
-        return []
+        return {
+            "state": "incomplete_lint_evaluation",
+            "message": "schemalint emitted invalid JSON",
+            "diagnostics": [],
+        }
 
 
 def validate_with_openai(schema_path: str, api_key: str) -> Dict[str, object]:
@@ -96,10 +111,19 @@ def validate_with_openai(schema_path: str, api_key: str) -> Dict[str, object]:
     except OpenAIError as error:
         err_str = str(error)
         if "401" in err_str or "invalid_api_key" in err_str.lower():
-            print(f"FATAL: Authentication error: {err_str[:200]}", file=sys.stderr)
-            sys.exit(1)
+            return {
+                "status": "infrastructure_failure",
+                "failure_kind": "authentication",
+                "rejected": None,
+                "error": err_str,
+            }
         if not is_openai_schema_error(error):
-            return {"status": "error", "rejected": None, "error": err_str}
+            return {
+                "status": "infrastructure_failure",
+                "failure_kind": "transport",
+                "rejected": None,
+                "error": err_str,
+            }
         return {"status": "rejected", "rejected": True, "error": err_str}
 
 
@@ -110,7 +134,16 @@ def compare_one(
 ) -> Dict[str, object]:
     """Compare schemalint vs API for a single schema."""
     name = Path(schema_path).name
-    schemalint_diags = run_schemalint(schema_path)
+    lint_result = run_schemalint(schema_path)
+    schemalint_diags = lint_result["diagnostics"]
+    if lint_result["state"] != "complete":
+        return {
+            "schema": schema_path,
+            "name": name,
+            "verdict": "INCOMPLETE_LINT_EVALUATION",
+            "schemalint": lint_result,
+            "openai": None,
+        }
 
     if api_result:
         api_status = api_result.get("status")
@@ -118,31 +151,33 @@ def compare_one(
             return {
                 "schema": schema_path,
                 "name": name,
-                "verdict": "API_ERROR",
+                "verdict": "INFRASTRUCTURE_FAILURE",
                 "schemalint": {
                     "issue_count": len(schemalint_diags),
                     "diagnostics": schemalint_diags
                 },
                 "openai": {
                     "rejected": None,
-                    "error": api_result.get("api_error")
+                    "failure_kind": api_result.get("failure_kind", "transport"),
+                    "error": api_result.get("api_error") or api_result.get("error")
                 }
             }
         api_rejected = api_status == "rejected"
         api_error = api_result.get("api_error")
     elif api_key:
         result = validate_with_openai(schema_path, api_key)
-        if result.get("status") == "error":
+        if result.get("status") == "infrastructure_failure":
             return {
                 "schema": schema_path,
                 "name": name,
-                "verdict": "API_ERROR",
+                "verdict": "INFRASTRUCTURE_FAILURE",
                 "schemalint": {
                     "issue_count": len(schemalint_diags),
                     "diagnostics": schemalint_diags
                 },
                 "openai": {
                     "rejected": None,
+                    "failure_kind": result["failure_kind"],
                     "error": result["error"]
                 }
             }
@@ -247,11 +282,12 @@ def main():
     fps = sum(1 for r in results if r["verdict"] == "FALSE_POSITIVE")
     fns = sum(1 for r in results if r["verdict"] == "FALSE_NEGATIVE")
     agree = sum(1 for r in results if r["verdict"].startswith("AGREE"))
-    api_errors = sum(1 for r in results if r["verdict"] == "API_ERROR")
+    infrastructure_failures = sum(1 for r in results if r["verdict"] == "INFRASTRUCTURE_FAILURE")
+    incomplete_lints = sum(1 for r in results if r["verdict"] == "INCOMPLETE_LINT_EVALUATION")
     total = len(results)
     print(f"\nSaved to {outpath}", file=sys.stderr)
     print(
-        f"Total: {total}  |  Agree: {agree}  |  False positives: {fps}  |  False negatives: {fns}  |  API errors: {api_errors}",
+        f"Total: {total}  |  Agree: {agree}  |  False positives: {fps}  |  False negatives: {fns}  |  Infrastructure: {infrastructure_failures}  |  Incomplete lint: {incomplete_lints}",
         file=sys.stderr,
     )
 
@@ -267,12 +303,15 @@ def main():
                     print(f"    schemalint: {codes}", file=sys.stderr)
                 print(f"    openai: {api_err}", file=sys.stderr)
 
-    if api_errors > 0:
-        print(f"\nAPI ERRORS:", file=sys.stderr)
+    if infrastructure_failures > 0:
+        print(f"\nINFRASTRUCTURE FAILURES:", file=sys.stderr)
         for r in results:
-            if r["verdict"] == "API_ERROR":
+            if r["verdict"] == "INFRASTRUCTURE_FAILURE":
                 api_err = (r["openai"].get("error") or "")[:120]
                 print(f"  {r['name']:20s}  {api_err}", file=sys.stderr)
+
+    if infrastructure_failures or incomplete_lints:
+        sys.exit(2)
 
 
 if __name__ == "__main__":

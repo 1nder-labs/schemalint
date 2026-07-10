@@ -72,6 +72,19 @@ python scripts/validation/compare_with_openai.py --all \
 python scripts/validation/compare_with_openai.py schema_03.json
 ```
 
+### `probe_limits.py`
+
+Runs opt-in boundary probes and writes a dated JSON artifact. The retained
+`probe_limits_2026-06-16.json` result proves inline object nesting at 10 levels
+is accepted and 11 is rejected. It does not contain local `$ref` chain cases,
+so it is not evidence for semantic reference-depth enforcement. Add explicit
+10/11-hop and cyclic local-reference cases before changing the `$ref` rule.
+
+Missing credentials and transport/authentication failures are infrastructure
+failures: they do not block ordinary CI and must never be recorded as provider
+acceptance or rejection. A dated result is required only before merging a rule
+whose semantics depend on the live probe.
+
 ### `check_drift.py`
 
 Detects when a provider changes keyword support between validation runs
@@ -122,8 +135,8 @@ python scripts/validation/compare_with_openai.py --all \
 
 ### 4. Fix the profile and truth files
 
-- Edit the matching profile under `crates/schemalint-profiles/profiles/`
-- Edit the matching truth file under `crates/schemalint-profiles/profiles/truth/`
+- Edit the matching profile under `crates/schemalint/profiles/`
+- Edit the matching truth file under `crates/schemalint/profiles/truth/`
 - Regenerate expected files for affected schemas
 - Run `cargo test --workspace --exclude schemalint-python`
 - Commit: `fix(profile): OpenAI {added,removed} support for {keyword}`
@@ -138,13 +151,6 @@ python scripts/validation/compare_with_openai.py --all \
 | schemalint accepts, OpenAI rejects | **False negative** — profile too lenient |
 | OpenAI transport/API error | Infrastructure failure — rerun; do not classify as schema acceptance/rejection |
 | Anthropic transport/API error | Infrastructure failure — rerun; do not classify as schema acceptance/rejection |
-
-| Scenario | Meaning |
-|----------|---------|
-| Both reject | Profile is accurate |
-| Both accept | Profile is accurate |
-| schemalint rejects, OpenAI accepts | **False positive** — profile too strict |
-| schemalint accepts, OpenAI rejects | **False negative** — profile too lenient |
 
 ## API Key
 

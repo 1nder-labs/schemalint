@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use crate::cli::args::{CheckNodeArgs, OutputFormat};
 use crate::cli::discovery_policy::discover_batch;
 use crate::cli::node_config;
-use crate::cli::pipeline::{attach_source_spans, build_report, emit_output, process_schemas};
+use crate::cli::pipeline::{
+    append_envelope_diagnostics, attach_source_spans, build_report, emit_output, process_schemas,
+};
 use crate::ingest::{DiscoveredModel, Provider, ProviderCertainty};
 use crate::rules::registry::RuleSet;
 
@@ -177,7 +179,9 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
     let results = if uses_explicit_profiles {
-        process_schemas(schema_entries(&discovery.models), &profile_rulesets)
+        let mut results = process_schemas(schema_entries(&discovery.models), &profile_rulesets);
+        append_envelope_diagnostics(&mut results, &discovery.models, &profile_rulesets);
+        results
     } else {
         process_node_targets(&discovery.models, &profile_rulesets)
     };
@@ -300,6 +304,12 @@ fn process_node_targets(
             )],
             std::slice::from_ref(&profile_rulesets[index]),
         ));
+        if let Some((_, _, Ok(diagnostics))) = results.last_mut() {
+            diagnostics.extend(crate::rules::envelope::check_envelope(
+                model,
+                profile_rulesets[index].0,
+            ));
+        }
     }
     results
 }

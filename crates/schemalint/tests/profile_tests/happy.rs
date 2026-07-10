@@ -149,6 +149,8 @@ max_union_properties = 16
             max_total_properties: 3000,
             max_total_enum_values: 500,
             max_string_length_total: 60000,
+            enum_string_length_threshold: 0,
+            max_enum_string_length: 0,
             max_optional_properties: 24,
             max_union_properties: 16,
             external_refs: false,

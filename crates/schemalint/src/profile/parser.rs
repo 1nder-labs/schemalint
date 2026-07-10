@@ -65,6 +65,12 @@ pub struct StructuralLimits {
     pub max_total_properties: u32,
     pub max_total_enum_values: u32,
     pub max_string_length_total: u32,
+    /// Apply the per-enum string budget only when an enum has more values
+    /// than this threshold. Zero disables the conditional budget.
+    pub enum_string_length_threshold: u32,
+    /// Maximum Unicode-character count for one enum after the threshold is
+    /// exceeded. Zero disables the conditional budget.
+    pub max_enum_string_length: u32,
     pub max_optional_properties: u32,
     pub max_union_properties: u32,
     pub external_refs: bool,

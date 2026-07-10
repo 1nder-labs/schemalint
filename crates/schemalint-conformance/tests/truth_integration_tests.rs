@@ -1,5 +1,8 @@
 use schemalint::profiles::{ANTHROPIC_TRUTH, OPENAI_TRUTH};
-use schemalint_conformance::{evaluate, parse_truth};
+use schemalint_conformance::{
+    evaluate, evaluate_provider, evaluate_structural_truth, parse_truth, InfrastructureFailureKind,
+    LiveRefreshState,
+};
 
 #[test]
 fn openai_truth_parses() {
@@ -193,4 +196,54 @@ fn truth_keywords_cover_profile_keywords() {
             "OpenAI truth file missing keyword: {kw}"
         );
     }
+}
+
+#[test]
+fn every_structural_truth_case_matches_production_rules() {
+    for source in [OPENAI_TRUTH, ANTHROPIC_TRUTH] {
+        let truth = parse_truth(source).unwrap();
+        let outcomes = evaluate_structural_truth(&truth).unwrap();
+        assert!(!outcomes.is_empty());
+        for outcome in outcomes {
+            assert!(outcome.matches(), "structural truth drift: {outcome:?}");
+        }
+    }
+}
+
+#[test]
+fn known_provider_evaluation_uses_production_structural_rules() {
+    let truth = parse_truth(OPENAI_TRUTH).unwrap();
+    let invalid_root = serde_json::json!({ "type": "array", "items": { "type": "string" } });
+    let result = evaluate_provider(&truth, &invalid_root).unwrap();
+    assert!(result.is_rejected());
+}
+
+#[test]
+fn live_refresh_states_keep_infrastructure_and_lint_incompleteness_distinct() {
+    let states = [
+        LiveRefreshState::ProviderAccepted,
+        LiveRefreshState::ProviderRejected {
+            message: "schema rejected".into(),
+        },
+        LiveRefreshState::InfrastructureFailure {
+            kind: InfrastructureFailureKind::Authentication,
+            message: "bad credential".into(),
+        },
+        LiveRefreshState::IncompleteLintEvaluation {
+            message: "normalization failed".into(),
+        },
+    ];
+    let encoded: Vec<_> = states
+        .iter()
+        .map(|state| serde_json::to_value(state).unwrap()["state"].clone())
+        .collect();
+    assert_eq!(
+        encoded,
+        vec![
+            "provider_accepted",
+            "provider_rejected",
+            "infrastructure_failure",
+            "incomplete_lint_evaluation"
+        ]
+    );
 }

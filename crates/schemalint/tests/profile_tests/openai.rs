@@ -92,6 +92,8 @@ fn openai_profile_corrections() {
 
     assert_eq!(profile.code_prefix, "OAI");
     assert_eq!(profile.structural.max_object_depth, 10);
+    assert_eq!(profile.structural.enum_string_length_threshold, 250);
+    assert_eq!(profile.structural.max_enum_string_length, 15_000);
     assert_eq!(profile.keyword_map.get("oneOf"), Some(&Severity::Forbid));
     assert_eq!(
         profile.keyword_map.get("patternProperties"),

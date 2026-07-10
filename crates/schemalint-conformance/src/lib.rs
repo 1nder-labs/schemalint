@@ -1,7 +1,11 @@
+mod production;
 pub mod truth;
 
 use std::collections::HashMap;
 
+pub use production::{
+    evaluate_provider, evaluate_structural_truth, ProductionEvaluationError, StructuralTruthOutcome,
+};
 use serde_json::Value;
 pub use truth::*;
 
