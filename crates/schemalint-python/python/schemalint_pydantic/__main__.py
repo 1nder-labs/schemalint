@@ -1,4 +1,4 @@
-"""Entry point for `python -m schemalint_pydantic`."""
+"""Entry point used by the bundled schemalint Python sidecar."""
 
 from schemalint_pydantic.server import main
 

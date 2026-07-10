@@ -44,7 +44,7 @@ def _start_server(extra_paths=None):
     """Start the schemalint-pydantic server as a subprocess."""
     env = os.environ.copy()
     py_path = (
-        os.path.join(os.path.dirname(__file__), "..", "src")
+        os.path.join(os.path.dirname(__file__), "..")
         + os.pathsep
         + env.get("PYTHONPATH", "")
     )

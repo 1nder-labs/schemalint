@@ -5,9 +5,9 @@
 // schemalint_pydantic sidecar: discovery → normalize → rules → JSON output.
 //
 // Precondition: `schemalint_pydantic` must be importable (installed via
-//   pip install ./python/schemalint-pydantic) and `pydantic` must be present
-//   (pip install pydantic).  CI installs both before running cargo test;
-//   locally, `pip install pydantic && pip install ./python/schemalint-pydantic`.
+//   from crates/schemalint-python/python) and `pydantic` must be present.
+//   CI sets PYTHONPATH to the canonical wheel source and installs Pydantic;
+//   locally, set PYTHONPATH=crates/schemalint-python/python.
 //
 // If the sidecar is absent the schemalint process exits 1 with "No module named
 // schemalint_pydantic" in stderr — the test will fail with a clear message
@@ -61,9 +61,9 @@ fn fixtures_dir() -> std::path::PathBuf {
 //   6. Output is parsed from stdout as JSON and asserted on code presence.
 //
 // `pydantic_fixture/` lives at tests/fixtures/pydantic_fixture/__init__.py.
-// We set PYTHONPATH to tests/fixtures/ so `import pydantic_fixture` resolves.
-// The schemalint process inherits its environment to the spawned python sidecar,
-// so PYTHONPATH propagates transitively without any extra flags.
+// We set PYTHONPATH to both the canonical wheel source and tests/fixtures/ so
+// the sidecar and `pydantic_fixture` resolve without installing a second
+// SchemaLint package.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -75,8 +75,11 @@ fn real_sidecar_pydantic_fixture_triggers_oai_violations() {
         fixtures.join("pydantic_fixture").display()
     );
 
+    let python_source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../schemalint-python/python");
+    let python_path = std::env::join_paths([python_source, fixtures.clone()]).unwrap();
     let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.env("PYTHONPATH", &fixtures);
+    cmd.env("PYTHONPATH", python_path);
     let output = cmd
         .args([
             "check-python",
@@ -102,8 +105,8 @@ fn real_sidecar_pydantic_fixture_triggers_oai_violations() {
              stdout:\n{stdout}\n\
              stderr:\n{stderr}\n\
              \n\
-             If stderr shows 'No module named schemalint_pydantic', install the sidecar:\n\
-             pip install pydantic && pip install ./python/schemalint-pydantic"
+             If stderr shows 'No module named schemalint_pydantic', set:\n\
+             PYTHONPATH=crates/schemalint-python/python"
         )
     });
 

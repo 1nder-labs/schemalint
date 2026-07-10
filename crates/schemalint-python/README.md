@@ -40,9 +40,18 @@ schemalint check \
 ## Install
 
 ```bash
-cargo install schemalint
-# or build from source
-cargo build --workspace --release
+python -m pip install schemalint
+```
+
+The wheel installs the `schemalint` command and bundles the
+`schemalint_pydantic` discovery sidecar. `check-python` uses the Pydantic
+already installed in the target project; supported versions are Pydantic 1.10
+and 2.x, and schemalint never installs or upgrades Pydantic at runtime.
+
+```bash
+schemalint --version
+schemalint check schema.json --profile openai.so.2026-04-30
+schemalint check-python --package my_package --profile openai.so.2026-04-30
 ```
 
 ## Features

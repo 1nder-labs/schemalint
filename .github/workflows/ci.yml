@@ -8,6 +8,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  PYTHONPATH: crates/schemalint-python/python
 
 jobs:
   actionlint:
@@ -51,10 +52,8 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install schemalint-pydantic sidecar
-        run: |
-          pip install pydantic
-          pip install ./python/schemalint-pydantic
+      - name: Install Pydantic test dependency
+        run: pip install pydantic
 
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -144,10 +143,8 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install schemalint-pydantic sidecar
-        run: |
-          pip install pydantic
-          pip install ./python/schemalint-pydantic
+      - name: Install Pydantic test dependency
+        run: pip install pydantic
 
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2

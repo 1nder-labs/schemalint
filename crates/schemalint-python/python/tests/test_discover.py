@@ -8,8 +8,8 @@ import textwrap
 
 import pytest
 
-# Ensure the package is importable
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+# Ensure the canonical wheel source tree is importable.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from schemalint_pydantic.discover import discover_models, _find_field_declaration_line
 
@@ -163,6 +163,25 @@ class TestDiscoverModels:
     def test_invalid_package_raises(self):
         with pytest.raises(ImportError, match="Cannot import"):
             discover_models("nonexistent.package.xyz")
+
+    def test_pydantic_v1_model_is_discovered_with_notice(self):
+        try:
+            from pydantic.v1 import BaseModel
+        except ImportError:
+            from pydantic import BaseModel
+
+        class LegacyModel(BaseModel):
+            name: str
+
+        module = sys.modules[__name__]
+        setattr(module, "LegacyModel", LegacyModel)
+        try:
+            result = discover_models(__name__)
+        finally:
+            delattr(module, "LegacyModel")
+
+        assert any(model["name"] == "LegacyModel" for model in result["models"])
+        assert any(warning.get("type") == "pydantic_v1" for warning in result["warnings"])
 
 
 class TestDiscoverErrors:

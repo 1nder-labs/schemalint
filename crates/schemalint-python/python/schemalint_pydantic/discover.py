@@ -13,14 +13,21 @@ from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
 try:
-    from pydantic import BaseModel as _V2BaseModel
+    from pydantic import BaseModel as _MainBaseModel
 except ImportError:
-    _V2BaseModel = None
+    _MainBaseModel = None
 
-try:
-    from pydantic.v1 import BaseModel as _V1BaseModel
-except ImportError:
-    _V1BaseModel = None
+_V2BaseModel = (
+    _MainBaseModel
+    if _MainBaseModel is not None and hasattr(_MainBaseModel, "model_json_schema")
+    else None
+)
+_V1BaseModel = _MainBaseModel if _V2BaseModel is None else None
+if _V2BaseModel is not None:
+    try:
+        from pydantic.v1 import BaseModel as _V1BaseModel
+    except ImportError:
+        _V1BaseModel = None
 
 
 @contextmanager
