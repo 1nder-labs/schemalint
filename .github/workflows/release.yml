@@ -79,10 +79,9 @@ jobs:
           persist-credentials: false
           submodules: recursive
       - name: Install dist
-        # we specify bash to get pipefail; it guards against the `curl` command
-        # failing. otherwise `sh` won't catch that `curl` returned non-0
-        shell: bash
-        run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.31.0/cargo-dist-installer.sh | sh"
+        # Exact crate version plus --locked uses crates.io's immutable package
+        # checksum and the release's committed dependency lock.
+        run: cargo install cargo-dist --version 0.31.0 --locked
       - name: Cache dist
         uses: actions/upload-artifact@v6
         with:
@@ -146,8 +145,12 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
-      - name: Install dist
-        run: ${{ matrix.install_dist.run }}
+      - name: Install cached dist
+        uses: actions/download-artifact@v7
+        with:
+          name: cargo-dist-cache
+          path: ~/.cargo/bin/
+      - run: chmod +x ~/.cargo/bin/dist
       # Get the dist-manifest
       - name: Fetch local artifacts
         uses: actions/download-artifact@v7
@@ -236,11 +239,9 @@ jobs:
   # Custom release pipeline jobs
   #
   # Dependency chain:
-  #   [dist builds] --> build-wheel --> smoke-test
-  #       --> publish-crates + publish-pypi
-  #       --> create-github-release
-  #       --> smoke-npm
-  #       --> publish-npm
+  #   [dist builds + wheel] --> prepare-release (manifest + one npm pack)
+  #       --> smoke-test --> create-github-release --> smoke-npm
+  #       --> publish-crates + publish-pypi + publish-npm --> registry-readback
   #
   # All custom jobs gate on startsWith(github.ref, 'refs/tags/v') so they
   # only execute on tag pushes, not on PR plan-only runs.
@@ -282,12 +283,12 @@ jobs:
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Install pinned maturin
+        run: cargo install maturin --version 1.13.1 --locked
+
       - name: Build wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          working-directory: crates/schemalint-python
-          command: build
-          args: --release --out ../../dist
+        run: maturin build --release --out ../../dist
+        working-directory: crates/schemalint-python
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v6
@@ -295,12 +296,67 @@ jobs:
           name: wheels
           path: dist/*.whl
 
-  # Smoke-test binaries on all three platforms
-  smoke-test:
+  # Assemble final bytes, generate the npm-shipped digest manifest, and pack
+  # npm exactly once. Every later job consumes this immutable bundle.
+  prepare-release:
     needs:
       - build-local-artifacts
       - build-global-artifacts
       - build-wheel
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download final native artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-build-*
+          path: release-bundle
+          merge-multiple: true
+
+      - name: Download final wheel
+        uses: actions/download-artifact@v7
+        with:
+          name: wheels
+          path: release-bundle
+
+      - name: Remove internal dist manifests
+        run: rm -f release-bundle/*-dist-manifest.json
+
+      - name: Validate tag and package version parity
+        run: node scripts/validate-native-manifest.cjs --versions-only --tag "${{ github.ref_name }}"
+        working-directory: npm/schemalint
+
+      - name: Generate immutable native manifest from final archives
+        run: node scripts/generate-native-manifest.cjs ../../release-bundle native-manifest.json
+        working-directory: npm/schemalint
+
+      - name: Build and pack npm once
+        run: |
+          npm ci
+          npm run build
+          node scripts/validate-native-manifest.cjs --release --tag "${{ github.ref_name }}"
+          npm pack --pack-destination ../../release-bundle
+        working-directory: npm/schemalint
+
+      - name: Upload immutable release bundle
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-bundle
+          path: release-bundle/*
+
+  # Smoke-test binaries on all three platforms
+  smoke-test:
+    needs:
+      - prepare-release
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     strategy:
       fail-fast: false
@@ -322,12 +378,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download dist artifacts
+      - name: Download immutable release bundle
         uses: actions/download-artifact@v7
         with:
-          pattern: artifacts-build-local-*
-          path: dist-artifacts
-          merge-multiple: true
+          name: release-bundle
+          path: release-bundle
 
       - name: Extract and smoke-test binary (Unix)
         if: ${{ matrix.os != 'windows-latest' }}
@@ -337,7 +392,7 @@ jobs:
           ARCHIVE="schemalint-${{ matrix.target }}.${{ matrix.ext }}"
           echo "Extracting: $ARCHIVE"
           mkdir -p _smoke
-          tar xzf "dist-artifacts/$ARCHIVE" -C _smoke
+          tar xzf "release-bundle/$ARCHIVE" -C _smoke
           BIN="$(find _smoke -maxdepth 3 -type f -name schemalint | head -n1)"
           if [ -z "$BIN" ]; then
             echo "::error::schemalint binary not found in archive $ARCHIVE"
@@ -360,7 +415,7 @@ jobs:
           $archive = "schemalint-${{ matrix.target }}.${{ matrix.ext }}"
           Write-Host "Extracting: $archive"
           New-Item -ItemType Directory -Force -Path _smoke | Out-Null
-          Expand-Archive -Path "dist-artifacts/$archive" -DestinationPath _smoke
+          Expand-Archive -Path "release-bundle/$archive" -DestinationPath _smoke
           $bin = Get-ChildItem -Path _smoke -Recurse -Filter schemalint.exe | Select-Object -First 1
           if (-not $bin) {
             Write-Error "schemalint.exe not found in archive $archive"
@@ -378,30 +433,29 @@ jobs:
           & $bin.FullName check test-schema.json --profile openai.so.2026-04-30
           if ($LASTEXITCODE -ne 0) { throw "schemalint check failed (exit $LASTEXITCODE)" }
 
-      - name: Download wheel artifact (for wheel smoke test)
-        if: ${{ matrix.os == 'ubuntu-latest' }}
-        uses: actions/download-artifact@v7
-        with:
-          name: wheels
-          path: dist
-
       - name: Smoke-test Python wheel (ubuntu only)
         if: ${{ matrix.os == 'ubuntu-latest' }}
         shell: bash
         run: |
           set -e
-          pip install dist/*.whl
-          # The wheel installs the bundled binary as `schemalint-python-bin` (the [[bin]]
-          # name; it cannot be `schemalint` without colliding with the main crate's bin in
-          # the cargo-dist build).
-          schemalint-python-bin --version
+          pip install release-bundle/*.whl
+          schemalint --version
           echo '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false}' > test-schema.json
-          schemalint-python-bin check test-schema.json --profile openai.so.2026-04-30
+          schemalint check test-schema.json --profile openai.so.2026-04-30
+
+      - name: Verify staged npm tarball inventory (ubuntu only)
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        shell: bash
+        run: |
+          mkdir npm-smoke
+          tar xzf release-bundle/*.tgz -C npm-smoke
+          test -f npm-smoke/package/native-manifest.json
+          test -f npm-smoke/package/launcher/integrity.cjs
 
   # Publish Rust crates to crates.io
   publish-crates:
     needs:
-      - smoke-test
+      - smoke-npm
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     # Single schemalint crate (profiles folded in); one verify-build, allow headroom.
@@ -447,8 +501,8 @@ jobs:
   # Publish Python wheel to PyPI
   publish-pypi:
     needs:
-      - build-wheel
-      - smoke-test
+      - prepare-release
+      - smoke-npm
     # PyPI publishing is gated off (skipped, not failed) so the release stays green
     # without a PYPI_TOKEN. To enable: wire trusted publishing like publish-npm
     # (id-token: write + remove the password line + add a pypi pending publisher),
@@ -463,24 +517,27 @@ jobs:
       - name: Download wheel artifact
         uses: actions/download-artifact@v7
         with:
-          name: wheels
-          path: dist
+          name: release-bundle
+          path: release-bundle
+
+      - name: Isolate staged wheel
+        run: |
+          mkdir pypi-dist
+          cp release-bundle/*.whl pypi-dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
-          packages-dir: dist/
+          packages-dir: pypi-dist/
           skip-existing: true
 
-  # Create GitHub Release with all artifacts
-  # Runs even if publish-crates or publish-pypi fails (binary release is still viable).
+  # Create GitHub assets only after every local artifact smoke passes.
   create-github-release:
     needs:
       - smoke-test
-      - publish-crates
-      - publish-pypi
-    if: ${{ always() && needs.smoke-test.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
+      - prepare-release
+    if: ${{ needs.smoke-test.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -491,60 +548,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Download all dist artifacts
+      - name: Download immutable release bundle
         uses: actions/download-artifact@v7
         with:
-          pattern: artifacts-build-local-*
-          path: release-artifacts
-          merge-multiple: true
-
-      - name: Download global artifacts
-        uses: actions/download-artifact@v7
-        with:
-          pattern: artifacts-build-global
-          path: release-artifacts
-          merge-multiple: true
-
-      - name: Download wheel artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: wheels
+          name: release-bundle
           path: release-artifacts
 
-      - name: Cleanup manifest files
-        run: |
-          rm -f release-artifacts/*-dist-manifest.json
-
-      - name: Install git-cliff
-        id: git-cliff
-        run: |
-          if curl -fsSLO "https://github.com/orhun/git-cliff/releases/download/v2.9.0/git-cliff-2.9.0-x86_64-unknown-linux-gnu.tar.gz" \
-             && tar xzf git-cliff-2.9.0-x86_64-unknown-linux-gnu.tar.gz -C /usr/local/bin git-cliff; then
-            echo "installed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "git-cliff install failed; falling back to auto-generated release notes"
-            echo "installed=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Generate release notes with git-cliff
-        if: ${{ steps.git-cliff.outputs.installed == 'true' }}
-        run: |
-          git cliff --tag "${{ github.ref_name }}" --output RELEASE_NOTES.md
-          echo "Generated release notes:"
-          cat RELEASE_NOTES.md
-
-      - name: Create GitHub Release (with git-cliff notes)
-        if: ${{ steps.git-cliff.outputs.installed == 'true' }}
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          files: |
-            release-artifacts/*
-          body_path: RELEASE_NOTES.md
-          fail_on_unmatched_files: false
-
-      - name: Create GitHub Release (auto-generated notes)
-        if: ${{ steps.git-cliff.outputs.installed != 'true' }}
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -557,10 +567,8 @@ jobs:
   smoke-npm:
     needs:
       - create-github-release
-    # !cancelled() + explicit success check: create-github-release's dependency chain
-    # includes the intentionally-skipped publish-pypi, and a skip propagates down the
-    # whole chain. Without this override smoke-npm is skipped even though
-    # create-github-release succeeded (which would also skip the OIDC publish-npm).
+      - prepare-release
+    # Install and exercise the exact tarball packed before GitHub assets existed.
     if: ${{ !cancelled() && needs.create-github-release.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
     strategy:
       fail-fast: false
@@ -571,26 +579,20 @@ jobs:
     env:
       SCHEMALINT_CACHE_DIR: ${{ github.workspace }}/schemalint-cache
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Build + pack npm package
-        run: |
-          npm ci
-          npm run build
-          npm pack
-        working-directory: npm/schemalint
+      - name: Download the exact staged npm tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: release-bundle
+          path: release-bundle
 
       - name: Install packed package globally
         shell: bash
-        run: npm install -g ./*.tgz
-        working-directory: npm/schemalint
+        run: npm install -g release-bundle/*.tgz
 
       - name: Smoke-test installed CLI
         shell: bash
@@ -603,6 +605,7 @@ jobs:
   publish-npm:
     needs:
       - smoke-npm
+      - prepare-release
     # @1nder-labs/schemalint was bootstrapped by hand for its first publish; from here on
     # publish-npm runs on every tagged release via OIDC trusted publishing (no token, no OTP).
     if: ${{ !cancelled() && needs.smoke-npm.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
@@ -615,30 +618,26 @@ jobs:
       name: npm
       url: https://www.npmjs.com/package/@1nder-labs/schemalint
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@latest
+      - name: Install pinned npm for trusted publishing
+        run: npm install -g npm@11.6.2
 
-      - name: Build @1nder-labs/schemalint (compiles the bundled Zod sidecar)
-        run: |
-          npm ci
-          npm run build
-        working-directory: npm/schemalint
+      - name: Download the exact staged npm tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: release-bundle
+          path: release-bundle
 
       - name: Publish @1nder-labs/schemalint
         run: |
           published=false
           for i in 1 2 3; do
-            out=$(npm publish --access public 2>&1) && { published=true; echo "$out"; break; }
+            out=$(npm publish release-bundle/*.tgz --access public 2>&1) && { published=true; echo "$out"; break; }
             echo "$out"
             if echo "$out" | grep -qiE "previously published|cannot publish over|You cannot publish over|already exists"; then
               echo "package version already published; treating as success"
@@ -651,4 +650,37 @@ jobs:
             echo "::error::npm publish failed after 3 attempts"
             exit 1
           fi
-        working-directory: npm/schemalint
+
+  registry-readback:
+    needs:
+      - publish-crates
+      - publish-pypi
+      - publish-npm
+    if: ${{ always() && needs.publish-crates.result == 'success' && needs.publish-npm.result == 'success' && (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped') && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Download staged artifacts for digest readback
+        uses: actions/download-artifact@v7
+        with:
+          name: release-bundle
+          path: release-bundle
+
+      - name: Read back npm registry version and exact tarball digest
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          test "$(npm view "@1nder-labs/schemalint@$VERSION" version)" = "$VERSION"
+          EXPECTED="sha512-$(openssl dgst -sha512 -binary release-bundle/*.tgz | openssl base64 -A)"
+          test "$(npm view "@1nder-labs/schemalint@$VERSION" dist.integrity)" = "$EXPECTED"
+
+      - name: Read back crates.io version
+        run: curl --fail --silent "https://crates.io/api/v1/crates/schemalint/${GITHUB_REF_NAME#v}" > /dev/null
+
+      - name: Read back PyPI version when published
+        if: ${{ needs.publish-pypi.result == 'success' }}
+        run: curl --fail --silent "https://pypi.org/pypi/schemalint/${GITHUB_REF_NAME#v}/json" > /dev/null
