@@ -97,7 +97,7 @@ schemalint server
 {"jsonrpc":"2.0","method":"shutdown","id":2}
 ```
 
-- **Persistent disk cache** — normalized schemas survive process restarts via `~/.cache/schemalint-<pid>/`.
+- **Bounded in-memory cache** — normalized schemas are reused within the current process only; schema data is never persisted to disk.
 - **Hardened** — 10 MB payload limit, 100k node limit, path traversal protection, broken pipe detection.
 
 ### Performance
@@ -197,8 +197,8 @@ error[OAI-K-allOf]: keyword 'allOf' is not supported by openai.so.2026-04-30
 
 | Code | Meaning |
 |------|---------|
-| `0` | No errors (warnings alone are OK) |
-| `1` | At least one error, or a fatal parse/IO error |
+| `0` | Complete coverage and no errors (warnings alone are OK) |
+| `1` | Error diagnostic or empty, partial, or failed coverage |
 | `2` | I/O error writing output file |
 
 ## Architecture

@@ -57,6 +57,18 @@ schemalint check --format gha --profile openai.so.2026-04-30 schema.json
 schemalint check --format sarif --profile openai.so.2026-04-30 schema.json
 ```
 
+JSON output uses schema version `1.1`. In addition to the stable 1.0 fields, the
+`report.coverage` object records attempted, excluded, discovered, checked, and
+failed targets plus a status of `complete`, `empty`, `partial`, or `failed`.
+
+## Strict Completeness
+
+Exit `0` means every discovered in-scope schema was evaluated and checked and
+there were no error diagnostics. An empty match, import/evaluation/conversion
+failure, unresolved required SDK envelope field, or partially checked batch
+exits `1`. `--continue-on-discovery-error` only controls whether later sources
+are attempted; it never hides incomplete coverage.
+
 ## Check All JSON Schemas in a Directory
 
 ```bash

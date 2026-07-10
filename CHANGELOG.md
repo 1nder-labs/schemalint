@@ -22,12 +22,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multiple output formats: human, json, sarif, gha, junit
 - Python and Node.js ingestion helpers via JSON-RPC
 - Regression corpus with 80+ synthetic schemas
+- JSON output schema 1.1 with additive target, coverage, failure, and warning data
+- Current OpenAI, Anthropic, and AI SDK 6 structured-output helper discovery
+- Packed-runtime verification for Node 18/20/22 and wheel verification for Python 3.9+ with Pydantic 1.10/2.x
 
 ### Changed
+- Exit 0 now requires complete discovery, conversion, attribution, and lint coverage in addition to zero error diagnostics
+- The PyPI wheel installs the public `schemalint` command and bundles the Pydantic sidecar
+- The npm runtime bundles its TypeScript loader and handles Zod v3, v4 from 4.0.1, current v4, and `zod/mini`
+- Provider budgets and envelope checks now match retained provider evidence, including OpenAI enum-string budgets
+- Release packaging uses one immutable, digest-anchored artifact bundle for smoke tests and publication
 
 ### Fixed
+- Node and Python discovery failures can no longer be reported as successful lint runs
+- Provider identity and required output/tool metadata are retained per SDK usage site
+- Invalid profile keyword names or restriction shapes are rejected during profile loading
 
 ### Removed
+- Persistent on-disk schema caching; caches are bounded and process-local
 
 ## [1.0.0] - 2026-05-05
 

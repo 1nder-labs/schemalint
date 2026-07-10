@@ -1,0 +1,52 @@
+{
+  "captured": "2026-07-09",
+  "method": "official npm registry tarball export inspection",
+  "packages": [
+    {
+      "package": "ai",
+      "minimum": "6.0.0",
+      "current": "7.0.19",
+      "module": "ai",
+      "surfaces": ["Output.object", "Output.array", "dynamicTool"]
+    },
+    {
+      "package": "openai",
+      "minimum": "4.55.0",
+      "current": "6.46.0",
+      "module": "openai/helpers/zod",
+      "surfaces": ["zodResponseFormat", "zodFunction"]
+    },
+    {
+      "package": "openai",
+      "minimum": "4.87.0",
+      "current": "6.46.0",
+      "module": "openai/helpers/zod",
+      "surfaces": ["zodTextFormat"]
+    },
+    {
+      "package": "@anthropic-ai/sdk",
+      "minimum": "0.63.0",
+      "current": "0.110.0",
+      "module": "@anthropic-ai/sdk/helpers/beta/zod",
+      "surfaces": ["betaZodTool"]
+    },
+    {
+      "package": "@anthropic-ai/sdk",
+      "minimum": "0.72.0",
+      "current": "0.110.0",
+      "module": "@anthropic-ai/sdk/helpers/zod",
+      "surfaces": ["zodOutputFormat"]
+    }
+  ],
+  "deprecated_in_schemalint_1_x": {
+    "removal": "2.0",
+    "surfaces": ["generateObject", "streamObject", "tool", "zodFunction", "betaZodTool"]
+  },
+  "schema_runtimes": {
+    "node": [18, 20, 22],
+    "zod_v3": "3.25.76",
+    "zod_v4_minimum": "4.0.1",
+    "zod_v4_current": "4.4.3",
+    "zod_mini": "4.4.3"
+  }
+}
