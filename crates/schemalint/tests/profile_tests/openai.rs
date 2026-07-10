@@ -51,8 +51,8 @@ fn openai_profile_has_zero_unknown_for_pydantic_zod_keywords() {
     ];
 
     for kw in &pydantic_zod_keywords {
-        let in_keyword_map = profile.keyword_map.get(kw);
-        let in_restrictions = profile.restrictions.contains_key(kw);
+        let in_keyword_map = profile.keyword_map.get(*kw);
+        let in_restrictions = profile.restrictions.contains_key(*kw);
         assert!(
             in_keyword_map.is_some() || in_restrictions,
             "keyword '{}' missing from OpenAI profile (not in keyword_map or restrictions)",

@@ -82,7 +82,7 @@ fn dynamic_rules_have_metadata() {
         max_object_depth = 5
     "#;
     let profile = load_test_profile(profile_toml);
-    let rule_set = RuleSet::from_profile(&profile);
+    let rule_set = RuleSet::from_profile(&profile).unwrap();
 
     for rule in rule_set.dynamic_rules() {
         let metadata = rule

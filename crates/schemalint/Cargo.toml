@@ -16,7 +16,7 @@ categories = ["development-tools", "command-line-utilities"]
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
+toml = { version = "0.8", features = ["preserve_order"] }
 indexmap = { version = "2", features = ["serde"] }
 dirs = "5.0"
 linkme = "0.3"

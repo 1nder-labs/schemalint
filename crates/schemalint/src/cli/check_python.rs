@@ -77,10 +77,18 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
         }
     };
 
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = profiles
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = match profiles
         .iter()
         .map(|p| (p, RuleSet::from_profile(p)))
-        .collect();
+        .map(|(profile, ruleset)| ruleset.map(|ruleset| (profile, ruleset)))
+        .collect()
+    {
+        Ok(rulesets) => rulesets,
+        Err(e) => {
+            eprintln!("error: failed to construct profile rules: {e}");
+            return 1;
+        }
+    };
 
     let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
 

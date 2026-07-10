@@ -1,6 +1,7 @@
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use serde_json::Value;
+
+use super::Keyword;
 
 /// Severity levels for keyword and structural rules in a profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -32,10 +33,10 @@ pub struct Profile {
     pub name: String,
     pub version: String,
     pub code_prefix: String,
-    /// Keyword → severity mapping. Keys are leaked `&'static str` for O(1) lookup.
-    pub keyword_map: HashMap<&'static str, Severity>,
+    /// Keyword → severity mapping in profile declaration order.
+    pub keyword_map: IndexMap<Keyword, Severity>,
     /// Keyword → allowed values mapping for restricted keywords.
-    pub restrictions: HashMap<&'static str, Restriction>,
+    pub restrictions: IndexMap<Keyword, Restriction>,
     pub structural: StructuralLimits,
 }
 
@@ -82,8 +83,16 @@ pub enum ProfileError {
     MissingField(&'static str),
     #[error("invalid severity '{0}'; expected one of: allow, warn, strip, forbid, unknown")]
     InvalidSeverity(String),
+    #[error("unknown JSON Schema keyword '{0}' in profile")]
+    UnknownKeyword(String),
+    #[error("invalid value for keyword '{0}'; expected a severity string or restricted table")]
+    InvalidKeywordValue(String),
+    #[error("invalid restrictions container; expected an array of tables")]
+    InvalidRestrictionsContainer,
     #[error("invalid restriction for keyword '{0}': missing 'allowed' array")]
     InvalidRestriction(String),
+    #[error("keyword '{0}' cannot define both a severity and a restriction")]
+    ConflictingKeyword(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -120,53 +129,8 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
             first_segment.to_uppercase()
         });
 
-    let mut keyword_map = HashMap::new();
-    let mut restrictions = HashMap::new();
-
-    const KNOWN_KEYWORDS: &[&str] = &[
-        "type",
-        "properties",
-        "required",
-        "additionalProperties",
-        "items",
-        "prefixItems",
-        "minItems",
-        "maxItems",
-        "uniqueItems",
-        "contains",
-        "minimum",
-        "maximum",
-        "exclusiveMinimum",
-        "exclusiveMaximum",
-        "multipleOf",
-        "minLength",
-        "maxLength",
-        "pattern",
-        "format",
-        "enum",
-        "const",
-        "patternProperties",
-        "unevaluatedProperties",
-        "propertyNames",
-        "minProperties",
-        "maxProperties",
-        "description",
-        "title",
-        "default",
-        "discriminator",
-        "$ref",
-        "$defs",
-        "definitions",
-        "anyOf",
-        "allOf",
-        "oneOf",
-        "not",
-        "if",
-        "then",
-        "else",
-        "dependentRequired",
-        "dependentSchemas",
-    ];
+    let mut keyword_map = IndexMap::new();
+    let mut restrictions = IndexMap::new();
 
     // Walk top-level entries for keywords and restrictions.
     for (key, val) in table {
@@ -175,17 +139,14 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
             _ => {}
         }
 
-        if !KNOWN_KEYWORDS.contains(&key.as_str()) {
-            return Err(ProfileError::InvalidSeverity(format!(
-                "unknown keyword '{}' in profile; expected a known JSON Schema keyword",
-                key
-            )));
-        }
+        let keyword = key
+            .parse::<Keyword>()
+            .map_err(|()| ProfileError::UnknownKeyword(key.clone()))?;
 
         match val {
             toml::Value::String(s) => {
                 let sev = Severity::parse(s)?;
-                keyword_map.insert(leak_str(key), sev);
+                keyword_map.insert(keyword, sev);
             }
             toml::Value::Table(t)
                 if t.get("kind").and_then(|v| v.as_str()) == Some("restricted") =>
@@ -199,23 +160,23 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
                     values.push(toml_to_json(v.clone())?);
                 }
                 restrictions.insert(
-                    leak_str(key),
+                    keyword,
                     Restriction {
                         allowed_values: values,
                     },
                 );
             }
             _ => {
-                return Err(ProfileError::InvalidSeverity(format!(
-                    "invalid value for keyword '{}': expected string severity or restricted table",
-                    key
-                )));
+                return Err(ProfileError::InvalidKeywordValue(key.clone()));
             }
         }
     }
 
     // Also process [[restrictions]] array-of-tables if present.
-    if let Some(toml::Value::Array(arr)) = table.get("restrictions") {
+    if let Some(container) = table.get("restrictions") {
+        let arr = container
+            .as_array()
+            .ok_or(ProfileError::InvalidRestrictionsContainer)?;
         for entry in arr {
             let t = entry
                 .as_table()
@@ -224,6 +185,12 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
                 .get("keyword")
                 .and_then(|v| v.as_str())
                 .ok_or(ProfileError::MissingField("restrictions.keyword"))?;
+            let typed_keyword = keyword
+                .parse::<Keyword>()
+                .map_err(|()| ProfileError::UnknownKeyword(keyword.to_string()))?;
+            if keyword_map.contains_key(&typed_keyword) {
+                return Err(ProfileError::ConflictingKeyword(keyword.to_string()));
+            }
             let allowed = t
                 .get("allowed")
                 .and_then(|v| v.as_array())
@@ -233,7 +200,7 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
                 values.push(toml_to_json(v.clone())?);
             }
             restrictions.insert(
-                leak_str(keyword),
+                typed_keyword,
                 Restriction {
                     allowed_values: values,
                 },
@@ -260,10 +227,6 @@ fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, Profi
     };
     // toml::de::Error is #[from]-mapped to ProfileError::InvalidToml.
     Ok(v.clone().try_into()?)
-}
-
-fn leak_str(s: &str) -> &'static str {
-    Box::leak(s.to_owned().into_boxed_str())
 }
 
 fn toml_to_json(val: toml::Value) -> Result<Value, ProfileError> {

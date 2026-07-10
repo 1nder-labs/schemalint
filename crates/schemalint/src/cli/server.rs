@@ -267,10 +267,20 @@ fn handle_check(
     loaded_profiles.sort_by(|a, b| a.name.cmp(&b.name));
     loaded_profiles.dedup_by_key(|p| p.name.clone());
 
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = loaded_profiles
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = match loaded_profiles
         .iter()
         .map(|p| (p, RuleSet::from_profile(p)))
-        .collect();
+        .map(|(profile, ruleset)| ruleset.map(|ruleset| (profile, ruleset)))
+        .collect()
+    {
+        Ok(rulesets) => rulesets,
+        Err(e) => {
+            return json!({
+                "success": false,
+                "error": format!("Failed to construct profile rules: {e}")
+            });
+        }
+    };
 
     let profile_names: Vec<String> = loaded_profiles.iter().map(|p| p.name.clone()).collect();
 
@@ -501,10 +511,20 @@ fn handle_check_node(
     loaded_profiles.sort_by(|a, b| a.name.cmp(&b.name));
     loaded_profiles.dedup_by_key(|p| p.name.clone());
 
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = loaded_profiles
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = match loaded_profiles
         .iter()
         .map(|p| (p, RuleSet::from_profile(p)))
-        .collect();
+        .map(|(profile, ruleset)| ruleset.map(|ruleset| (profile, ruleset)))
+        .collect()
+    {
+        Ok(rulesets) => rulesets,
+        Err(e) => {
+            return json!({
+                "success": false,
+                "error": format!("Failed to construct profile rules: {e}")
+            });
+        }
+    };
     let profile_names: Vec<String> = loaded_profiles.iter().map(|p| p.name.clone()).collect();
 
     let start = Instant::now();
@@ -741,10 +761,20 @@ fn handle_check_python(
     loaded_profiles.sort_by(|a, b| a.name.cmp(&b.name));
     loaded_profiles.dedup_by_key(|p| p.name.clone());
 
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = loaded_profiles
+    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = match loaded_profiles
         .iter()
         .map(|p| (p, RuleSet::from_profile(p)))
-        .collect();
+        .map(|(profile, ruleset)| ruleset.map(|ruleset| (profile, ruleset)))
+        .collect()
+    {
+        Ok(rulesets) => rulesets,
+        Err(e) => {
+            return json!({
+                "success": false,
+                "error": format!("Failed to construct profile rules: {e}")
+            });
+        }
+    };
     let profile_names: Vec<String> = loaded_profiles.iter().map(|p| p.name.clone()).collect();
 
     let start = Instant::now();

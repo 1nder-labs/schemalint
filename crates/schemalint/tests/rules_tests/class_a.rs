@@ -1,4 +1,31 @@
 use super::*;
+use schemalint::profile::{Keyword, Restriction};
+use schemalint::rules::registry::RuleSetError;
+
+#[test]
+fn conflicting_typed_profile_is_rejected_without_panicking() {
+    let mut profile = load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+type = "forbid"
+
+[structural]
+require_object_root = false
+"##,
+    );
+    profile.restrictions.insert(
+        Keyword::Type,
+        Restriction {
+            allowed_values: vec![serde_json::json!("object")],
+        },
+    );
+
+    assert!(matches!(
+        RuleSet::from_profile(&profile),
+        Err(RuleSetError::ConflictingKeyword(Keyword::Type))
+    ));
+}
 
 #[test]
 fn class_a_forbid_allof() {
@@ -15,7 +42,7 @@ require_object_root = false
     let schema = normalize_schema(serde_json::json!({
         "allOf": [{"type": "string"}]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
     assert_eq!(diagnostics.len(), 1);
@@ -39,7 +66,7 @@ require_object_root = false
     let schema = normalize_schema(serde_json::json!({
         "uniqueItems": true
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
     assert_eq!(diagnostics.len(), 1);
@@ -62,7 +89,7 @@ require_object_root = false
     let schema = normalize_schema(serde_json::json!({
         "type": "string"
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
     assert!(diagnostics.is_empty());
@@ -83,7 +110,7 @@ require_object_root = false
     let schema = normalize_schema(serde_json::json!({
         "contains": { "type": "string" }
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
     assert!(diagnostics.is_empty());
@@ -104,7 +131,7 @@ require_object_root = false
     let schema = normalize_schema(serde_json::json!({
         "format": "date-time"
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
     assert!(diagnostics.is_empty());
@@ -125,7 +152,7 @@ require_object_root = false
     let schema = normalize_schema(serde_json::json!({
         "format": "credit-card"
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
     assert_eq!(diagnostics.len(), 1);
@@ -147,7 +174,7 @@ require_object_root = false
     let schema = normalize_schema(serde_json::json!({
         "x-custom": 42
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
     assert!(diagnostics.is_empty());
@@ -168,7 +195,7 @@ require_object_root = false
     let schema = normalize_schema(serde_json::json!({
         "allOf": [{"type": "string"}]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
     assert_eq!(diagnostics.len(), 1);

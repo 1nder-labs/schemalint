@@ -51,6 +51,12 @@ require_object_root = false
     );
     assert_eq!(profile.keyword_map.get("type"), Some(&Severity::Allow));
     assert_eq!(profile.keyword_map.get("not_present"), None);
+    let declaration_order: Vec<_> = profile
+        .keyword_map
+        .keys()
+        .map(|keyword| keyword.as_str())
+        .collect();
+    assert_eq!(declaration_order, ["allOf", "uniqueItems", "type"]);
 }
 
 #[test]

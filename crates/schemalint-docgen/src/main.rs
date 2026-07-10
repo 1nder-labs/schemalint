@@ -69,7 +69,13 @@ fn main() {
     // Collect dynamic rules from each profile.
     for profile_info in &profiles {
         let profile = load_toml_profile(profile_info);
-        let rule_set = RuleSet::from_profile(&profile);
+        let rule_set = RuleSet::from_profile(&profile).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to construct rules for profile '{}': {error}",
+                profile_info.name
+            );
+            std::process::exit(1);
+        });
         for rule in rule_set.dynamic_rules() {
             let Some(metadata) = rule.metadata() else {
                 continue;

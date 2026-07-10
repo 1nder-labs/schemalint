@@ -17,7 +17,9 @@ fn lint(
     profile: &schemalint::profile::Profile,
 ) -> Vec<schemalint::rules::Diagnostic> {
     let norm = normalize(schema).unwrap();
-    RuleSet::from_profile(profile).check_all(&norm.arena, profile)
+    RuleSet::from_profile(profile)
+        .unwrap()
+        .check_all(&norm.arena, profile)
 }
 
 #[test]

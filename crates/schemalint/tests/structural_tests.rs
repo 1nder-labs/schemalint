@@ -17,7 +17,7 @@ fn lint(
     profile: &schemalint::profile::Profile,
 ) -> Vec<schemalint::rules::Diagnostic> {
     let norm = normalize(schema).unwrap();
-    let ruleset = RuleSet::from_profile(profile);
+    let ruleset = RuleSet::from_profile(profile).unwrap();
     ruleset.check_all(&norm.arena, profile)
 }
 
@@ -373,7 +373,7 @@ require_object_root = false
 
     let schema = serde_json::json!({ "type": "string" });
 
-    let openai_ruleset = RuleSet::from_profile(&openai_profile);
+    let openai_ruleset = RuleSet::from_profile(&openai_profile).unwrap();
     let openai_diags =
         openai_ruleset.check_all(&normalize(schema.clone()).unwrap().arena, &openai_profile);
     assert!(
@@ -381,7 +381,7 @@ require_object_root = false
         "OpenAI profile should require object root"
     );
 
-    let anthropic_ruleset = RuleSet::from_profile(&anthropic_profile);
+    let anthropic_ruleset = RuleSet::from_profile(&anthropic_profile).unwrap();
     let anthropic_diags = anthropic_ruleset.check_all(
         &normalize(schema.clone()).unwrap().arena,
         &anthropic_profile,

@@ -1,5 +1,5 @@
 use crate::ir::{Arena, NodeId};
-use crate::profile::{Profile, Severity};
+use crate::profile::{Keyword, Profile, Severity};
 use crate::rules::metadata::{RuleCategory, RuleMetadata};
 use crate::rules::registry::{Diagnostic, DiagnosticSeverity, KeywordAccessor, Rule};
 
@@ -8,7 +8,7 @@ use crate::rules::registry::{Diagnostic, DiagnosticSeverity, KeywordAccessor, Ru
 /// Fires when a node carries the watched keyword in its annotations.
 #[derive(Debug, Clone)]
 pub struct KeywordRule {
-    pub keyword: &'static str,
+    pub keyword: Keyword,
     pub accessor: KeywordAccessor,
     pub severity: DiagnosticSeverity,
     pub code: String,
@@ -89,7 +89,7 @@ impl Rule for KeywordRule {
 /// Fires when a keyword is present and its value is not in the allowed set.
 #[derive(Debug, Clone)]
 pub struct RestrictionRule {
-    pub keyword: &'static str,
+    pub keyword: Keyword,
     pub accessor: KeywordAccessor,
     pub allowed_values: Vec<serde_json::Value>,
     pub code: String,

@@ -22,7 +22,7 @@ fn load_profile() -> schemalint::profile::Profile {
 
 fn bench_single_schema(c: &mut Criterion) {
     let profile = load_profile();
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let bytes = fs::read(fixture_path("single_large_schema.json")).unwrap();
     let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
 
@@ -42,7 +42,7 @@ fn bench_single_schema(c: &mut Criterion) {
 
 fn bench_cold_start(c: &mut Criterion) {
     let profile = load_profile();
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let schemas_dir = fixture_path("project_500_schemas");
 
     let mut schema_bytes = Vec::new();
@@ -68,7 +68,7 @@ fn bench_cold_start(c: &mut Criterion) {
 
 fn bench_incremental(c: &mut Criterion) {
     let profile = load_profile();
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let schemas_dir = fixture_path("project_500_schemas");
 
     let mut schema_bytes = Vec::new();

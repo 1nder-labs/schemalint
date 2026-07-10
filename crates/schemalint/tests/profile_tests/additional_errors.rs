@@ -111,8 +111,8 @@ require_object_root = false
 
     let err = load(toml.as_bytes()).unwrap_err();
     assert!(
-        matches!(err, ProfileError::InvalidSeverity(ref s) if s.contains("unknown keyword")),
-        "expected InvalidSeverity with 'unknown keyword', got {:?}",
+        matches!(err, ProfileError::UnknownKeyword(ref keyword) if keyword == "nonsense"),
+        "expected UnknownKeyword(nonsense), got {:?}",
         err
     );
 }
@@ -130,8 +130,8 @@ require_object_root = false
 
     let err = load(toml.as_bytes()).unwrap_err();
     assert!(
-        matches!(err, ProfileError::InvalidSeverity(_)),
-        "expected InvalidSeverity for integer keyword value, got {:?}",
+        matches!(err, ProfileError::InvalidKeywordValue(ref keyword) if keyword == "type"),
+        "expected InvalidKeywordValue(type), got {:?}",
         err
     );
 }
@@ -149,8 +149,8 @@ require_object_root = false
 
     let err = load(toml.as_bytes()).unwrap_err();
     assert!(
-        matches!(err, ProfileError::InvalidSeverity(_)),
-        "expected InvalidSeverity for array keyword value, got {:?}",
+        matches!(err, ProfileError::InvalidKeywordValue(ref keyword) if keyword == "type"),
+        "expected InvalidKeywordValue(type), got {:?}",
         err
     );
 }
@@ -217,7 +217,24 @@ keyword = "format"
 }
 
 #[test]
-fn restrictions_not_an_array_is_silently_ignored() {
+fn restrictions_not_an_array_is_rejected() {
+    let toml = r#"
+name = "test"
+version = "1.0"
+restrictions = "not an array of tables"
+
+[structural]
+require_object_root = false
+"#;
+
+    assert!(matches!(
+        load(toml.as_bytes()).unwrap_err(),
+        ProfileError::InvalidRestrictionsContainer
+    ));
+}
+
+#[test]
+fn restriction_with_unknown_keyword_is_rejected_during_load() {
     let toml = r#"
 name = "test"
 version = "1.0"
@@ -225,11 +242,34 @@ version = "1.0"
 [structural]
 require_object_root = false
 
-restrictions = "not an array of tables"
+[[restrictions]]
+keyword = "typoKeyword"
+allowed = [true]
 "#;
 
-    // The parser skips "restrictions" in the keyword loop (it's in the continue list),
-    // and table.get("restrictions") returns a String (not Array), so it's silently ignored.
-    let profile = load(toml.as_bytes()).unwrap();
-    assert!(profile.restrictions.is_empty());
+    assert!(matches!(
+        load(toml.as_bytes()).unwrap_err(),
+        ProfileError::UnknownKeyword(ref keyword) if keyword == "typoKeyword"
+    ));
+}
+
+#[test]
+fn severity_and_restriction_for_same_keyword_conflict() {
+    let toml = r#"
+name = "test"
+version = "1.0"
+type = "forbid"
+
+[structural]
+require_object_root = false
+
+[[restrictions]]
+keyword = "type"
+allowed = ["object"]
+"#;
+
+    assert!(matches!(
+        load(toml.as_bytes()).unwrap_err(),
+        ProfileError::ConflictingKeyword(ref keyword) if keyword == "type"
+    ));
 }
