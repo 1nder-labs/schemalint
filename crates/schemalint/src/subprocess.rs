@@ -90,6 +90,33 @@ pub(crate) enum SubprocessError {
     DiscoverFailed(String),
 }
 
+// ── stderr formatting ─────────────────────────────────────────────────────────
+
+const STDERR_HEAD_LINES: usize = 8;
+const STDERR_TAIL_LINES: usize = 4;
+
+/// Format captured stderr for an error message, keeping both ends.
+///
+/// Node prints the cause first and the stack after it (for example
+/// `Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'tsx'`). Python prints
+/// the stack first and the exception line last. Both ends are kept, so the
+/// cause line survives for either helper.
+fn format_stderr(lines: &[String], label: &str) -> String {
+    if lines.len() <= STDERR_HEAD_LINES + STDERR_TAIL_LINES {
+        return format!(
+            "\n--- {label} stderr ---\n{}\n--- end stderr ---",
+            lines.join("\n")
+        );
+    }
+    let head = lines[..STDERR_HEAD_LINES].join("\n");
+    let tail = lines[lines.len() - STDERR_TAIL_LINES..].join("\n");
+    let elided = lines.len() - STDERR_HEAD_LINES - STDERR_TAIL_LINES;
+    format!(
+        "\n--- {label} stderr (first {STDERR_HEAD_LINES} and last {STDERR_TAIL_LINES} of {} lines) ---\n{head}\n... {elided} line(s) elided ...\n{tail}\n--- end stderr ---",
+        lines.len()
+    )
+}
+
 // ── SubprocessClient ──────────────────────────────────────────────────────────
 
 /// Low-level subprocess manager: owns the child process, its piped stdio
@@ -147,7 +174,7 @@ impl SubprocessClient {
         })
     }
 
-    /// Drain captured stderr and format its last lines for an error message.
+    /// Drain captured stderr and format it for an error message.
     pub(crate) fn take_stderr_tail(&self, label: &str) -> Option<String> {
         let mut guard = self.stderr_lines.lock().unwrap_or_else(|e| e.into_inner());
         let lines: Vec<String> = std::mem::take(&mut *guard).into();
@@ -155,20 +182,7 @@ impl SubprocessClient {
         if lines.is_empty() {
             return None;
         }
-
-        const TAIL_LINES: usize = 10;
-        if lines.len() > TAIL_LINES {
-            let tail = lines[lines.len() - TAIL_LINES..].join("\n");
-            Some(format!(
-                "\n--- {label} stderr (last {TAIL_LINES} of {} lines) ---\n{tail}\n--- end stderr ---",
-                lines.len()
-            ))
-        } else {
-            Some(format!(
-                "\n--- {label} stderr ---\n{}\n--- end stderr ---",
-                lines.join("\n")
-            ))
-        }
+        Some(format_stderr(&lines, label))
     }
 
     /// Send a JSON-RPC `discover` request and return the raw parsed response.

@@ -8,7 +8,8 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_20.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/if"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/if",
+    "hint": "remove 'if' from the schema. If you need the constraint, check it in your own code after the model responds."
   },
   {
     "code": "ANT-K-then",
@@ -19,7 +20,8 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_20.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/then"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/then",
+    "hint": "remove 'then' from the schema. If you need the constraint, check it in your own code after the model responds."
   },
   {
     "code": "ANT-S-additional-properties-false",

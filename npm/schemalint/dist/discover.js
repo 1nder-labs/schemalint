@@ -132,7 +132,10 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     }
     // Step 3: Runtime evaluation — import each file and evaluate schemas
     const models = [];
-    const failures = discoveryFailures;
+    // Copy, do not alias: `attempted` below reads `discoveryFailures.length`, so
+    // pushing evaluation failures into the same array would inflate the attempt
+    // count and trip the caller's coverage accounting check.
+    const failures = [...discoveryFailures];
     for (const loc of discoveredLocations) {
         try {
             const schemaJson = loc.syntheticSource

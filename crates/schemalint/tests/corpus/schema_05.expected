@@ -8,7 +8,8 @@
       "file": "crates/schemalint/tests/corpus/schema_05.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/not"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/not",
+    "hint": "remove 'not' from the schema. If you need the constraint, check it in your own code after the model responds."
   },
   {
     "code": "OAI-S-object-root",

@@ -23,6 +23,16 @@ impl Rule for KeywordRule {
                 "keyword '{}' is not supported by {}",
                 self.keyword, self.profile_name
             );
+            let hint = match self.severity {
+                DiagnosticSeverity::Error => format!(
+                    "remove '{}' from the schema. If you need the constraint, check it in your own code after the model responds.",
+                    self.keyword
+                ),
+                DiagnosticSeverity::Warning => format!(
+                    "{} may ignore or strip '{}'. Do not rely on it; check the constraint in your own code after the model responds.",
+                    self.profile_name, self.keyword
+                ),
+            };
             diagnostics.push(Diagnostic {
                 code: self.code.clone(),
                 severity: self.severity,
@@ -30,7 +40,7 @@ impl Rule for KeywordRule {
                 pointer: arena[node].json_pointer.clone(),
                 source: None,
                 profile: self.profile_name.clone(),
-                hint: None,
+                hint: Some(hint),
             });
         }
         diagnostics
@@ -101,7 +111,18 @@ impl Rule for RestrictionRule {
         let mut diagnostics = Vec::new();
         if let Some(value) = (self.accessor)(&arena[node]) {
             if !self.allowed_values.contains(value) {
-                let hint = format!("allowed values: {:?}", self.allowed_values);
+                // `{:?}` on a serde_json::Value prints `String("email")`; use
+                // Display so the hint carries valid JSON a consumer can reuse.
+                let allowed = self
+                    .allowed_values
+                    .iter()
+                    .map(|allowed| allowed.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let hint = format!(
+                    "'{}' accepts only {} here, but found {}. Use an allowed value; if none fits, remove '{}' and check the constraint in your own code after the model responds.",
+                    self.keyword, allowed, value, self.keyword
+                );
                 diagnostics.push(Diagnostic {
                     code: self.code.clone(),
                     severity: DiagnosticSeverity::Error,

@@ -8,7 +8,7 @@
       "file": "crates/schemalint/tests/corpus/schema_11.json"
     },
     "profile": "openai.so.2026-04-30",
-    "hint": "allowed values: [Bool(false)]",
+    "hint": "'additionalProperties' accepts only false here, but found true. Use an allowed value; if none fits, remove 'additionalProperties' and check the constraint in your own code after the model responds.",
     "seeUrl": "https://1nder-labs.github.io/schemalint/rules/restriction/additionalProperties-restricted"
   },
   {

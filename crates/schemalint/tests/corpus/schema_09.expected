@@ -8,7 +8,7 @@
       "file": "crates/schemalint/tests/corpus/schema_09.json"
     },
     "profile": "openai.so.2026-04-30",
-    "hint": "allowed values: [String(\"date-time\"), String(\"time\"), String(\"date\"), String(\"duration\"), String(\"email\"), String(\"hostname\"), String(\"ipv4\"), String(\"ipv6\"), String(\"uuid\")]",
+    "hint": "'format' accepts only \"date-time\", \"time\", \"date\", \"duration\", \"email\", \"hostname\", \"ipv4\", \"ipv6\", \"uuid\" here, but found \"credit-card\". Use an allowed value; if none fits, remove 'format' and check the constraint in your own code after the model responds.",
     "seeUrl": "https://1nder-labs.github.io/schemalint/rules/restriction/format-restricted"
   }
 ]

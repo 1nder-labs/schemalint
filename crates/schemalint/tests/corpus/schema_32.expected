@@ -20,7 +20,8 @@
       "file": "crates/schemalint/tests/corpus/schema_32.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/prefixItems"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/prefixItems",
+    "hint": "openai.so.2026-04-30 may ignore or strip 'prefixItems'. Do not rely on it; check the constraint in your own code after the model responds."
   },
   {
     "code": "OAI-S-array-items",

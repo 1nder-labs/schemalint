@@ -7,6 +7,7 @@ error[TEST-K-allOf]: keyword 'allOf' is not supported by test
      |
      = profile: test
      = schema path: 
+     = hint: remove 'allOf' from the schema. If you need the constraint, check it in your own code after the model responds.
      = see: https://1nder-labs.github.io/schemalint/rules/keyword/allOf
 
 1 issue found (1 error, 0 warnings) across 1 schema in [DURATION]ms

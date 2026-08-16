@@ -28,6 +28,7 @@ expression: "normalize_temp_paths(&stdout, dir.path())"
         "file": "[TEMP_DIR]/schema.json"
       },
       "profile": "test",
+      "hint": "remove 'allOf' from the schema. If you need the constraint, check it in your own code after the model responds.",
       "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/allOf"
     }
   ],

@@ -288,6 +288,21 @@ describe('discoverZodSchemas', () => {
     ]);
   });
 
+  it('counts an evaluation failure once', async () => {
+    // Regression: `failures` used to alias `discoveryFailures`, so every
+    // evaluation failure also incremented `attempted`, and the Rust caller
+    // rejected the response with "invalid discovery counts".
+    const result = await discoverZodSchemas('eval-throws.ts');
+
+    expect(result.models).toEqual([]);
+    expect(result.failures).toHaveLength(1);
+    expect(result.counts).toMatchObject({
+      attempted: 1,
+      discovered: 0,
+      failed: 1,
+    });
+  });
+
   it('fails closed when static aliases form a cycle', async () => {
     const result = await discoverZodSchemas('cyclic-metadata.ts');
 

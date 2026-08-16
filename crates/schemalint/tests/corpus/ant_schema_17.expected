@@ -8,7 +8,7 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_17.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "hint": "allowed values: [Number(0), Number(1)]",
+    "hint": "'minItems' accepts only 0, 1 here, but found 2. Use an allowed value; if none fits, remove 'minItems' and check the constraint in your own code after the model responds.",
     "seeUrl": "https://1nder-labs.github.io/schemalint/rules/restriction/minItems-restricted"
   }
 ]

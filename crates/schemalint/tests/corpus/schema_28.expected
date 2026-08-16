@@ -8,7 +8,8 @@
       "file": "crates/schemalint/tests/corpus/schema_28.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/maxProperties"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/maxProperties",
+    "hint": "remove 'maxProperties' from the schema. If you need the constraint, check it in your own code after the model responds."
   },
   {
     "code": "OAI-K-minProperties",
@@ -19,7 +20,8 @@
       "file": "crates/schemalint/tests/corpus/schema_28.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/minProperties"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/minProperties",
+    "hint": "remove 'minProperties' from the schema. If you need the constraint, check it in your own code after the model responds."
   },
   {
     "code": "OAI-S-all-properties-required",

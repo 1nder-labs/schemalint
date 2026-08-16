@@ -8,7 +8,8 @@
       "file": "crates/schemalint/tests/corpus/schema_45.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/allOf"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/allOf",
+    "hint": "remove 'allOf' from the schema. If you need the constraint, check it in your own code after the model responds."
   },
   {
     "code": "OAI-K-additionalProperties-restricted",
@@ -19,7 +20,7 @@
       "file": "crates/schemalint/tests/corpus/schema_45.json"
     },
     "profile": "openai.so.2026-04-30",
-    "hint": "allowed values: [Bool(false)]",
+    "hint": "'additionalProperties' accepts only false here, but found true. Use an allowed value; if none fits, remove 'additionalProperties' and check the constraint in your own code after the model responds.",
     "seeUrl": "https://1nder-labs.github.io/schemalint/rules/restriction/additionalProperties-restricted"
   },
   {
