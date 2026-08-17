@@ -15,6 +15,15 @@ export declare function hasExportModifier(node: ts.Node, tsModule: typeof ts): b
  */
 export declare function findZObjectCall(node: ts.Node, tsModule: typeof ts): ts.ObjectLiteralExpression | null;
 /**
+ * Escape a single JSON Pointer (RFC 6901) segment.
+ *
+ * `~` is replaced with `~0` first, then `/` is replaced with `~1`. The order
+ * matters: escaping `/` first would introduce new `~1` sequences that the
+ * `~` step would then re-escape, corrupting a name that already contains a
+ * literal `~1`.
+ */
+export declare function escapePointerSegment(segment: string): string;
+/**
  * Walk an ObjectLiteralExpression (`{ email: z.string(), ... }`) and build a
  * source map mapping JSON Pointer paths to file:line locations.
  *

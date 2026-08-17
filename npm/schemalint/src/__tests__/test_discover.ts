@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { discoverZodSchemas, toPosixPath } from '../discover.js';
+import { escapePointerSegment } from '../discover_ast.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -503,5 +504,28 @@ describe('discoverZodSchemas', () => {
       // Without normalisation the match would fail:
       expect(isMatch('src\\models\\user.ts')).toBe(false);
     });
+  });
+});
+
+describe('pointer escaping', () => {
+  // The Node escaper against the shared table in
+  // crates/schemalint/tests/fixtures/pointer-escaping.json, which the Rust
+  // normalizer and the Python sidecar assert against too. The three build
+  // pointers independently and `source_map.get(pointer)` joins them by exact
+  // string match, so a divergence silently drops source attribution.
+  it('matches the cross-language contract', async () => {
+    const fixturePath = path.resolve(
+      __dirname,
+      '../../../../crates/schemalint/tests/fixtures/pointer-escaping.json'
+    );
+    const { readFileSync } = await import('node:fs');
+    const contract = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
+      cases: { input: string; escaped: string }[];
+    };
+    expect(contract.cases.length).toBeGreaterThan(0);
+
+    for (const { input, escaped } of contract.cases) {
+      expect(escapePointerSegment(input)).toBe(escaped);
+    }
   });
 });

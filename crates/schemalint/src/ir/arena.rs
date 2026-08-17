@@ -21,6 +21,12 @@ pub struct Node {
     pub json_pointer: String,
     pub ref_target: Option<NodeId>,
     pub is_cyclic: bool,
+    /// Set by `normalize::refs::tarjan_scc` on the nodes a `$ref` cycle should
+    /// be reported at: every `$defs`/`definitions` entry in the cycle, or the
+    /// lowest node when the cycle contains none. `is_cyclic` marks every
+    /// participant, so a rule that fires on it reports once per participating
+    /// node instead.
+    pub is_cycle_root: bool,
 }
 
 /// Classification of JSON Schema node kinds.
@@ -173,6 +179,7 @@ pub fn parse_node(value: Value) -> Result<Node, ParseError> {
             json_pointer: String::new(),
             ref_target: None,
             is_cyclic: false,
+            is_cycle_root: false,
         }),
         Value::Bool(false) => Ok(Node {
             kind: NodeKind::Not,
@@ -184,6 +191,7 @@ pub fn parse_node(value: Value) -> Result<Node, ParseError> {
             json_pointer: String::new(),
             ref_target: None,
             is_cyclic: false,
+            is_cycle_root: false,
         }),
         Value::Object(map) => {
             let mut annotations = Annotations::default();
@@ -250,6 +258,7 @@ pub fn parse_node(value: Value) -> Result<Node, ParseError> {
                 json_pointer: String::new(),
                 ref_target: None,
                 is_cyclic: false,
+                is_cycle_root: false,
             })
         }
         other => Err(ParseError::InvalidRootType(json_type_name(&other))),

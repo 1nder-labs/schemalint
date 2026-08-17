@@ -4,13 +4,13 @@ use crate::rules::metadata::{RuleCategory, RuleMetadata};
 use crate::rules::registry::{Diagnostic, DiagnosticSeverity, Rule};
 
 /// Anthropic's structured-outputs documentation names "Recursive schemas" as
-/// unsupported. `tarjan_scc` (`crate::normalize::refs::tarjan_scc`) marks
-/// `is_cyclic` on every node that participates in a `$ref` cycle, not only
-/// the cycle's named entry point, so a rule that fires on each cyclic node
-/// would report one diagnostic per participating node instead of one per
-/// cycle. This rule fires only on a node that is itself a top-level
-/// `$defs`/`definitions` entry — the thing a schema author can name and
-/// fix — which reports the cycle exactly once.
+/// unsupported.
+///
+/// `tarjan_scc` marks `is_cyclic` on every node in a `$ref` cycle and
+/// `is_cycle_root` on exactly one of them, so this rule fires on the root and
+/// reports each cycle once. Gating on the pointer shape instead would miss a
+/// cycle that never passes through a `$defs` entry, which `$ref` resolution to
+/// an arbitrary pointer makes reachable.
 #[derive(Debug, Clone)]
 pub(super) struct RecursiveSchemaRule {
     pub(super) profile_name: String,
@@ -19,7 +19,7 @@ pub(super) struct RecursiveSchemaRule {
 impl Rule for RecursiveSchemaRule {
     fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         let node_ref = &arena[node];
-        if !node_ref.is_cyclic || !is_defs_entry(&node_ref.json_pointer) {
+        if !node_ref.is_cycle_root {
             return Vec::new();
         }
         vec![Diagnostic {
@@ -37,7 +37,7 @@ impl Rule for RecursiveSchemaRule {
         Some(RuleMetadata {
             name: "recursive-schema".into(),
             code: "{prefix}-S-recursive-schema".into(),
-            description: "A $defs/definitions entry must not form a $ref cycle".into(),
+            description: "A schema must not contain a $ref cycle".into(),
             rationale:
                 "Anthropic's structured-outputs documentation lists \"Recursive schemas\" among the unsupported schema features."
                     .into(),
@@ -49,15 +49,4 @@ impl Rule for RecursiveSchemaRule {
             profile: Some(self.profile_name.clone()),
         })
     }
-}
-
-/// A top-level `$defs`/`definitions` entry: the only node whose
-/// `json_pointer` has exactly the shape `/$defs/<name>` or
-/// `/definitions/<name>` with no further segment. Matches the pointers
-/// `normalize::build_defs` mints for these entries.
-fn is_defs_entry(pointer: &str) -> bool {
-    let rest = pointer
-        .strip_prefix("/\u{24}defs/")
-        .or_else(|| pointer.strip_prefix("/definitions/"));
-    matches!(rest, Some(rest) if !rest.is_empty() && !rest.contains('/'))
 }

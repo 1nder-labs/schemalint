@@ -1,4 +1,5 @@
 use crate::ir::{Arena, NodeId};
+use crate::normalize::pointer;
 use crate::normalize::NormalizeError;
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
@@ -25,6 +26,13 @@ pub fn resolve_refs(arena: &mut Arena) -> Result<Vec<(NodeId, NodeId)>, Normaliz
                 .and_then(|v| v.as_str().map(|s| (id, s.to_string())))
         })
         .collect();
+
+    // Most schemas carry no `$ref` at all. Building the index below walks the
+    // whole arena and clones every pointer, so skip it entirely rather than
+    // pay that on every normalize for nothing.
+    if refs.is_empty() {
+        return Ok(Vec::new());
+    }
 
     // Every node's JSON Pointer is already set by the time this runs
     // (`expand_and_dfs` runs before `resolve_refs`), and every pointer
@@ -156,12 +164,39 @@ pub fn tarjan_scc(arena: &mut Arena, edges: &[(NodeId, NodeId)]) {
     }
 
     // Mark nodes in SCCs of size > 1 or with self-loops.
+    //
+    // `is_cyclic` marks every participant, which is what a budget or traversal
+    // concern wants. A rule that reports a cycle wants the opposite: exactly
+    // one node. The component structure is known only here, so the single node
+    // to report at is chosen here too, rather than left for a rule to
+    // reconstruct from a per-node boolean it cannot group.
+    //
+    // Every `$defs`/`definitions` entry in the component is marked, because
+    // each one is a name a schema author can act on: a mutually recursive
+    // `A` and `B` should point at both. A cycle containing no such entry —
+    // reachable since `$ref` resolves to any pointer, not only a definition —
+    // falls back to the component's lowest node, so it still reports once
+    // instead of vanishing. Both choices are index-based and deterministic,
+    // and neither degrades to one diagnostic per participating node.
     for component in &sccs {
         let size = component.len();
         let has_self_loop = size == 1 && adj[component[0]].contains(&component[0]);
         if size > 1 || has_self_loop {
             for &node_idx in component {
                 arena[NodeId(node_idx as u32)].is_cyclic = true;
+            }
+            let named: Vec<usize> = component
+                .iter()
+                .copied()
+                .filter(|&i| pointer::is_defs_entry(&arena[NodeId(i as u32)].json_pointer))
+                .collect();
+            let roots = if named.is_empty() {
+                component.iter().copied().min().into_iter().collect()
+            } else {
+                named
+            };
+            for root in roots {
+                arena[NodeId(root as u32)].is_cycle_root = true;
             }
         }
     }

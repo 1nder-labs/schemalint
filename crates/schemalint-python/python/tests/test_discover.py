@@ -11,7 +11,11 @@ import pytest
 # Ensure the canonical wheel source tree is importable.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from schemalint_pydantic.discover import discover_models, _find_field_declaration_line
+from schemalint_pydantic.discover import (
+    discover_models,
+    _find_field_declaration_line,
+    _escape_pointer_segment,
+)
 
 
 @pytest.fixture
@@ -340,3 +344,27 @@ class TestDiscoverErrors:
                 ),
             }
         ]
+
+
+def test_escaper_matches_the_cross_language_contract():
+    """The Python escaper against the shared RFC 6901 table.
+
+    The Rust normalizer and the Node sidecar assert the same table. All three
+    build pointers independently and the Rust side joins them with an exact
+    string match, so a divergence drops source attribution silently rather
+    than failing.
+    """
+    import json
+
+    fixture = os.path.join(
+        os.path.dirname(__file__),
+        "..", "..", "..", "schemalint", "tests", "fixtures", "pointer-escaping.json",
+    )
+    with open(os.path.normpath(fixture), encoding="utf-8") as handle:
+        contract = json.load(handle)
+
+    assert contract["cases"], "fixture must carry cases"
+    for case in contract["cases"]:
+        assert _escape_pointer_segment(case["input"]) == case["escaped"], (
+            f"escaping {case['input']!r} must match the cross-language contract"
+        )

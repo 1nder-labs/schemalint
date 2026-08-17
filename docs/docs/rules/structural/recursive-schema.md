@@ -10,7 +10,7 @@
 
 ## Description
 
-A $defs/definitions entry must not form a $ref cycle
+A schema must not contain a $ref cycle
 
 ## Rationale
 

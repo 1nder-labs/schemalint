@@ -27,6 +27,7 @@ pub fn desugar_type_arrays(arena: &mut Arena, node_id: NodeId) {
                     json_pointer: String::new(),
                     ref_target: None,
                     is_cyclic: false,
+                    is_cycle_root: false,
                 };
                 let child_id = arena.alloc(child);
                 let parent_ptr = arena[node_id].json_pointer.clone();

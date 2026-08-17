@@ -114,7 +114,7 @@ function isZObjectCallExpression(node, tsModule) {
  * `~` step would then re-escape, corrupting a name that already contains a
  * literal `~1`.
  */
-function escapePointerSegment(segment) {
+export function escapePointerSegment(segment) {
     return segment.replace(/~/g, '~0').replace(/\//g, '~1');
 }
 /**

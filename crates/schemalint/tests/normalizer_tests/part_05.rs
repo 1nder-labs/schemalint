@@ -157,3 +157,35 @@ fn normalize_numeric_index_joins_stay_unescaped() {
     assert!(pointers.contains(&"/oneOf/0"));
     assert!(pointers.contains(&"/prefixItems/0"));
 }
+
+// ---------------------------------------------------------------------------
+// Cross-language escaping contract
+// ---------------------------------------------------------------------------
+
+/// The Rust escaper against the shared table in
+/// `tests/fixtures/pointer-escaping.json`.
+///
+/// The same table is asserted by the Node sidecar (`test_discover.ts`) and the
+/// Python sidecar (`test_discover.py`). Three implementations exist because the
+/// three runtimes build pointers independently; the table is what keeps them
+/// byte-identical, since a divergence drops source attribution silently instead
+/// of failing.
+#[test]
+fn rust_escaper_matches_the_cross_language_contract() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/pointer-escaping.json");
+    let raw = std::fs::read_to_string(&path).expect("read pointer-escaping.json");
+    let fixture: serde_json::Value = serde_json::from_str(&raw).expect("parse fixture");
+    let cases = fixture["cases"].as_array().expect("cases array");
+    assert!(!cases.is_empty(), "fixture must carry cases");
+
+    for case in cases {
+        let input = case["input"].as_str().expect("input");
+        let expected = case["escaped"].as_str().expect("escaped");
+        assert_eq!(
+            schemalint::normalize::pointer::escape_pointer_segment(input),
+            expected,
+            "escaping {input:?} must match the cross-language contract"
+        );
+    }
+}

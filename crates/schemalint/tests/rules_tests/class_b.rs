@@ -1042,6 +1042,38 @@ fn recursive_schema_rule_fires_once_for_self_referencing_defs_entry() {
 }
 
 #[test]
+fn recursive_schema_rule_fires_for_a_cycle_with_no_defs_entry() {
+    // Regression: the rule originally gated on the node's pointer having the
+    // shape `/$defs/<name>`, which was a stand-in for "report this cycle
+    // once". Widening `$ref` resolution to any in-document pointer made a
+    // cycle with no `$defs` entry reachable, and such a cycle then reported
+    // nothing at all — a false green in a rule whose whole job is to catch it.
+    let profile = recursive_schema_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "object",
+        "properties": {
+            "a": {
+                "type": "object",
+                "properties": { "b": { "$ref": "#/properties/a" } }
+            }
+        }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "a cycle through no $defs entry must still report exactly once, got {:?}",
+        diagnostics
+    );
+    assert_eq!(hits[0].pointer, "/properties/a");
+}
+
+#[test]
 fn recursive_schema_rule_fires_once_per_definition_for_mutual_recursion() {
     let profile = recursive_schema_profile();
     let schema = normalize_schema(serde_json::json!({
