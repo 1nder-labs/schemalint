@@ -91,12 +91,13 @@ fn build_defs(
         }
     }
 
-    // `definitions` (Draft 7) — `$defs` takes precedence on name conflict.
+    // `definitions` (Draft 7) — `$defs` takes precedence on name conflict,
+    // but only in the `defs` lookup map used for `$ref` resolution. A
+    // colliding `definitions` entry is still allocated as its own node so a
+    // rule can visit it: the provider still sees that subtree even when a
+    // schema author never references it, so it still needs to be linted.
     if let Some(Value::Object(map)) = definitions_val {
         for (name, val) in map {
-            if defs.contains_key(&name) {
-                continue;
-            }
             let child = parse_node(val).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
             arena[child_id].json_pointer =
@@ -104,7 +105,9 @@ fn build_defs(
             arena[child_id].parent = Some(root_id);
             arena[child_id].depth = 1;
             arena[root_id].children.push(child_id);
-            defs.insert(name, child_id);
+            if !defs.contains_key(&name) {
+                defs.insert(name, child_id);
+            }
         }
     }
 
