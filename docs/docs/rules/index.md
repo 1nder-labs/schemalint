@@ -49,3 +49,4 @@ This page lists all lint rules grouped by category.
 | [then](./keyword/then.md) | keyword | Forbid | `OAI-K-then` | `ANT-K-then` |
 | [unevaluatedProperties](./keyword/unevaluatedProperties.md) | keyword | Forbid | `OAI-K-unevaluatedProperties` | `—` |
 | [uniqueItems](./keyword/uniqueItems.md) | keyword | Forbid | `OAI-K-uniqueItems` | `ANT-K-uniqueItems` |
+| [unknown-keyword](./structural/unknown-keyword.md) | structural | Warn | `OAI-S-unknown-keyword` | `ANT-S-unknown-keyword` |

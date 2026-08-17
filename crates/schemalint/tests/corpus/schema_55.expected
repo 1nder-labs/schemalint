@@ -1,5 +1,17 @@
 [
   {
+    "code": "OAI-S-unknown-keyword",
+    "severity": "warning",
+    "message": "keyword 'additionalItems' is not recognized by schemalint",
+    "pointer": "/properties/tuple",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_55.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "schemalint does not recognize 'additionalItems' and cannot validate it. Confirm the provider accepts it, or remove it if it is not needed.",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/unknown-keyword"
+  },
+  {
     "code": "OAI-K-oneOf",
     "severity": "error",
     "message": "keyword 'oneOf' is not supported by openai.so.2026-04-30",

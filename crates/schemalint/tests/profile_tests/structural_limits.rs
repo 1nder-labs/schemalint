@@ -94,3 +94,64 @@ another_unknown_integer = 42
     assert!(matches!(error, ProfileError::InvalidToml(_)));
     assert!(error.to_string().contains("some_future_key_not_yet_known"));
 }
+
+// ---------------------------------------------------------------------------
+// unknown_keyword_policy
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unknown_keyword_policy_absent_defaults_to_warn() {
+    let toml = r#"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+"#;
+
+    let profile = load(toml.as_bytes()).unwrap();
+    assert_eq!(
+        profile.structural.unknown_keyword_policy,
+        UnknownKeywordPolicy::Warn
+    );
+}
+
+#[test]
+fn unknown_keyword_policy_parses_allow_warn_forbid() {
+    for (value, expected) in [
+        ("allow", UnknownKeywordPolicy::Allow),
+        ("warn", UnknownKeywordPolicy::Warn),
+        ("forbid", UnknownKeywordPolicy::Forbid),
+    ] {
+        let toml = format!(
+            r#"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+unknown_keyword_policy = "{value}"
+"#
+        );
+        let profile = load(toml.as_bytes()).unwrap();
+        assert_eq!(
+            profile.structural.unknown_keyword_policy, expected,
+            "unknown_keyword_policy = \"{value}\" did not parse to {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn unknown_keyword_policy_invalid_value_errors() {
+    let toml = r#"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+unknown_keyword_policy = "strip"
+"#;
+
+    let error = load(toml.as_bytes()).unwrap_err();
+    assert!(matches!(error, ProfileError::InvalidToml(_)));
+}

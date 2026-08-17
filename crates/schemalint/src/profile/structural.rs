@@ -113,6 +113,14 @@ impl StructuralLimits {
             max_union_properties,
             external_refs,
             forbid_allof_with_ref,
+            // Not a `StructuralRuleId`: its diagnostic defaults to `Warn`
+            // (KTD5), and this parity apparatus only expresses rules whose
+            // "reject" boundary case is an Error — `evaluate_structural_truth`
+            // matches at error severity only (KTD10), so a warn-level reject
+            // would misreport as accept. U8 rules it out of the boundary
+            // machinery on purpose; the field is still named here so this
+            // stays an exhaustive, conscious decision.
+            unknown_keyword_policy: _,
         } = self;
         [
             (*require_object_root, StructuralRuleId::ObjectRoot),

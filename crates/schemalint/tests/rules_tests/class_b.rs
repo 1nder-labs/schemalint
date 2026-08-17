@@ -109,6 +109,45 @@ external_refs = true
     )
 }
 
+fn unknown_keyword_warn_profile() -> schemalint::profile::Profile {
+    load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+unknown_keyword_policy = "warn"
+"##,
+    )
+}
+
+fn unknown_keyword_forbid_profile() -> schemalint::profile::Profile {
+    load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+unknown_keyword_policy = "forbid"
+"##,
+    )
+}
+
+fn unknown_keyword_allow_profile() -> schemalint::profile::Profile {
+    load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+unknown_keyword_policy = "allow"
+"##,
+    )
+}
+
 /// Profile with every Class B flag on, for testing metadata coverage.
 fn all_class_b_profile() -> schemalint::profile::Profile {
     load_test_profile(
@@ -1075,6 +1114,203 @@ fn class_b_allof_with_ref_metadata_fields() {
     assert_eq!(meta.code, "{prefix}-S-allof-with-ref");
     assert_eq!(meta.category.as_str(), "structural");
     assert!(!meta.description.is_empty());
+    assert_eq!(meta.profile.as_deref(), Some("test"));
+}
+
+// ===========================================================================
+// UnknownKeywordRule
+// ===========================================================================
+
+#[test]
+fn unknown_keyword_rule_fires_one_warning_under_default_policy() {
+    let profile = unknown_keyword_warn_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "string",
+        "contentEncoding": "base64"
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-unknown-keyword")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected exactly one unknown-keyword diagnostic, got {:?}",
+        diagnostics
+    );
+    assert_eq!(hits[0].severity, DiagnosticSeverity::Warning);
+    assert!(hits[0].message.contains("contentEncoding"));
+}
+
+#[test]
+fn unknown_keyword_rule_fires_error_under_forbid_policy() {
+    let profile = unknown_keyword_forbid_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "string",
+        "contentEncoding": "base64"
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-unknown-keyword")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected exactly one unknown-keyword diagnostic, got {:?}",
+        diagnostics
+    );
+    assert_eq!(hits[0].severity, DiagnosticSeverity::Error);
+}
+
+#[test]
+fn unknown_keyword_rule_silent_under_allow_policy() {
+    let profile = unknown_keyword_allow_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "string",
+        "contentEncoding": "base64"
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    assert!(
+        diagnostics.is_empty(),
+        "expected no diagnostics under the allow policy, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn unknown_keyword_rule_reports_one_diagnostic_per_key() {
+    let profile = unknown_keyword_warn_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "string",
+        "contentEncoding": "base64",
+        "contentMediaType": "text/plain"
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-unknown-keyword")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        2,
+        "expected two diagnostics for two unrecognized keys on one node, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn unknown_keyword_rule_reports_nested_key_at_its_own_pointer() {
+    let profile = unknown_keyword_warn_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "object",
+        "properties": {
+            "x": { "type": "string", "contentEncoding": "base64" }
+        }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-unknown-keyword")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected one diagnostic for the nested unrecognized key, got {:?}",
+        diagnostics
+    );
+    assert_eq!(hits[0].pointer, "/properties/x");
+}
+
+#[test]
+fn unknown_keyword_rule_pointer_escapes_user_controlled_property_name() {
+    let profile = unknown_keyword_warn_profile();
+    // The property name itself carries `~` and `/`, so the owning node's
+    // pointer must escape it (`~` -> `~0` before `/` -> `~1`) before the
+    // diagnostic is built.
+    let schema = normalize_schema(serde_json::json!({
+        "type": "object",
+        "properties": {
+            "a/b~c": { "type": "string", "contentEncoding": "base64" }
+        }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-unknown-keyword")
+        .collect();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].pointer, "/properties/a~1b~0c");
+}
+
+#[test]
+fn unknown_keyword_rule_never_fires_for_fully_recognized_schema() {
+    let schema = normalize_schema(serde_json::json!({
+        "type": "object",
+        "properties": { "x": { "type": "string" } },
+        "required": ["x"],
+        "additionalProperties": false
+    }));
+    for profile in [
+        unknown_keyword_warn_profile(),
+        unknown_keyword_forbid_profile(),
+        unknown_keyword_allow_profile(),
+    ] {
+        let ruleset = RuleSet::from_profile(&profile).unwrap();
+        let diagnostics = ruleset.check_all(&schema.arena, &profile);
+        assert!(
+            diagnostics.iter().all(|d| d.code != "TEST-S-unknown-keyword"),
+            "no recognized-keyword schema should trigger unknown-keyword under any policy, got {:?}",
+            diagnostics
+        );
+    }
+}
+
+#[test]
+fn unknown_keyword_rule_does_not_fire_for_schema_keyword() {
+    // $schema is routed to dialect detection in the IR parser and never
+    // enters Node::unknown, so it must never trigger this rule — checked
+    // under the strictest (forbid) policy so a silent inclusion would
+    // surface as an error.
+    let profile = unknown_keyword_forbid_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    assert!(
+        diagnostics
+            .iter()
+            .all(|d| d.code != "TEST-S-unknown-keyword"),
+        "expected $schema to be excluded from the unknown-keyword map, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn class_b_unknown_keyword_metadata_fields() {
+    let profile = unknown_keyword_warn_profile();
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let meta = ruleset
+        .dynamic_rules()
+        .filter_map(|r| r.metadata())
+        .find(|m| m.name == "unknown-keyword")
+        .expect("UnknownKeywordRule must return metadata");
+
+    assert_eq!(meta.code, "{prefix}-S-unknown-keyword");
+    assert_eq!(meta.category.as_str(), "structural");
+    assert!(!meta.description.is_empty());
+    assert!(!meta.rationale.is_empty());
+    assert!(!meta.bad_example.is_empty());
+    assert!(!meta.good_example.is_empty());
     assert_eq!(meta.profile.as_deref(), Some("test"));
 }
 

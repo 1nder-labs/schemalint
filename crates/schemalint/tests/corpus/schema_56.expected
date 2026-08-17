@@ -1,0 +1,14 @@
+[
+  {
+    "code": "OAI-S-unknown-keyword",
+    "severity": "warning",
+    "message": "keyword 'contentEncoding' is not recognized by schemalint",
+    "pointer": "/properties/payload",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_56.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "schemalint does not recognize 'contentEncoding' and cannot validate it. Confirm the provider accepts it, or remove it if it is not needed.",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/unknown-keyword"
+  }
+]

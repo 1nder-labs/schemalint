@@ -1,4 +1,4 @@
-use schemalint::profile::{load, ProfileError, Severity, StructuralLimits};
+use schemalint::profile::{load, ProfileError, Severity, StructuralLimits, UnknownKeywordPolicy};
 
 #[path = "profile_tests/additional_errors.rs"]
 mod additional_errors;

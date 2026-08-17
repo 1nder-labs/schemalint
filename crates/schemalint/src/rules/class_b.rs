@@ -4,6 +4,7 @@ pub(crate) mod helpers;
 mod object;
 mod refs;
 mod root;
+mod unknown_keyword;
 
 use crate::profile::Profile;
 use crate::rules::registry::Rule;
@@ -15,6 +16,7 @@ use budget::{BudgetRule, ConditionalEnumStringBudgetRule, MaxDepthRule};
 use object::{AdditionalPropertiesFalseRule, AllPropertiesRequiredRule, ObjectRootRule};
 use refs::{AllOfWithRefRule, ExternalRefsRule};
 use root::{RootAnyOfRule, RootEnumRule};
+use unknown_keyword::{policy_severity, UnknownKeywordRule};
 
 /// Generate all Class B structural rules from a loaded profile.
 pub fn generate_class_b_rules(profile: &Profile) -> Vec<Box<dyn Rule>> {
@@ -101,6 +103,12 @@ pub fn generate_class_b_rules(profile: &Profile) -> Vec<Box<dyn Rule>> {
     }
     if s.forbid_allof_with_ref {
         rules.push(Box::new(AllOfWithRefRule {
+            profile_name: profile.name.clone(),
+        }));
+    }
+    if let Some(severity) = policy_severity(s.unknown_keyword_policy) {
+        rules.push(Box::new(UnknownKeywordRule {
+            severity,
             profile_name: profile.name.clone(),
         }));
     }

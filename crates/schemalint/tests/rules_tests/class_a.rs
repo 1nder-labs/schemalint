@@ -162,6 +162,12 @@ require_object_root = false
 
 #[test]
 fn unknown_keyword_no_class_a_rule() {
+    // No Class A rule fires for a keyword the profile never mentions — the
+    // profile's `keyword_map` has no entry for it, so `RuleSet::from_profile`
+    // never constructs a `KeywordRule` for it. Class B's unknown-keyword rule
+    // (U8) does fire, since that rule reads `Node::unknown` directly rather
+    // than the profile's keyword map; that is covered separately in
+    // class_b.rs.
     let profile = load_test_profile(
         r##"
 name = "test"
@@ -177,7 +183,11 @@ require_object_root = false
     let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
 
-    assert!(diagnostics.is_empty());
+    let class_a_hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code.contains("-K-"))
+        .collect();
+    assert!(class_a_hits.is_empty());
 }
 
 #[test]

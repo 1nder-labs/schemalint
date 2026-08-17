@@ -64,3 +64,8 @@ max_optional_properties = 24
 max_union_properties = 16
 external_refs = true
 forbid_allof_with_ref = true
+# A keyword the engine does not recognize at all (not the same as a
+# recognized keyword with unverified provider status) warns rather than
+# errors: common, unrecognized keys such as $id or examples are not
+# documented as rejected by any provider.
+unknown_keyword_policy = "warn"

@@ -64,3 +64,8 @@ max_string_length_total = 120000
 enum_string_length_threshold = 250
 max_enum_string_length = 15000
 external_refs = true
+# A keyword the engine does not recognize at all (not the same as a
+# recognized keyword with unverified provider status) warns rather than
+# errors: common, unrecognized keys such as $id or examples are not
+# documented as rejected by any provider.
+unknown_keyword_policy = "warn"

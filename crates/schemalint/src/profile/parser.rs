@@ -27,6 +27,24 @@ impl Severity {
     }
 }
 
+/// Policy for a keyword the engine does not recognize at all — one that
+/// carries no accessor in `Keyword` and lands in `Node::unknown`.
+///
+/// This is deliberately a separate type from `Severity`. `Severity::Unknown`
+/// already states a different fact: a keyword the engine DOES recognize, but
+/// whose provider status was never verified. Reusing that variant here would
+/// merge two statements ("the engine does not know this keyword" vs. "the
+/// engine knows this keyword but not the provider's stance on it") that must
+/// stay distinguishable in the profile data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UnknownKeywordPolicy {
+    Allow,
+    #[default]
+    Warn,
+    Forbid,
+}
+
 /// A loaded capability profile.
 #[derive(Debug, Clone)]
 pub struct Profile {
@@ -78,6 +96,9 @@ pub struct StructuralLimits {
     /// branches are rejected.  Currently used by the Anthropic profile, which
     /// does not support that pattern in Structured Outputs.
     pub forbid_allof_with_ref: bool,
+    /// Policy for a keyword the engine does not recognize at all (see
+    /// `UnknownKeywordPolicy`). Absent from the TOML means `Warn`.
+    pub unknown_keyword_policy: UnknownKeywordPolicy,
 }
 
 /// Errors that can occur when loading a profile.
