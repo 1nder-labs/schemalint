@@ -200,3 +200,35 @@ require_object_root = false
 
     assert_eq!(diagnostics.len(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// U1: a draft-07 tuple member is walked like any other nested schema, so a
+// forbidden keyword inside it is still reported at its own pointer.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn class_a_forbid_allof_inside_tuple_member() {
+    let profile = load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+allOf = "forbid"
+
+[structural]
+require_object_root = false
+"##,
+    );
+    let schema = normalize_schema(serde_json::json!({
+        "type": "array",
+        "items": [
+            { "type": "string" },
+            { "allOf": [{ "type": "number" }] }
+        ]
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "TEST-K-allOf");
+    assert_eq!(diagnostics[0].pointer, "/items/1");
+}

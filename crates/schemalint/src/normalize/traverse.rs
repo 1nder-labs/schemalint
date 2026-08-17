@@ -50,15 +50,38 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
         }
     }
 
-    // Items (single schema)
+    // Items: either a single schema (object or boolean) or, in the draft-07
+    // tuple form, an array of per-position member schemas.
     if let Some(val) = &ann.items {
-        let child =
-            parse_node(val.clone()).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
-        let child_id = arena.alloc(child);
-        arena[child_id].parent = Some(node_id);
-        arena[child_id].depth = depth + 1;
-        arena[child_id].json_pointer = format!("{}/items", ptr);
-        arena[node_id].children.push(child_id);
+        match val {
+            Value::Array(arr) => {
+                for (i, item_val) in arr.iter().enumerate() {
+                    let child = parse_node(item_val.clone())
+                        .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+                    let child_id = arena.alloc(child);
+                    arena[child_id].parent = Some(node_id);
+                    arena[child_id].depth = depth + 1;
+                    arena[child_id].json_pointer = format!("{}/items/{}", ptr, i);
+                    arena[node_id].children.push(child_id);
+                }
+            }
+            Value::Object(_) | Value::Bool(_) => {
+                let child = parse_node(val.clone())
+                    .map_err(|e| NormalizeError::ParseError(e.to_string()))?;
+                let child_id = arena.alloc(child);
+                arena[child_id].parent = Some(node_id);
+                arena[child_id].depth = depth + 1;
+                arena[child_id].json_pointer = format!("{}/items", ptr);
+                arena[node_id].children.push(child_id);
+            }
+            other => {
+                return Err(NormalizeError::ParseError(format!(
+                    "{}/items: expected object, boolean, or array, got {}",
+                    ptr,
+                    json_value_type_name(other)
+                )));
+            }
+        }
     }
 
     // Prefix items
@@ -216,4 +239,17 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
     }
 
     Ok(())
+}
+
+/// Name a JSON value's type for an error message. Mirrors
+/// `crate::ir::arena::json_type_name`, which is private to that module.
+fn json_value_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Array(_) => "array",
+        Value::String(_) => "string",
+        Value::Number(_) => "number",
+        Value::Bool(_) => "boolean",
+        Value::Object(_) => "object",
+    }
 }

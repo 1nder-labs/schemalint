@@ -1,0 +1,14 @@
+[
+  {
+    "code": "OAI-K-minProperties",
+    "severity": "error",
+    "message": "keyword 'minProperties' is not supported by openai.so.2026-04-30",
+    "pointer": "/properties/tuple/items/1",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_53.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "remove 'minProperties' from the schema. If you need the constraint, check it in your own code after the model responds.",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/minProperties"
+  }
+]
