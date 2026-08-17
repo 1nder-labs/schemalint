@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 use crate::ir::{parse_node, Arena, NodeId};
+use crate::normalize::pointer::escape_pointer_segment;
 use crate::normalize::NormalizeError;
 
 /// Recursively expand a node into a tree by creating child nodes for all
@@ -43,7 +44,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
-            arena[child_id].json_pointer = format!("{}/properties/{}", ptr, key);
+            arena[child_id].json_pointer =
+                format!("{}/properties/{}", ptr, escape_pointer_segment(key));
             arena[node_id].children.push(child_id);
         }
     }
@@ -145,7 +147,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
-            arena[child_id].json_pointer = format!("{}/dependentSchemas/{}", ptr, key);
+            arena[child_id].json_pointer =
+                format!("{}/dependentSchemas/{}", ptr, escape_pointer_segment(key));
             arena[node_id].children.push(child_id);
         }
     }
@@ -158,7 +161,8 @@ fn expand_children(arena: &mut Arena, node_id: NodeId) -> Result<(), NormalizeEr
             let child_id = arena.alloc(child);
             arena[child_id].parent = Some(node_id);
             arena[child_id].depth = depth + 1;
-            arena[child_id].json_pointer = format!("{}/patternProperties/{}", ptr, key);
+            arena[child_id].json_pointer =
+                format!("{}/patternProperties/{}", ptr, escape_pointer_segment(key));
             arena[node_id].children.push(child_id);
         }
     }

@@ -211,6 +211,18 @@ def _extract_model_v1(cls, name: str) -> Dict[str, Any]:
     }
 
 
+def _escape_pointer_segment(segment: str) -> str:
+    """Escape a single JSON Pointer (RFC 6901) segment.
+
+    '~' is replaced with '~0' first, then '/' is replaced with '~1'. The
+    order matters: escaping '/' first would introduce new '~1' sequences
+    that the '~' step would then re-escape, corrupting a name that already
+    contains a literal '~1'. The Rust normalizer and the Node source-map
+    builder escape the same way at the same join.
+    """
+    return segment.replace("~", "~0").replace("/", "~1")
+
+
 def _build_source_map_v2(cls) -> Dict[str, Any]:
     """Build a source map for Pydantic v2 model fields.
 
@@ -235,7 +247,7 @@ def _build_source_map_v2(cls) -> Dict[str, Any]:
     for field_name in model_fields:
         decl_line = _find_field_declaration_line(source_lines, start_line, field_name)
         if decl_line is not None:
-            pointer = f"/properties/{field_name}"
+            pointer = f"/properties/{_escape_pointer_segment(field_name)}"
             source_map[pointer] = {
                 "file": source_file,
                 "line": decl_line,
@@ -264,7 +276,7 @@ def _build_source_map_v1(cls) -> Dict[str, Any]:
     for field_name in model_fields:
         decl_line = _find_field_declaration_line(source_lines, start_line, field_name)
         if decl_line is not None:
-            pointer = f"/properties/{field_name}"
+            pointer = f"/properties/{_escape_pointer_segment(field_name)}"
             source_map[pointer] = {
                 "file": source_file,
                 "line": decl_line,

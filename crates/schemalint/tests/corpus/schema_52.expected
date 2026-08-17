@@ -1,0 +1,38 @@
+[
+  {
+    "code": "OAI-K-contains",
+    "severity": "error",
+    "message": "keyword 'contains' is not supported by openai.so.2026-04-30",
+    "pointer": "/$defs/shared~1config",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_52.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "remove 'contains' from the schema. If you need the constraint, check it in your own code after the model responds.",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/contains"
+  },
+  {
+    "code": "OAI-K-uniqueItems",
+    "severity": "error",
+    "message": "keyword 'uniqueItems' is not supported by openai.so.2026-04-30",
+    "pointer": "/properties/a~1b",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_52.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "remove 'uniqueItems' from the schema. If you need the constraint, check it in your own code after the model responds.",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/uniqueItems"
+  },
+  {
+    "code": "OAI-K-contains",
+    "severity": "error",
+    "message": "keyword 'contains' is not supported by openai.so.2026-04-30",
+    "pointer": "/properties/c~0d",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_52.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "remove 'contains' from the schema. If you need the constraint, check it in your own code after the model responds.",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/contains"
+  }
+]

@@ -206,6 +206,10 @@ fn root_pointer(pointer: &str) -> String {
 
 /// Keyword rules point at the schema node that owns the keyword so source-map
 /// lookup remains stable; provider truth paths point at the keyword itself.
+///
+/// Splitting on the last `/` stays correct under RFC 6901 escaping: an
+/// escaped user-controlled segment never contains a raw `/` character (it is
+/// always written as `~1`), so this split can never land inside a segment.
 fn keyword_schema_pointer(keyword_pointer: &str) -> String {
     match keyword_pointer.rsplit_once('/') {
         Some(("", _)) => "/".into(),

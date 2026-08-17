@@ -6,6 +6,7 @@ use crate::normalize::dialect::Dialect;
 
 pub mod desugar;
 pub mod dialect;
+pub mod pointer;
 pub mod refs;
 pub mod traverse;
 
@@ -81,7 +82,8 @@ fn build_defs(
         for (name, val) in map {
             let child = parse_node(val).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
-            arena[child_id].json_pointer = format!("/\u{24}defs/{}", name);
+            arena[child_id].json_pointer =
+                format!("/\u{24}defs/{}", pointer::escape_pointer_segment(&name));
             arena[child_id].parent = Some(root_id);
             arena[child_id].depth = 1;
             arena[root_id].children.push(child_id);
@@ -97,7 +99,8 @@ fn build_defs(
             }
             let child = parse_node(val).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
-            arena[child_id].json_pointer = format!("/definitions/{}", name);
+            arena[child_id].json_pointer =
+                format!("/definitions/{}", pointer::escape_pointer_segment(&name));
             arena[child_id].parent = Some(root_id);
             arena[child_id].depth = 1;
             arena[root_id].children.push(child_id);

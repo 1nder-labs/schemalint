@@ -362,6 +362,34 @@ describe('discoverZodSchemas', () => {
     expect(Object.keys(model.source_map)).not.toContain('/properties/extra');
   });
 
+  it('escapes RFC 6901 special characters in property names so the pointer still matches source attribution', async () => {
+    // Regression: a Zod property named with '/' or '~' must still receive
+    // its source line. The pointer key must be RFC 6901-escaped ('~' -> '~0'
+    // first, then '/' -> '~1') the same way the Rust normalizer escapes the
+    // matching `/properties/{key}` join, so `source_map.get(&pointer)` keeps
+    // agreeing between the two sides.
+    const result = await discoverZodSchemas('escaped-key-props.ts');
+
+    const model = result.models[0];
+    expect(model).toBeDefined();
+
+    // 'a/b' → /properties/a~1b
+    expect(model.source_map).toHaveProperty('/properties/a~1b');
+    const slashSpan = model.source_map['/properties/a~1b'];
+    expect(slashSpan.file).toContain('escaped-key-props.ts');
+    expect(slashSpan.line).toBeGreaterThan(0);
+
+    // 'c~d' → /properties/c~0d
+    expect(model.source_map).toHaveProperty('/properties/c~0d');
+    const tildeSpan = model.source_map['/properties/c~0d'];
+    expect(tildeSpan.file).toContain('escaped-key-props.ts');
+    expect(tildeSpan.line).toBeGreaterThan(0);
+
+    // The raw, unescaped names must NOT appear as pointer keys.
+    expect(Object.keys(model.source_map)).not.toContain('/properties/a/b');
+    expect(Object.keys(model.source_map)).not.toContain('/properties/c~d');
+  });
+
   it('source glob filter does not drop files whose path shares a prefix with cwd but is outside it', async () => {
     // Regression: the old startsWith(projectRoot) check incorrectly accepted
     // a file at "/path/to/appExtra/foo.ts" when cwd is "/path/to/app", because
