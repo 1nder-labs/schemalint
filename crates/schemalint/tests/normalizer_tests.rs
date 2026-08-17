@@ -15,3 +15,4 @@ include!("normalizer_tests/part_05.rs");
 include!("normalizer_tests/part_06.rs");
 include!("normalizer_tests/part_07.rs");
 include!("normalizer_tests/part_08.rs");
+include!("normalizer_tests/part_09.rs");

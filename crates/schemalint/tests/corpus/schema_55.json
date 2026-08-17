@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "tuple": {
+      "type": "array",
+      "items": [{ "type": "string" }],
+      "additionalItems": {
+        "oneOf": [{ "type": "string" }, { "type": "integer" }]
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": ["tuple"]
+}
