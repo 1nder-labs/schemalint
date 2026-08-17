@@ -1074,6 +1074,47 @@ fn recursive_schema_rule_fires_for_a_cycle_with_no_defs_entry() {
 }
 
 #[test]
+fn recursive_schema_rule_fires_for_a_cycle_closed_through_nesting() {
+    // Regression: cycle detection used to approximate containment with a
+    // single hop from the `$ref` node to its parent, so a cycle only closed
+    // when the `$ref` sat exactly one level beneath its target. Here it sits
+    // two levels down, so the schema was never marked cyclic at all and no
+    // rule could report it. The graph now unions the containment tree with
+    // the real ref edges.
+    let profile = recursive_schema_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "object",
+        "properties": {
+            "a": {
+                "type": "object",
+                "properties": {
+                    "b": {
+                        "type": "object",
+                        "properties": { "c": { "$ref": "#/properties/a" } }
+                    }
+                }
+            }
+        }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "a cycle closed through two levels of nesting must report once, got {:?}",
+        diagnostics
+    );
+    assert_eq!(
+        hits[0].pointer, "/properties/a",
+        "the outermost node of the cycle is the actionable one"
+    );
+}
+
+#[test]
 fn recursive_schema_rule_fires_once_per_definition_for_mutual_recursion() {
     let profile = recursive_schema_profile();
     let schema = normalize_schema(serde_json::json!({

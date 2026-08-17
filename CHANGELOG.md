@@ -14,6 +14,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- A `definitions` entry shadowed by a same-named `$defs` entry is now linted. It was never allocated, so a forbidden keyword inside it reported nothing while the provider still received that subtree
+- A `$ref` to any in-document pointer now resolves, not only `#/$defs/<name>` and `#/definitions/<name>`. A Zod 3 project that reuses one sub-schema emits `{"$ref": "#/properties/a"}` and previously failed to lint entirely
+- The draft-07 tuple form `items: [A, B]` now normalizes. Zod 3 emits it for `z.tuple()`, and it previously aborted the whole target
+- A `$ref` cycle is now detected wherever it closes, including through several levels of nesting or with no `$defs` entry involved, and is reported once per named definition
+- JSON pointers are escaped per RFC 6901 in the Rust normalizer and both sidecars, so a property, pattern, or definition name containing `/` or `~` addresses the right node
+- A nested diagnostic falls back to its nearest mapped ancestor for file and line instead of reporting no location
+- An empty Zod discovery names its cause: no file on disk, files outside the TypeScript program, or files with no schema
+
+### Added
+- A profile-level `unknown_keyword_policy` (allow / warn / forbid, default warn) reporting keywords the engine does not recognize, and traversal into subschemas nested inside `unevaluatedItems`, `additionalItems`, `contentSchema`, and draft-07 `dependencies`
+- Anthropic rules for recursive schemas and non-object roots, both documented as unsupported
+
+### Changed
+- Anthropic's `max_optional_properties` and `max_union_properties` are removed. Anthropic publishes no such limits, so they rejected schemas the API accepts
+- OpenAI's `minLength`, `maxLength`, `patternProperties`, and `discriminator` now warn. None appears in OpenAI's supported list, and none is documented as rejected
+
+### Upgrade notes
+- These fixes make the linter see schema content it previously could not, so a schema you did not edit can newly report errors: a shadowed `definitions` entry, a keyword nested inside an unrecognized applicator, a recursive schema, or a non-object root under the Anthropic profile. That is the defect being corrected, not a regression
+- The unknown-keyword rule and the four OpenAI reclassifications emit warnings only, which never affect the exit code
+- Both dated profiles were edited in place, so a pinned `openai.so.2026-04-30` or `anthropic.so.2026-04-30` resolves to a changed ruleset
+
 ### Added
 - Multi-provider static analysis for JSON Schema compatibility with LLM structured-output APIs
 - Built-in capability profiles for OpenAI and Anthropic Structured Outputs

@@ -49,9 +49,9 @@ pub fn normalize(value: Value) -> Result<NormalizedSchema, NormalizeError> {
     // Expand the full tree so that every $ref node exists before resolution.
     traverse::expand_and_dfs(&mut arena, root_id)?;
 
-    let _ref_edges = refs::resolve_refs(&mut arena)?;
-    let transitive_edges = refs::transitive_ref_edges(&arena, &defs);
-    refs::tarjan_scc(&mut arena, &transitive_edges);
+    let ref_edges = refs::resolve_refs(&mut arena)?;
+    let cycle_edges = refs::cycle_edges(&arena, &ref_edges);
+    refs::tarjan_scc(&mut arena, &cycle_edges);
 
     // Desugar type arrays for all nodes.
     let all_ids: Vec<NodeId> = arena.iter().map(|(id, _)| id).collect();

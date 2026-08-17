@@ -358,6 +358,13 @@ impl BudgetRule {
         }
     }
 
+    /// Dormant: no shipped profile sets this limit.
+    ///
+    /// Anthropic's was removed because Anthropic publishes no such number, and
+    /// OpenAI never had one. The mechanism is provider-agnostic and is covered
+    /// by `tests/provider_limits_tests.rs` through a synthetic profile, so it
+    /// is kept for a provider that does publish one rather than deleted and
+    /// rebuilt later.
     pub(super) fn max_optional_properties(limit: u32, profile_name: String) -> Self {
         Self {
             limit,
@@ -366,6 +373,8 @@ impl BudgetRule {
         }
     }
 
+    /// Dormant: no shipped profile sets this limit. See
+    /// [`BudgetRule::max_optional_properties`] for why it is kept.
     pub(super) fn max_union_properties(limit: u32, profile_name: String) -> Self {
         Self {
             limit,
