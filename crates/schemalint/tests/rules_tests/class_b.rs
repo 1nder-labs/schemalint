@@ -109,6 +109,19 @@ external_refs = true
     )
 }
 
+fn recursive_schema_profile() -> schemalint::profile::Profile {
+    load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+forbid_recursive_schemas = true
+"##,
+    )
+}
+
 fn unknown_keyword_warn_profile() -> schemalint::profile::Profile {
     load_test_profile(
         r##"
@@ -165,6 +178,7 @@ forbid_root_any_of = true
 forbid_root_enum = true
 external_refs = true
 forbid_allof_with_ref = true
+forbid_recursive_schemas = true
 "##,
     )
 }
@@ -995,6 +1009,133 @@ require_object_root = false
 }
 
 // ===========================================================================
+// RecursiveSchemaRule
+// ===========================================================================
+
+#[test]
+fn recursive_schema_rule_fires_once_for_self_referencing_defs_entry() {
+    let profile = recursive_schema_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$defs": {
+            "Node": {
+                "type": "object",
+                "properties": { "next": { "$ref": "#/$defs/Node" } }
+            }
+        },
+        "type": "object",
+        "properties": { "root": { "$ref": "#/$defs/Node" } }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "a self-referencing $defs entry must report exactly once, not once per cyclic node, got {:?}",
+        diagnostics
+    );
+    assert_eq!(hits[0].severity, DiagnosticSeverity::Error);
+    assert_eq!(hits[0].pointer, "/$defs/Node");
+}
+
+#[test]
+fn recursive_schema_rule_fires_once_per_definition_for_mutual_recursion() {
+    let profile = recursive_schema_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$defs": {
+            "A": {
+                "type": "object",
+                "properties": { "b": { "$ref": "#/$defs/B" } }
+            },
+            "B": {
+                "type": "object",
+                "properties": { "a": { "$ref": "#/$defs/A" } }
+            }
+        },
+        "type": "object",
+        "properties": { "root": { "$ref": "#/$defs/A" } }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let mut pointers: Vec<&str> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .map(|d| d.pointer.as_str())
+        .collect();
+    pointers.sort_unstable();
+    assert_eq!(
+        pointers,
+        vec!["/$defs/A", "/$defs/B"],
+        "a mutually recursive pair must report exactly one diagnostic per named definition, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn recursive_schema_rule_not_fire_for_shared_definition_without_cycle() {
+    let profile = recursive_schema_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$defs": {
+            "Common": { "type": "string" }
+        },
+        "type": "object",
+        "properties": {
+            "x": { "$ref": "#/$defs/Common" },
+            "y": { "$ref": "#/$defs/Common" }
+        }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "a definition referenced twice without a cycle must not be reported, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn recursive_schema_rule_not_fire_when_flag_unset() {
+    // With forbid_recursive_schemas = false (default), no RecursiveSchemaRule is generated.
+    let profile = load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+"##,
+    );
+    let schema = normalize_schema(serde_json::json!({
+        "$defs": {
+            "Node": {
+                "type": "object",
+                "properties": { "next": { "$ref": "#/$defs/Node" } }
+            }
+        },
+        "type": "object",
+        "properties": { "root": { "$ref": "#/$defs/Node" } }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "recursive-schema must not fire when forbid_recursive_schemas is false, got {:?}",
+        diagnostics
+    );
+}
+
+// ===========================================================================
 // Class B rule metadata() coverage — all flags on, find by name
 // ===========================================================================
 
@@ -1050,6 +1191,25 @@ fn class_b_root_enum_metadata_fields() {
     assert_eq!(meta.code, "{prefix}-S-root-enum");
     assert_eq!(meta.category.as_str(), "structural");
     assert!(!meta.description.is_empty());
+    assert_eq!(meta.profile.as_deref(), Some("test"));
+}
+
+#[test]
+fn class_b_recursive_schema_metadata_fields() {
+    let profile = all_class_b_profile();
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let meta = ruleset
+        .dynamic_rules()
+        .filter_map(|r| r.metadata())
+        .find(|m| m.name == "recursive-schema")
+        .expect("RecursiveSchemaRule must return metadata");
+
+    assert_eq!(meta.code, "{prefix}-S-recursive-schema");
+    assert_eq!(meta.category.as_str(), "structural");
+    assert!(!meta.description.is_empty());
+    assert!(!meta.rationale.is_empty());
+    assert!(!meta.bad_example.is_empty());
+    assert!(!meta.good_example.is_empty());
     assert_eq!(meta.profile.as_deref(), Some("test"));
 }
 

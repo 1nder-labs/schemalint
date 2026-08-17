@@ -96,6 +96,10 @@ pub struct StructuralLimits {
     /// branches are rejected.  Currently used by the Anthropic profile, which
     /// does not support that pattern in Structured Outputs.
     pub forbid_allof_with_ref: bool,
+    /// When `true`, a `$defs`/`definitions` entry that forms a `$ref` cycle
+    /// is rejected. Anthropic's structured-outputs documentation names
+    /// "Recursive schemas" as unsupported.
+    pub forbid_recursive_schemas: bool,
     /// Policy for a keyword the engine does not recognize at all (see
     /// `UnknownKeywordPolicy`). Absent from the TOML means `Warn`.
     pub unknown_keyword_policy: UnknownKeywordPolicy,

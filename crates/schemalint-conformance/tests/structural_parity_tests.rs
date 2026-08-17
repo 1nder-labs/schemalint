@@ -165,6 +165,16 @@ fn boundary_cases(rule: StructuralRuleId, limits: &StructuralLimits) -> Vec<Stru
             json!({"type": "object", "allOf": [{"$ref": "#/$defs/X"}], "$defs": {"X": {"type": "object"}}}),
             "/",
         ),
+        StructuralRuleId::RecursiveSchema => pair(
+            rule,
+            json!({"type": "object", "$defs": {"X": {"type": "string"}}, "properties": {"x": {"$ref": "#/$defs/X"}}}),
+            json!({
+                "type": "object",
+                "$defs": {"Node": {"type": "object", "properties": {"next": {"$ref": "#/$defs/Node"}}}},
+                "properties": {"root": {"$ref": "#/$defs/Node"}}
+            }),
+            "/$defs/Node",
+        ),
     }
 }
 

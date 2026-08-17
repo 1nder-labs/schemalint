@@ -2,6 +2,7 @@ mod array;
 mod budget;
 pub(crate) mod helpers;
 mod object;
+mod recursion;
 mod refs;
 mod root;
 mod unknown_keyword;
@@ -14,6 +15,7 @@ pub(crate) use helpers::schema_is_object;
 use array::ArrayItemsRule;
 use budget::{BudgetRule, ConditionalEnumStringBudgetRule, MaxDepthRule};
 use object::{AdditionalPropertiesFalseRule, AllPropertiesRequiredRule, ObjectRootRule};
+use recursion::RecursiveSchemaRule;
 use refs::{AllOfWithRefRule, ExternalRefsRule};
 use root::{RootAnyOfRule, RootEnumRule};
 use unknown_keyword::{policy_severity, UnknownKeywordRule};
@@ -103,6 +105,11 @@ pub fn generate_class_b_rules(profile: &Profile) -> Vec<Box<dyn Rule>> {
     }
     if s.forbid_allof_with_ref {
         rules.push(Box::new(AllOfWithRefRule {
+            profile_name: profile.name.clone(),
+        }));
+    }
+    if s.forbid_recursive_schemas {
+        rules.push(Box::new(RecursiveSchemaRule {
             profile_name: profile.name.clone(),
         }));
     }

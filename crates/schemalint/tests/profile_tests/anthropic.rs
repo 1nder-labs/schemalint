@@ -20,11 +20,15 @@ fn anthropic_profile_values() {
     assert_eq!(profile.code_prefix, "ANT");
     assert_eq!(profile.keyword_map.get("minimum"), Some(&Severity::Forbid));
     assert_eq!(profile.keyword_map.get("allOf"), Some(&Severity::Allow));
-    assert!(!profile.structural.require_object_root);
+    // Documented: the Messages API `input_schema` requires `type: "object"`
+    // at the root (U11).
+    assert!(profile.structural.require_object_root);
     assert!(!profile.structural.require_all_properties_in_required);
     assert!(profile.structural.require_additional_properties_false);
     assert!(profile.structural.external_refs);
     assert!(profile.structural.forbid_allof_with_ref);
+    // Documented: "Recursive schemas" are named as unsupported (U11).
+    assert!(profile.structural.forbid_recursive_schemas);
 }
 
 #[test]

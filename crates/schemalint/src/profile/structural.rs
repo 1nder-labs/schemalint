@@ -20,6 +20,7 @@ pub enum StructuralRuleId {
     MaxUnionProperties,
     ExternalRefs,
     AllOfWithRef,
+    RecursiveSchema,
 }
 
 impl StructuralRuleId {
@@ -41,6 +42,7 @@ impl StructuralRuleId {
             Self::MaxUnionProperties => "max_union_properties",
             Self::ExternalRefs => "external_refs",
             Self::AllOfWithRef => "forbid_allof_with_ref",
+            Self::RecursiveSchema => "forbid_recursive_schemas",
         }
     }
 
@@ -62,6 +64,7 @@ impl StructuralRuleId {
             Self::MaxUnionProperties => "-S-max-union-properties",
             Self::ExternalRefs => "-S-external-refs",
             Self::AllOfWithRef => "-S-allof-with-ref",
+            Self::RecursiveSchema => "-S-recursive-schema",
         }
     }
 
@@ -85,6 +88,7 @@ impl StructuralRuleId {
             "max_union_properties" => Self::MaxUnionProperties,
             "external_refs" => Self::ExternalRefs,
             "allof_with_ref" | "forbid_allof_with_ref" => Self::AllOfWithRef,
+            "recursive_schema" | "forbid_recursive_schemas" => Self::RecursiveSchema,
             _ => return None,
         })
     }
@@ -113,6 +117,7 @@ impl StructuralLimits {
             max_union_properties,
             external_refs,
             forbid_allof_with_ref,
+            forbid_recursive_schemas,
             // Not a `StructuralRuleId`: its diagnostic defaults to `Warn`
             // (KTD5), and this parity apparatus only expresses rules whose
             // "reject" boundary case is an Error — `evaluate_structural_truth`
@@ -163,6 +168,7 @@ impl StructuralLimits {
             ),
             (*external_refs, StructuralRuleId::ExternalRefs),
             (*forbid_allof_with_ref, StructuralRuleId::AllOfWithRef),
+            (*forbid_recursive_schemas, StructuralRuleId::RecursiveSchema),
         ]
         .into_iter()
         .filter_map(|(enabled, rule)| enabled.then_some(rule))

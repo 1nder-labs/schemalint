@@ -9,5 +9,17 @@
     },
     "profile": "anthropic.so.2026-04-30",
     "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/additional-properties-false"
+  },
+  {
+    "code": "ANT-S-recursive-schema",
+    "severity": "error",
+    "message": "recursive schemas are not supported",
+    "pointer": "/$defs/Node",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/ant_schema_13.json"
+    },
+    "profile": "anthropic.so.2026-04-30",
+    "hint": "Remove the $ref cycle; flatten or inline the recursive definition",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/structural/recursive-schema"
   }
 ]

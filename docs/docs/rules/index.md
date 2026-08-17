@@ -37,10 +37,11 @@ This page lists all lint rules grouped by category.
 | [minimum](./keyword/minimum.md) | keyword | Forbid | `—` | `ANT-K-minimum` |
 | [multipleOf](./keyword/multipleOf.md) | keyword | Forbid | `—` | `ANT-K-multipleOf` |
 | [not](./keyword/not.md) | keyword | Forbid | `OAI-K-not` | `ANT-K-not` |
-| [object-root](./structural/object-root.md) | structural | Forbid | `OAI-S-object-root` | `—` |
+| [object-root](./structural/object-root.md) | structural | Forbid | `OAI-S-object-root` | `ANT-S-object-root` |
 | [oneOf](./keyword/oneOf.md) | keyword | Forbid | `OAI-K-oneOf` | `—` |
 | [prefixItems](./keyword/prefixItems.md) | keyword | Warn | `OAI-K-prefixItems` | `ANT-K-prefixItems` |
 | [propertyNames](./keyword/propertyNames.md) | keyword | Forbid | `OAI-K-propertyNames` | `—` |
+| [recursive-schema](./structural/recursive-schema.md) | structural | Forbid | `—` | `ANT-S-recursive-schema` |
 | [root-anyof](./structural/root-anyof.md) | structural | Forbid | `OAI-S-root-anyof` | `—` |
 | [root-enum](./structural/root-enum.md) | structural | Forbid | `OAI-S-root-enum` | `—` |
 | [string-length-budget](./structural/string-length-budget.md) | structural | Forbid | `OAI-S-string-length-budget` | `—` |

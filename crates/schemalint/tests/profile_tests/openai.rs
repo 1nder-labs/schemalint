@@ -113,3 +113,20 @@ fn openai_profile_does_not_forbid_allof_with_ref() {
         "OpenAI profile must not enable forbid_allof_with_ref"
     );
 }
+
+/// U11 guard: the Anthropic recursion rule must not reach the OpenAI
+/// profile, and OpenAI's own object-root requirement stays untouched by it.
+#[test]
+fn openai_profile_unaffected_by_anthropic_recursion_and_object_root_rules() {
+    let bytes = schemalint::profiles::OPENAI_SO_2026_04_30.as_bytes();
+    let profile = load(bytes).unwrap();
+
+    assert!(
+        !profile.structural.forbid_recursive_schemas,
+        "OpenAI profile must not enable forbid_recursive_schemas"
+    );
+    assert!(
+        profile.structural.require_object_root,
+        "OpenAI profile already requires an object root, independent of the Anthropic change"
+    );
+}

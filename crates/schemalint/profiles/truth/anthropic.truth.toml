@@ -1,7 +1,9 @@
 structural_tests = [
+  { limit_name = "require_object_root", test_schema = '{"type":"object","properties":{"x":{"type":"string"}}}', expected_behavior = "accept" },
   { limit_name = "require_additional_properties_false", test_schema = '{"type":"object","properties":{"x":{"type":"string"}},"additionalProperties":false}', expected_behavior = "accept" },
   { limit_name = "external_refs", test_schema = '{"$ref":"#/$defs/X","$defs":{"X":{"type":"string"}}}', expected_behavior = "accept" },
   { limit_name = "forbid_allof_with_ref", test_schema = '{"type":"object","allOf":[{"type":"object"}]}', expected_behavior = "accept" },
+  { limit_name = "forbid_recursive_schemas", test_schema = '{"type":"object","$defs":{"X":{"type":"string"}},"properties":{"x":{"$ref":"#/$defs/X"}}}', expected_behavior = "accept" },
 ]
 
 [provider]
