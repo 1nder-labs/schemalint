@@ -47,6 +47,54 @@ export const Bad = z.object({ website: z.string().url() });
 }
 
 #[test]
+fn e2e_nested_identifier_schema_reports_ancestor_source() {
+    // `Inner` is a separately declared const, not an inline `z.object()`
+    // literal at the `a:` call site. The TypeScript source-map builder
+    // (`buildSourceMapFromObjectLiteral`) only recurses into an inline
+    // literal, so it maps `/properties/a` but never
+    // `/properties/a/properties/site`. The diagnostic on the nested
+    // pointer must still carry a location, taken from its mapped parent.
+    let tmp = TempDir::new().unwrap();
+    setup_ts_project(
+        tmp.path(),
+        &[(
+            "nested_identifier.ts",
+            r#"import { z } from "zod";
+const Inner = z.object({ site: z.string().url() });
+export const Outer = z.object({ a: Inner });
+"#,
+        )],
+    );
+
+    let out = run_check_node_json(
+        tmp.path(),
+        &[
+            "--source",
+            "src/**/*.ts",
+            "--profile",
+            "openai.so.2026-04-30",
+        ],
+    );
+
+    let diag = out
+        .diagnostics
+        .iter()
+        .find(|d| d.pointer == "/properties/a/properties/site")
+        .expect("should diagnose /properties/a/properties/site from Inner");
+
+    let src = diag
+        .source
+        .as_ref()
+        .expect("nested diagnostic should carry the ancestor's source span");
+    assert!(
+        src.file.ends_with("/nested_identifier.ts"),
+        "file={}",
+        src.file
+    );
+    assert_eq!(src.line, Some(3), "`a: Inner,` is on line 3");
+}
+
+#[test]
 fn e2e_clean_schema_exits_zero() {
     let tmp = TempDir::new().unwrap();
     setup_ts_project(

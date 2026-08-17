@@ -234,11 +234,38 @@ pub(super) fn attach_diagnostic_sources(
 ) {
     for diagnostic in diagnostics {
         if diagnostic.source.is_none() {
-            if let Some(span) = source_map.get(&diagnostic.pointer) {
+            if let Some(span) = nearest_mapped_source(source_map, &diagnostic.pointer) {
                 diagnostic.source = Some(span.clone());
             }
         }
     }
+}
+
+/// Find the source span for a pointer, or, failing that, for its nearest
+/// mapped ancestor.
+///
+/// The sidecars only ever emit `/properties/<name>` chains, so a nested or
+/// `$defs` pointer can miss the map even though a parent schema is mapped.
+/// Trailing segments are dropped one at a time — by slicing before the last
+/// raw `/` — until a mapped ancestor is found or the pointer is empty. A
+/// pointer segment is RFC 6901-escaped (`~1` for `/`, `~0` for `~`), so it
+/// never contains a raw `/`; slicing on the raw byte therefore always lands
+/// on a real segment boundary and never on part of an escape.
+fn nearest_mapped_source<'a>(
+    source_map: &'a HashMap<String, SourceSpan>,
+    pointer: &str,
+) -> Option<&'a SourceSpan> {
+    if let Some(span) = source_map.get(pointer) {
+        return Some(span);
+    }
+    let mut current = pointer;
+    while let Some(index) = current.rfind('/') {
+        current = &current[..index];
+        if let Some(span) = source_map.get(current) {
+            return Some(span);
+        }
+    }
+    None
 }
 
 fn profile_names(profile_rulesets: &[(&Profile, RuleSet)], indices: &[usize]) -> Vec<String> {

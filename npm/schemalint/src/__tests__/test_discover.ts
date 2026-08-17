@@ -76,6 +76,28 @@ describe('discoverZodSchemas', () => {
     );
   });
 
+  // Documents the deferred half of KTD2: a property whose value is an
+  // identifier reference to a separately declared `z.object()`, rather
+  // than an inline literal, gets no source-map entry for anything inside
+  // it. Resolving the identifier to its declaration is out of scope here —
+  // the Rust-side ancestor walk (crates/schemalint/src/cli/pipeline/evaluate.rs)
+  // covers the resulting gap by falling back to this outer entry. If this
+  // test starts failing because `/properties/a/properties/site` gained a
+  // map entry, identifier resolution has been implemented — update this
+  // test deliberately rather than only making it pass.
+  it('does not map inside a property whose value is an identifier, not an inline z.object() literal', async () => {
+    const result = await discoverZodSchemas('nested-identifier.ts');
+
+    expect(result.models).toHaveLength(1);
+    const model = result.models[0];
+    expect(model.name).toBe('Outer');
+
+    expect(model.source_map).toHaveProperty('/properties/a');
+    expect(Object.keys(model.source_map)).not.toContain(
+      '/properties/a/properties/site'
+    );
+  });
+
   it('returns empty results for non-matching glob', async () => {
     const result = await discoverZodSchemas('nonexistent*.ts');
 
