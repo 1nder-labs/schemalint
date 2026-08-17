@@ -6,15 +6,16 @@
 
 | Profile | Code |
 |---------|------|
+| openai.so.2026-04-30 | `OAI-K-minLength` |
 | anthropic.so.2026-04-30 | `ANT-K-minLength` |
 
 ## Description
 
-Flag usage of the 'minLength' keyword, which is not supported by anthropic.so.2026-04-30
+Flag usage of the 'minLength' keyword, which is discouraged by openai.so.2026-04-30
 
 ## Rationale
 
-The anthropic.so.2026-04-30 structured-output provider rejects the 'minLength' keyword. Schemas using this keyword may be rejected or silently altered.
+The openai.so.2026-04-30 structured-output provider discourages use of the 'minLength' keyword. Schemas using this keyword may be rejected or silently altered.
 
 ## Bad Example
 

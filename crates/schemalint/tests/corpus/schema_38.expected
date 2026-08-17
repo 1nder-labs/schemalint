@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "code": "OAI-K-discriminator",
+    "severity": "warning",
+    "message": "keyword 'discriminator' is not supported by openai.so.2026-04-30",
+    "pointer": "",
+    "source": {
+      "file": "crates/schemalint/tests/corpus/schema_38.json"
+    },
+    "profile": "openai.so.2026-04-30",
+    "hint": "openai.so.2026-04-30 may ignore or strip 'discriminator'. Do not rely on it; check the constraint in your own code after the model responds.",
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/discriminator"
+  }
+]

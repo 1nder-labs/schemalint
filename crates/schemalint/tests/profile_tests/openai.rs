@@ -97,8 +97,31 @@ fn openai_profile_corrections() {
     assert_eq!(profile.keyword_map.get("oneOf"), Some(&Severity::Forbid));
     assert_eq!(
         profile.keyword_map.get("patternProperties"),
-        Some(&Severity::Allow)
+        Some(&Severity::Warn)
     );
+}
+
+/// U10 guard: four keywords absent from OpenAI's documented supported list
+/// warn rather than allow. None of the four is documented as rejected
+/// either, so `warn` is the correct severity rather than `forbid`.
+#[test]
+fn openai_profile_warns_on_undocumented_keywords() {
+    let bytes = schemalint::profiles::OPENAI_SO_2026_04_30.as_bytes();
+    let profile = load(bytes).unwrap();
+
+    for kw in [
+        "minLength",
+        "maxLength",
+        "patternProperties",
+        "discriminator",
+    ] {
+        assert_eq!(
+            profile.keyword_map.get(kw),
+            Some(&Severity::Warn),
+            "keyword '{}' should be Warn in the OpenAI profile",
+            kw
+        );
+    }
 }
 
 /// P2 guard: OpenAI profile must NOT enable AllOfWithRefRule.
