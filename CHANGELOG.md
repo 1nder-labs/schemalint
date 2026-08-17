@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Upgrade notes
 - These fixes make the linter see schema content it previously could not, so a schema you did not edit can newly report errors: a shadowed `definitions` entry, a keyword nested inside an unrecognized applicator, a recursive schema, or a non-object root under the Anthropic profile. That is the defect being corrected, not a regression
 - The unknown-keyword rule and the four OpenAI reclassifications emit warnings only, which never affect the exit code
-- Both dated profiles were edited in place, so a pinned `openai.so.2026-04-30` or `anthropic.so.2026-04-30` resolves to a changed ruleset
+- Both dated profiles were corrected in place, so a pinned `openai.so.2026-04-30` or `anthropic.so.2026-04-30` resolves to a changed ruleset. The date names the provider's capability snapshot, not a schemalint release: none of these changes reflect a provider changing behavior, they correct what we believed the provider accepted on that date. A new dated profile is reserved for an actual provider-side change
 
 ### Added
 - Multi-provider static analysis for JSON Schema compatibility with LLM structured-output APIs
