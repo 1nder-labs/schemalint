@@ -1,20 +1,20 @@
 use crate::ir::{Arena, NodeId};
 use crate::normalize::NormalizeError;
 use indexmap::IndexMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Resolve internal `$ref` strings to `NodeId` targets.
 ///
-/// Phase 1 only resolves refs pointing directly to `$defs` or `definitions`
-/// entries. Any other internal ref pattern is a fatal error.
+/// An internal `$ref` (a fragment starting with `#`) may point at any node
+/// in the document, not only a `$defs`/`definitions` entry — this is the
+/// exact shape `zod-to-json-schema` emits when one sub-schema is reused
+/// across two locations (e.g. `{"$ref": "#/properties/a"}`). Only a
+/// fragment that names no existing node is a fatal error.
 /// External refs — any `$ref` that does not start with `#` (e.g. http://,
 /// https://, file://, absolute paths, relative paths like `./x.json` or
 /// `../x.json`, bare filenames) — are left unresolved and will be caught by
 /// structural rules (ExternalRefsRule / U6).
-pub fn resolve_refs(
-    arena: &mut Arena,
-    defs: &IndexMap<String, NodeId>,
-) -> Result<Vec<(NodeId, NodeId)>, NormalizeError> {
+pub fn resolve_refs(arena: &mut Arena) -> Result<Vec<(NodeId, NodeId)>, NormalizeError> {
     // Collect ref strings first to avoid borrow issues.
     let refs: Vec<(NodeId, String)> = arena
         .iter()
@@ -26,10 +26,22 @@ pub fn resolve_refs(
         })
         .collect();
 
+    // Every node's JSON Pointer is already set by the time this runs
+    // (`expand_and_dfs` runs before `resolve_refs`), and every pointer
+    // segment built from a user-controlled key is already RFC 6901 escaped
+    // (see `pointer::escape_pointer_segment`). A `$ref` fragment written by
+    // a schema author uses the same escaping, so a straight lookup against
+    // the arena's own pointers — after percent-decoding — resolves any
+    // internal ref without a second escape/unescape pass.
+    let pointer_index: HashMap<String, NodeId> = arena
+        .iter()
+        .map(|(id, node)| (node.json_pointer.clone(), id))
+        .collect();
+
     let mut edges = Vec::new();
 
     for (node_id, ref_str) in &refs {
-        if let Some(target) = resolve_ref_string(ref_str, defs)? {
+        if let Some(target) = resolve_ref_string(ref_str, &pointer_index)? {
             arena[*node_id].ref_target = Some(target);
             edges.push((*node_id, target));
         }
@@ -49,33 +61,29 @@ pub fn resolve_refs(
 
 fn resolve_ref_string(
     ref_str: &str,
-    defs: &IndexMap<String, NodeId>,
+    pointer_index: &HashMap<String, NodeId>,
 ) -> Result<Option<NodeId>, NormalizeError> {
-    // Strip the fragment prefix.
-    let pointer = ref_str.strip_prefix('#').unwrap_or(ref_str);
-    // Decode percent-encoded segments (e.g. %24 -> $).
+    // External refs — never resolved internally.
+    if ref_str.starts_with("http://") || ref_str.starts_with("https://") || ref_str.starts_with('/')
+    {
+        return Ok(None);
+    }
+    // Any other non-fragment ref (relative paths, bare filenames) is also
+    // external and left unresolved.
+    let Some(pointer) = ref_str.strip_prefix('#') else {
+        return Ok(None);
+    };
+
+    // Decode percent-encoded segments (e.g. %24 -> $). The pointer segments
+    // themselves stay in their RFC 6901 escaped form (`~0`, `~1`) because
+    // that is exactly how the arena's own `json_pointer` values are stored.
     let decoded = percent_encoding::percent_decode_str(pointer)
         .decode_utf8()
         .map_err(|e| {
             NormalizeError::ParseError(format!("invalid percent-encoding in $ref: {e}"))
         })?;
-    let decoded = decoded.as_ref();
 
-    // Internal refs to $defs.
-    if let Some(name) = decoded.strip_prefix("/$defs/") {
-        return Ok(defs.get(name).copied());
-    }
-    // Internal refs to definitions (Draft 7).
-    if let Some(name) = decoded.strip_prefix("/definitions/") {
-        return Ok(defs.get(name).copied());
-    }
-    // External refs — not resolved in Phase 1.
-    if ref_str.starts_with("http://") || ref_str.starts_with("https://") || ref_str.starts_with('/')
-    {
-        return Ok(None);
-    }
-    // Any other internal ref pattern is treated as unresolved.
-    Ok(None)
+    Ok(pointer_index.get(decoded.as_ref()).copied())
 }
 
 /// Build transitive ref edges for cycle detection.
