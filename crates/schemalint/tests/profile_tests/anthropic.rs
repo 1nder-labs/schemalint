@@ -23,8 +23,6 @@ fn anthropic_profile_values() {
     assert!(!profile.structural.require_object_root);
     assert!(!profile.structural.require_all_properties_in_required);
     assert!(profile.structural.require_additional_properties_false);
-    assert_eq!(profile.structural.max_optional_properties, 24);
-    assert_eq!(profile.structural.max_union_properties, 16);
     assert!(profile.structural.external_refs);
     assert!(profile.structural.forbid_allof_with_ref);
 }

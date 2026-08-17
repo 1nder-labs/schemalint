@@ -26,9 +26,7 @@ This page lists all lint rules grouped by category.
 | [if](./keyword/if.md) | keyword | Forbid | `OAI-K-if` | `ANT-K-if` |
 | [max-depth](./structural/max-depth.md) | structural | Forbid | `OAI-S-max-depth` | `—` |
 | [max-enum-values](./structural/max-enum-values.md) | structural | Forbid | `OAI-S-max-enum-values` | `—` |
-| [max-optional-properties](./structural/max-optional-properties.md) | structural | Forbid | `—` | `ANT-S-max-optional-properties` |
 | [max-total-properties](./structural/max-total-properties.md) | structural | Forbid | `OAI-S-max-total-properties` | `—` |
-| [max-union-properties](./structural/max-union-properties.md) | structural | Forbid | `—` | `ANT-S-max-union-properties` |
 | [maxItems](./keyword/maxItems.md) | keyword | Forbid | `—` | `ANT-K-maxItems` |
 | [maxLength](./keyword/maxLength.md) | keyword | Forbid | `—` | `ANT-K-maxLength` |
 | [maxProperties](./keyword/maxProperties.md) | keyword | Forbid | `OAI-K-maxProperties` | `—` |
