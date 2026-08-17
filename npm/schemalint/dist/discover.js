@@ -17,6 +17,32 @@ export function toPosixPath(p, sep = path.sep) {
 import { buildSourceMapFromObjectLiteral, findExportedSchemaCalls, } from './discover_ast.js';
 import { findSchemaTargets } from './targets.js';
 /**
+ * Name the cause of an empty discovery result when the source glob matched
+ * no file in the TypeScript program.
+ *
+ * `matchedFiles === 0` reads the same way for two different causes: no file
+ * exists on disk at all, or files exist but the tsconfig `include` list does
+ * not reach them. Tell them apart by checking the glob directly against disk
+ * with `tsModule.sys.readDirectory` — the same file-listing primitive
+ * tsconfig's own `include` resolution uses, so no new dependency is needed
+ * and the glob syntax matches what the user already writes in `include`.
+ */
+function emptyDiscoveryWarning(tsModule, projectRoot, sourceGlob) {
+    const diskMatches = tsModule.sys.readDirectory(projectRoot, undefined, undefined, [sourceGlob]);
+    if (diskMatches.length === 0) {
+        return {
+            model: '',
+            message: `No file on disk matched source glob '${sourceGlob}'.`,
+        };
+    }
+    return {
+        model: '',
+        message: `${diskMatches.length} file(s) on disk matched source glob '${sourceGlob}' ` +
+            'but are outside the TypeScript program. Add them to the "include" ' +
+            'list in tsconfig.json.',
+    };
+}
+/**
  * Discover Zod schemas by walking TypeScript ASTs.
  *
  * 1. Reads tsconfig.json to resolve the project file list.
@@ -80,9 +106,16 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     });
     const excluded = matchedFiles - fileNames.length;
     if (fileNames.length === 0) {
+        // Only diagnose a cause when the glob itself matched nothing in the
+        // TypeScript program (matchedFiles === 0). When files matched but were
+        // then all removed by --exclude, that is ordinary exclusion behavior,
+        // not one of the three causes this unit distinguishes.
+        const warnings = matchedFiles === 0
+            ? [emptyDiscoveryWarning(tsModule, projectRoot, sourceGlob)]
+            : [];
         return {
             models: [],
-            warnings: [],
+            warnings,
             failures: [],
             counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
         };
@@ -125,7 +158,13 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
         return {
             models: [],
-            warnings: [],
+            warnings: [
+                {
+                    model: '',
+                    message: `Checked ${fileNames.length} file(s) matched by source glob ` +
+                        `'${sourceGlob}' for Zod schemas but found none.`,
+                },
+            ],
             failures: [],
             counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
         };

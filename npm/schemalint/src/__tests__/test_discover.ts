@@ -98,11 +98,13 @@ describe('discoverZodSchemas', () => {
     );
   });
 
-  it('returns empty results for non-matching glob', async () => {
+  it('returns empty results for non-matching glob and names cause 1: no file on disk', async () => {
     const result = await discoverZodSchemas('nonexistent*.ts');
 
     expect(result.models).toHaveLength(0);
-    expect(result.warnings).toHaveLength(0);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0].message).toContain('No file on disk matched');
+    expect(result.warnings[0].message).toContain('nonexistent*.ts');
     expect(result.counts).toEqual({
       attempted: 0,
       excluded: 0,
@@ -111,16 +113,58 @@ describe('discoverZodSchemas', () => {
     });
   });
 
-  it('applies exclusions before schema evaluation', async () => {
+  it('names cause 2: files on disk but outside the TypeScript program', async () => {
+    const result = await discoverZodSchemas('outside-include/*.ts');
+
+    expect(result.models).toHaveLength(0);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0].message).toContain('1 file(s)');
+    expect(result.warnings[0].message).toContain('outside-include/*.ts');
+    expect(result.warnings[0].message).toContain('outside the TypeScript program');
+    expect(result.warnings[0].message).toContain('include');
+    expect(result.warnings[0].message).toContain('tsconfig.json');
+    expect(result.counts).toEqual({
+      attempted: 0,
+      excluded: 0,
+      discovered: 0,
+      failed: 0,
+    });
+  });
+
+  it('names cause 3: files checked but no schema found', async () => {
+    const result = await discoverZodSchemas('no-schema-content.ts');
+
+    expect(result.models).toHaveLength(0);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0].message).toContain('Checked 1 file(s)');
+    expect(result.warnings[0].message).toContain('no-schema-content.ts');
+    expect(result.warnings[0].message).toContain('found none');
+    expect(result.counts).toEqual({
+      attempted: 0,
+      excluded: 0,
+      discovered: 0,
+      failed: 0,
+    });
+  });
+
+  it('applies exclusions before schema evaluation, with no cause warning for ordinary exclusion', async () => {
     const result = await discoverZodSchemas('simple.ts', ['simple.ts']);
 
     expect(result.models).toHaveLength(0);
+    expect(result.warnings).toHaveLength(0);
     expect(result.counts).toEqual({
       attempted: 0,
       excluded: 1,
       discovered: 0,
       failed: 0,
     });
+  });
+
+  it('a successful discovery reports no empty-discovery warning', async () => {
+    const result = await discoverZodSchemas('simple.ts');
+
+    expect(result.models).toHaveLength(1);
+    expect(result.warnings).toHaveLength(0);
   });
 
   it('produces 1-indexed source lines', async () => {

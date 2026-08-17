@@ -36,7 +36,13 @@ pub fn discover_batch<E: std::fmt::Display>(
                 batch
                     .warnings
                     .extend(response.warnings.into_iter().map(|warning| ReportMessage {
-                        target: format!("{kind} '{input}', model '{}'", warning.model),
+                        // A warning about the batch as a whole carries no model
+                        // name. Naming an empty one reads as a bug.
+                        target: if warning.model.is_empty() {
+                            format!("{kind} '{input}'")
+                        } else {
+                            format!("{kind} '{input}', model '{}'", warning.model)
+                        },
                         message: warning.message,
                     }));
                 batch

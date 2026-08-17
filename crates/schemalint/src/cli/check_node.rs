@@ -133,7 +133,13 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
 
     let total_discovered = discovery.models.len();
     if total_discovered == 0 {
-        eprintln!("warning: no Zod schemas discovered in source globs");
+        // The sidecar names the cause when it can (no file on disk, files
+        // outside the TypeScript program, or files checked with no schema).
+        // Printing the vague line after a specific one puts the message this
+        // unit exists to replace back in front of the user.
+        if discovery.warnings.is_empty() {
+            eprintln!("warning: no Zod schemas discovered in source globs");
+        }
     } else {
         eprintln!(
             "info: discovered {} Zod schema(s) in {} source glob(s)",
