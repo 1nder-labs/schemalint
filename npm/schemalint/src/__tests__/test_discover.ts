@@ -159,6 +159,19 @@ describe('discoverZodSchemas', () => {
     expect(properties).not.toContain('unrelated');
   });
 
+  it('falls back to exported schemas when every call-site target fails to evaluate', async () => {
+    // Regression: the fallback used to key off resolved targets. Once a call
+    // site resolved to a target that could not be evaluated (here a
+    // class-held schema, unreachable at module scope), the gate stayed shut
+    // and the run linted nothing at all — worse than the noise it avoided.
+    const result = await discoverZodSchemas('gate-*.ts');
+
+    expect(result.models.map((m) => m.name)).toEqual(['fallbackSchema']);
+    // The unusable call-site target is still reported rather than swallowed.
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0].model).toBe('generateObject:schema');
+  });
+
   it('discovers imported and tsconfig path-aliased schemas', async () => {
     const result = await discoverZodSchemas('imported-calls.ts');
 
