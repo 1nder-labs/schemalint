@@ -70,7 +70,12 @@ export function stringPropertyFromExpression(expr, name, checker, tsModule) {
     return stringLiteralText(value, tsModule);
 }
 export function resolveVariableDeclaration(id, checker, tsModule) {
-    const symbol = checker.getSymbolAtLocation(id);
+    // In `{ schema }` the identifier's own symbol is the object literal's
+    // property, not the value it stands for — the checker exposes the value
+    // through a dedicated lookup.
+    const symbol = tsModule.isShorthandPropertyAssignment(id.parent)
+        ? checker.getShorthandAssignmentValueSymbol(id.parent)
+        : checker.getSymbolAtLocation(id);
     const aliased = symbol && (symbol.flags & tsModule.SymbolFlags.Alias)
         ? checker.getAliasedSymbol(symbol)
         : symbol;
@@ -79,63 +84,135 @@ export function resolveVariableDeclaration(id, checker, tsModule) {
 }
 function carrierExpression(api, expression, tsModule, explicitName) {
     const expr = skipParens(expression, tsModule);
-    if (!tsModule.isPropertyAccessExpression(expr))
-        return undefined;
-    if (!tsModule.isIdentifier(expr.expression))
-        return undefined;
-    const paramName = expr.expression.text;
-    const fn = enclosingCarrierFunction(expr, paramName, tsModule);
-    if (!fn)
-        return undefined;
-    return {
-        api,
-        fn,
-        paramName,
-        propertyName: expr.name.text,
-        explicitName,
-    };
+    // `opts.schema` — the schema is a property of a whole parameter.
+    if (tsModule.isPropertyAccessExpression(expr) &&
+        tsModule.isIdentifier(expr.expression)) {
+        const param = carrierParam(expr, expr.expression.text, tsModule);
+        // A destructured binding is already a property read; `opts.schema` on top
+        // of one would be a second hop this doesn't follow.
+        if (!param || param.propertyName !== undefined)
+            return undefined;
+        return { ...param, api, propertyName: expr.name.text, explicitName };
+    }
+    // A bare `schema` — either the parameter itself (`f(schema)`) or destructured
+    // out of a parameter object (`f({ schema })`). Both arrive at the call site
+    // inside the same argument; `carrierParam` reports which read recovers it.
+    if (tsModule.isIdentifier(expr)) {
+        const param = carrierParam(expr, expr.text, tsModule);
+        return param && { ...param, api, explicitName };
+    }
+    return undefined;
 }
-function enclosingCarrierFunction(node, paramName, tsModule) {
-    let current = node.parent;
-    while (current) {
-        if (tsModule.isFunctionDeclaration(current) ||
-            tsModule.isFunctionExpression(current) ||
-            tsModule.isArrowFunction(current) ||
-            tsModule.isMethodDeclaration(current)) {
-            const hasParam = current.parameters.some((param) => tsModule.isIdentifier(param.name) && param.name.text === paramName);
-            if (hasParam)
-                return current;
+/**
+ * Locate the enclosing function that supplies `name` as a parameter, and
+ * report how to recover the matching argument at a call site: the parameter
+ * index, plus the property to read off it when the parameter was destructured
+ * (`f({ schema })`, or renamed as `f({ schema: s })`).
+ *
+ * ponytail: resolves by walking parent scopes, not via the checker, so a local
+ * that shadows a parameter of the same name is misread as that parameter.
+ * Switch to `checker.getSymbolAtLocation` if a real codebase ever shadows one.
+ */
+function carrierParam(node, name, tsModule) {
+    for (let current = node.parent; current; current = current.parent) {
+        if (!tsModule.isFunctionDeclaration(current) &&
+            !tsModule.isFunctionExpression(current) &&
+            !tsModule.isArrowFunction(current) &&
+            !tsModule.isMethodDeclaration(current)) {
+            continue;
         }
-        current = current.parent;
+        const fn = current;
+        for (let index = 0; index < fn.parameters.length; index++) {
+            const bound = fn.parameters[index].name;
+            if (tsModule.isIdentifier(bound)) {
+                if (bound.text === name)
+                    return { fn, paramIndex: index };
+                continue;
+            }
+            if (!tsModule.isObjectBindingPattern(bound))
+                continue;
+            const element = bound.elements.find((el) => tsModule.isIdentifier(el.name) && el.name.text === name);
+            if (!element)
+                continue;
+            // `{ schema }` reads `schema`; `{ schema: local }` reads `schema`.
+            // A computed rename (`{ [k]: local }`) has no static source property,
+            // so it yields nothing rather than a wrong guess.
+            const source = element.propertyName
+                ? propertyName(element.propertyName, tsModule)
+                : name;
+            if (source)
+                return { fn, paramIndex: index, propertyName: source };
+        }
     }
     return undefined;
 }
 function carrierTargetFromCall(call, sourceFile, checker, tsModule, carrier) {
-    if (!sameSymbol(call.expression, carrier.fn, checker, tsModule)) {
+    if (!callsCarrier(call, carrier.fn, checker, tsModule))
         return undefined;
-    }
-    const paramIndex = carrier.fn.parameters.findIndex((param) => tsModule.isIdentifier(param.name) && param.name.text === carrier.paramName);
-    if (paramIndex === -1)
+    const argument = call.arguments[carrier.paramIndex];
+    if (!argument)
         return undefined;
-    const schema = propertyFromExpression(call.arguments[paramIndex], carrier.propertyName, checker, tsModule);
+    const schema = carrier.propertyName === undefined
+        ? argument
+        : propertyFromExpression(argument, carrier.propertyName, checker, tsModule);
     if (!schema)
         return undefined;
     const name = carrier.explicitName ??
-        stringPropertyFromExpression(call.arguments[paramIndex], 'name', checker, tsModule);
+        stringPropertyFromExpression(argument, 'name', checker, tsModule);
     return namedTarget(carrier.api, schema, sourceFile, tsModule, name);
 }
-function sameSymbol(expression, fn, checker, tsModule) {
-    const symbol = checker.getSymbolAtLocation(expression);
+function callsCarrier(call, fn, checker, tsModule) {
+    const resolved = checker.getResolvedSignature(call)?.declaration;
+    if (resolved) {
+        // Direct hit: the callee resolves to the wrapper itself. Signature
+        // resolution already follows variables and factory return values, so
+        // `wrap(...)` and `const w = wrap; w(...)` both land here.
+        if (resolved === fn)
+            return true;
+        // Indirect hit: the wrapper is passed around under a function *type*
+        // (`type Compile = (input: {schema: …}) => …`), so every call site resolves
+        // to that type's call signature and the wrapper's own node is never seen.
+        // Matching the annotation the wrapper was written against restores the link.
+        if (contextualSignatureDeclarations(fn, checker, tsModule).has(resolved)) {
+            return true;
+        }
+    }
+    const symbol = checker.getSymbolAtLocation(call.expression);
     const aliased = symbol && (symbol.flags & tsModule.SymbolFlags.Alias)
         ? checker.getAliasedSymbol(symbol)
         : symbol;
     return aliased?.declarations?.some((decl) => decl === fn) ?? false;
+}
+/**
+ * Call-signature declarations of the function type `fn` was written against —
+ * its contextual type at the point it is defined (a return-type annotation, a
+ * typed variable, a typed property).
+ */
+function contextualSignatureDeclarations(fn, checker, tsModule) {
+    const declarations = new Set();
+    if (!tsModule.isArrowFunction(fn) && !tsModule.isFunctionExpression(fn)) {
+        return declarations;
+    }
+    const contextual = checker.getContextualType(fn);
+    if (!contextual)
+        return declarations;
+    for (const signature of contextual.getCallSignatures()) {
+        if (signature.declaration)
+            declarations.add(signature.declaration);
+    }
+    return declarations;
 }
 function propertyFromObject(obj, name, checker, tsModule) {
     for (const prop of [...obj.properties].reverse()) {
         if (tsModule.isPropertyAssignment(prop)) {
             if (propertyName(prop.name, tsModule) === name)
                 return prop.initializer;
+            continue;
+        }
+        // `{ schema }` — the value is the name itself.
+        if (tsModule.isShorthandPropertyAssignment(prop)) {
+            if (prop.name.text === name)
+                return prop.name;
             continue;
         }
         if (tsModule.isSpreadAssignment(prop)) {

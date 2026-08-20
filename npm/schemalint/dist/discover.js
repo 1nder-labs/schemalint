@@ -16,6 +16,46 @@ export function toPosixPath(p, sep = path.sep) {
 }
 import { buildSourceMapFromObjectLiteral, findExportedSchemaCalls, scanProviderImports, } from './discover_ast.js';
 import { findSchemaTargets } from './targets.js';
+/** Import each target and convert it to JSON Schema, recording per-target failures. */
+async function evaluateTargets(locations, warnings) {
+    const models = [];
+    for (const loc of locations) {
+        try {
+            const schemaJson = loc.syntheticSource
+                ? await evaluateSyntheticSchema(loc.syntheticSource, loc.exportName, loc.filePath)
+                : await evaluateSchema(loc.filePath, loc.exportName);
+            models.push({
+                name: loc.name,
+                module_path: loc.filePath,
+                schema: schemaJson,
+                source_map: loc.sourceMap,
+            });
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            warnings.push({
+                model: loc.name,
+                message: `Failed to evaluate schema '${loc.name}' in ${loc.filePath}: ${message}`,
+            });
+        }
+    }
+    return models;
+}
+/** Every top-level exported `z.object({...})`, the fallback discovery source. */
+function exportedSchemaTargets(sourceFiles, tsModule) {
+    const targets = [];
+    for (const sourceFile of sourceFiles) {
+        for (const exp of findExportedSchemaCalls(sourceFile, tsModule)) {
+            targets.push({
+                name: exp.name,
+                filePath: sourceFile.fileName,
+                exportName: exp.name,
+                sourceMap: buildSourceMapFromObjectLiteral(exp.objectArg, sourceFile, tsModule),
+            });
+        }
+    }
+    return targets;
+}
 /**
  * Discover Zod schemas by walking TypeScript ASTs.
  *
@@ -95,46 +135,15 @@ export async function discoverZodSchemas(sourceGlob) {
     // discovery remains as a fallback for simple projects and explicit schema
     // modules that are not wired to a provider call in the selected source glob.
     const callsiteTargets = findSchemaTargets(program, fileSet, tsModule, compilerOptions);
-    const discoveredLocations = [...callsiteTargets];
     const nonFatal = [];
-    if (discoveredLocations.length === 0) {
-        for (const sourceFile of selectedSourceFiles) {
-            const exports = findExportedSchemaCalls(sourceFile, tsModule);
-            for (const exp of exports) {
-                const sourceMap = buildSourceMapFromObjectLiteral(exp.objectArg, sourceFile, tsModule);
-                discoveredLocations.push({
-                    name: exp.name,
-                    filePath: sourceFile.fileName,
-                    exportName: exp.name,
-                    sourceMap,
-                });
-            }
-        }
-    }
-    if (discoveredLocations.length === 0) {
-        return { models: [], warnings: nonFatal };
-    }
-    // Step 3: Runtime evaluation — import each file and evaluate schemas
-    const models = [];
-    for (const loc of discoveredLocations) {
-        try {
-            const schemaJson = loc.syntheticSource
-                ? await evaluateSyntheticSchema(loc.syntheticSource, loc.exportName, loc.filePath)
-                : await evaluateSchema(loc.filePath, loc.exportName);
-            models.push({
-                name: loc.name,
-                module_path: loc.filePath,
-                schema: schemaJson,
-                source_map: loc.sourceMap,
-            });
-        }
-        catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            nonFatal.push({
-                model: loc.name,
-                message: `Failed to evaluate schema '${loc.name}' in ${loc.filePath}: ${message}`,
-            });
-        }
+    const models = await evaluateTargets(callsiteTargets, nonFatal);
+    // Legacy exported-schema discovery, for projects with no provider call site
+    // in the source glob. It keys off evaluated models rather than resolved
+    // targets: a target that resolves but then fails to evaluate would otherwise
+    // hold this gate shut and leave the run linting nothing at all.
+    if (models.length === 0) {
+        const exported = exportedSchemaTargets(selectedSourceFiles, tsModule);
+        models.push(...(await evaluateTargets(exported, nonFatal)));
     }
     const response = { models, warnings: nonFatal };
     if (providerHint) {
