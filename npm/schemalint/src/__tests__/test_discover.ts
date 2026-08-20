@@ -224,6 +224,49 @@ describe('discoverZodSchemas', () => {
     expect(properties).toEqual([['extracted'], ['inline']]);
   });
 
+  it('discovers schemas reaching a provider through a wrapper parameter', async () => {
+    // Regression: a wrapper that takes the schema as a parameter — bare,
+    // destructured, or renamed — and forwards it with shorthand property
+    // syntax. Every one of these resolved to nothing, silently and with no
+    // warning, so the schemas went unlinted while the run reported success.
+    // `injected` covers the dependency-injection shape, where the wrapper is
+    // only ever reached through a function-type annotation.
+    const result = await discoverZodSchemas('wrapper-calls.ts');
+
+    expect(result.warnings).toHaveLength(0);
+
+    const properties = result.models
+      .flatMap((m) => Object.keys(m.schema.properties as Record<string, unknown>))
+      .sort();
+    expect(properties).toEqual([
+      'bare',
+      'destructured',
+      'direct',
+      'injected',
+      'renamed',
+    ]);
+
+    // A schema never passed to a provider must remain undiscovered — carrier
+    // resolution must not widen into scanning every Zod schema in the repo.
+    expect(properties).not.toContain('unrelated');
+  });
+
+  it('falls back to exported schemas when every call-site target fails to evaluate', async () => {
+    // Regression: the fallback used to key off resolved targets. Once a call
+    // site resolved to a target that could not be evaluated (here a
+    // class-held schema, unreachable at module scope), the gate stayed shut
+    // and the run linted nothing at all — worse than the noise it avoided.
+    const result = await discoverZodSchemas('gate-*.ts');
+
+    expect(result.models.map((m) => m.name)).toEqual(['fallbackSchema']);
+    // The unusable call-site target is still reported rather than swallowed.
+    const evaluationFailures = result.failures.filter(
+      (failure) => failure.kind === 'evaluation'
+    );
+    expect(evaluationFailures).toHaveLength(1);
+    expect(evaluationFailures[0].target).toBe('generateObject:schema');
+  });
+
   it('discovers imported and tsconfig path-aliased schemas', async () => {
     const result = await discoverZodSchemas('imported-calls.ts');
 

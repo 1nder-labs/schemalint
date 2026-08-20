@@ -16,8 +16,12 @@ export interface TargetExpression {
 export interface CarrierExpression {
     api: string;
     fn: ts.FunctionLikeDeclaration;
-    paramName: string;
-    propertyName: string;
+    paramIndex: number;
+    /**
+     * Property to read off the call argument. Undefined when the parameter
+     * *is* the schema (`f(schema)`), in which case the argument is used whole.
+     */
+    propertyName?: string;
     explicitName?: string;
     metadata: TargetMetadata;
 }

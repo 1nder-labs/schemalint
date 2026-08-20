@@ -107,6 +107,75 @@ function emptyDiscoveryWarning(
   };
 }
 
+/** Import each target and convert it to JSON Schema, recording per-target failures. */
+async function evaluateTargets(
+  locations: readonly SchemaTarget[],
+  failures: DiscoveryFailure[]
+): Promise<DiscoveredModel[]> {
+  const models: DiscoveredModel[] = [];
+  for (const loc of locations) {
+    try {
+      const schemaJson = loc.syntheticSource
+        ? await evaluateSyntheticSchema(
+            loc.syntheticSource,
+            loc.exportName,
+            loc.filePath
+          )
+        : await evaluateSchema(loc.filePath, loc.exportName);
+      models.push({
+        name: loc.name,
+        module_path: loc.filePath,
+        schema: schemaJson as Record<string, unknown>,
+        source_map: loc.sourceMap,
+        canonical_kind: loc.canonicalKind,
+        provider: loc.provider,
+        envelope: loc.envelope,
+        usage_span: loc.usageSpan,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      failures.push({
+        kind: 'evaluation',
+        target: loc.name,
+        message: `Failed to evaluate schema '${loc.name}' in ${loc.filePath}: ${message}`,
+      });
+    }
+  }
+  return models;
+}
+
+/** Every top-level exported `z.object({...})`, the fallback discovery source. */
+function exportedSchemaTargets(
+  sourceFiles: readonly ts.SourceFile[],
+  tsModule: typeof ts
+): SchemaTarget[] {
+  const targets: SchemaTarget[] = [];
+  for (const sourceFile of sourceFiles) {
+    for (const exp of findExportedSchemaCalls(sourceFile, tsModule)) {
+      const sourceMap = buildSourceMapFromObjectLiteral(
+        exp.objectArg,
+        sourceFile,
+        tsModule
+      );
+      targets.push({
+        name: exp.name,
+        filePath: sourceFile.fileName,
+        exportName: exp.name,
+        sourceMap,
+        canonicalKind: 'zod.export',
+        provider: { certainty: 'ambiguous' },
+        envelope: {},
+        usageSpan: {
+          file: sourceFile.fileName,
+          line: sourceMap['']?.line ?? 1,
+          col: 1,
+        },
+      });
+    }
+  }
+  return targets;
+}
+
 /**
  * Discover Zod schemas by walking TypeScript ASTs.
  *
@@ -243,32 +312,21 @@ export async function discoverZodSchemas(
   );
   const discoveredLocations: SchemaTarget[] = [...callsiteDiscovery.targets];
   const discoveryFailures: DiscoveryFailure[] = [...callsiteDiscovery.failures];
+  // Copy, do not alias: `attempted` below reads `discoveryFailures.length`, so
+  // pushing evaluation failures into the same array would inflate the attempt
+  // count and trip the caller's coverage accounting check.
+  const failures: DiscoveryFailure[] = [...discoveryFailures];
 
-  if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
-    for (const sourceFile of selectedSourceFiles) {
-      const exports = findExportedSchemaCalls(sourceFile, tsModule);
-      for (const exp of exports) {
-        const sourceMap = buildSourceMapFromObjectLiteral(
-          exp.objectArg,
-          sourceFile,
-          tsModule
-        );
-        discoveredLocations.push({
-          name: exp.name,
-          filePath: sourceFile.fileName,
-          exportName: exp.name,
-          sourceMap,
-          canonicalKind: 'zod.export',
-          provider: { certainty: 'ambiguous' },
-          envelope: {},
-          usageSpan: {
-            file: sourceFile.fileName,
-            line: sourceMap['']?.line ?? 1,
-            col: 1,
-          },
-        });
-      }
-    }
+  const models = await evaluateTargets(discoveredLocations, failures);
+
+  // Legacy exported-schema discovery, for projects with no provider call site
+  // in the source glob. It keys off evaluated models rather than resolved
+  // targets: a target that resolves but then fails to evaluate would otherwise
+  // hold this gate shut and leave the run linting nothing at all.
+  if (models.length === 0) {
+    const exported = exportedSchemaTargets(selectedSourceFiles, tsModule);
+    discoveredLocations.push(...exported);
+    models.push(...(await evaluateTargets(exported, failures)));
   }
 
   if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
@@ -285,42 +343,6 @@ export async function discoverZodSchemas(
       failures: [],
       counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
     };
-  }
-
-  // Step 3: Runtime evaluation — import each file and evaluate schemas
-  const models: DiscoveredModel[] = [];
-  // Copy, do not alias: `attempted` below reads `discoveryFailures.length`, so
-  // pushing evaluation failures into the same array would inflate the attempt
-  // count and trip the caller's coverage accounting check.
-  const failures: DiscoveryFailure[] = [...discoveryFailures];
-
-  for (const loc of discoveredLocations) {
-    try {
-      const schemaJson = loc.syntheticSource
-        ? await evaluateSyntheticSchema(
-            loc.syntheticSource,
-            loc.exportName,
-            loc.filePath
-          )
-        : await evaluateSchema(loc.filePath, loc.exportName);
-      models.push({
-        name: loc.name,
-        module_path: loc.filePath,
-        schema: schemaJson as Record<string, unknown>,
-        source_map: loc.sourceMap,
-        canonical_kind: loc.canonicalKind,
-        provider: loc.provider,
-        envelope: loc.envelope,
-        usage_span: loc.usageSpan,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      failures.push({
-        kind: 'evaluation',
-        target: loc.name,
-        message: `Failed to evaluate schema '${loc.name}' in ${loc.filePath}: ${message}`,
-      });
-    }
   }
 
   const response: DiscoverResponse = {

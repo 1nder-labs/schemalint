@@ -5,7 +5,12 @@ export function resolveVariableDeclaration(
   checker: ts.TypeChecker,
   tsModule: typeof ts
 ): ts.VariableDeclaration | undefined {
-  const symbol = checker.getSymbolAtLocation(id);
+  // In `{ schema }` the identifier's own symbol is the object literal's
+  // property, not the value it stands for — the checker exposes the value
+  // through a dedicated lookup.
+  const symbol = tsModule.isShorthandPropertyAssignment(id.parent)
+    ? checker.getShorthandAssignmentValueSymbol(id.parent)
+    : checker.getSymbolAtLocation(id);
   const aliased =
     symbol && (symbol.flags & tsModule.SymbolFlags.Alias)
       ? checker.getAliasedSymbol(symbol)
