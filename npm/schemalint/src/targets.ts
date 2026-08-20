@@ -8,7 +8,6 @@ import {
 } from './target_imports.js';
 import {
   collectCarrierTargets,
-  propertyFromExpression,
   pushExpressionOrCarrier,
   spanFor,
   stringValueFromExpression,
@@ -16,6 +15,7 @@ import {
   type TargetExpression,
   type TargetMetadata,
 } from './target_resolution.js';
+import { propertyFromExpression } from './object_properties.js';
 import { unambiguousExpression } from './static_expression.js';
 import type { EnvelopeField, SdkAdapter } from './sdk_adapters.js';
 

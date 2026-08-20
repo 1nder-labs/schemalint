@@ -1,6 +1,7 @@
 import { resolveTarget } from './target_emit.js';
 import { collectTargetImports, resolveTargetAdapter, } from './target_imports.js';
-import { collectCarrierTargets, propertyFromExpression, pushExpressionOrCarrier, spanFor, stringValueFromExpression, } from './target_resolution.js';
+import { collectCarrierTargets, pushExpressionOrCarrier, spanFor, stringValueFromExpression, } from './target_resolution.js';
+import { propertyFromExpression } from './object_properties.js';
 import { unambiguousExpression } from './static_expression.js';
 export function findSchemaTargets(program, fileSet, tsModule, compilerOptions) {
     const checker = program.getTypeChecker();

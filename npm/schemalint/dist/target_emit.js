@@ -75,10 +75,7 @@ function resolveExportedIdentifier(id, checker, tsModule) {
 }
 function buildSyntheticModule(sourceFile, expr, exportName, tsModule, compilerOptions, adapterModule) {
     const parts = [];
-    // Identify the top-level statement that directly contains the target
-    // expression so we can skip it (we replace it with the export below).
-    const containingStmt = sourceFile.statements.find((stmt) => stmt.getStart(sourceFile) <= expr.getStart(sourceFile) &&
-        expr.getEnd() <= stmt.getEnd());
+    const adapterNames = importedNames(sourceFile, adapterModule, tsModule);
     for (const stmt of sourceFile.statements) {
         if (tsModule.isImportDeclaration(stmt)) {
             if (tsModule.isStringLiteral(stmt.moduleSpecifier) &&
@@ -88,15 +85,64 @@ function buildSyntheticModule(sourceFile, expr, exportName, tsModule, compilerOp
             parts.push(rewriteImport(stmt, sourceFile, tsModule, compilerOptions));
             continue;
         }
-        // Include all reusable declarations except the one containing the target
-        // expression. This allows the target to reference helpers declared either
-        // before or after it in source order without a ReferenceError.
-        if (stmt !== containingStmt && isReusableDeclaration(stmt, tsModule)) {
+        // Keep every reusable declaration except those that use a name imported
+        // from the adapter module, since that import is stripped above and the
+        // statement could not run without it (and would call the provider SDK at
+        // import time if it could).
+        //
+        // This used to drop the statement *containing* the target instead, which
+        // is wrong whenever the target resolved into a declaration: a schema
+        // reached through `const First = z.object(...)` lost that binding while
+        // other retained declarations still referenced `First`, so the synthetic
+        // module died with a ReferenceError. Whether that happened depended on
+        // whether symbol resolution succeeded, which made it look intermittent.
+        if (isReusableDeclaration(stmt, tsModule) && !usesAny(stmt, adapterNames, tsModule)) {
             parts.push(stmt.getText(sourceFile));
         }
     }
     parts.push(`export const ${exportName} = ${expr.getText(sourceFile)};`);
     return parts.join('\n\n');
+}
+/** Names this module imports from `moduleSpecifier`. */
+function importedNames(sourceFile, moduleSpecifier, tsModule) {
+    const names = new Set();
+    for (const stmt of sourceFile.statements) {
+        if (!tsModule.isImportDeclaration(stmt))
+            continue;
+        if (!tsModule.isStringLiteral(stmt.moduleSpecifier))
+            continue;
+        if (stmt.moduleSpecifier.text !== moduleSpecifier)
+            continue;
+        const clause = stmt.importClause;
+        if (clause?.name)
+            names.add(clause.name.text);
+        const bindings = clause?.namedBindings;
+        if (bindings && tsModule.isNamedImports(bindings)) {
+            for (const element of bindings.elements)
+                names.add(element.name.text);
+        }
+        if (bindings && tsModule.isNamespaceImport(bindings)) {
+            names.add(bindings.name.text);
+        }
+    }
+    return names;
+}
+/** Whether `node` references any of `names`. */
+function usesAny(node, names, tsModule) {
+    if (names.size === 0)
+        return false;
+    let found = false;
+    const visit = (child) => {
+        if (found)
+            return;
+        if (tsModule.isIdentifier(child) && names.has(child.text)) {
+            found = true;
+            return;
+        }
+        tsModule.forEachChild(child, visit);
+    };
+    visit(node);
+    return found;
 }
 function isReusableDeclaration(stmt, tsModule) {
     return (tsModule.isVariableStatement(stmt) ||

@@ -1,4 +1,5 @@
-import { distinctExpressions, staticAlternatives, unambiguousExpression, unwrapExpression, } from './static_expression.js';
+import { propertyFromExpression, propertyName, stringLiteralText, stringPropertyFromExpression, } from './object_properties.js';
+import { staticAlternatives, unwrapExpression, } from './static_expression.js';
 export function pushExpressionOrCarrier(targets, carriers, api, expression, sourceFile, tsModule, explicitName, metadata) {
     const carrier = carrierExpression(api, expression, tsModule, explicitName, metadata);
     if (carrier) {
@@ -30,27 +31,6 @@ export function collectCarrierTargets(program, fileSet, checker, tsModule, carri
         tsModule.forEachChild(sourceFile, walk);
     }
     return targets;
-}
-export function propertyFromExpression(expr, name, checker, tsModule) {
-    const candidates = [];
-    const containers = staticAlternatives(expr, checker, tsModule);
-    if (containers.length === 0)
-        return undefined;
-    for (const container of containers) {
-        if (!tsModule.isObjectLiteralExpression(container))
-            return undefined;
-        const property = propertyFromObject(container, name, checker, tsModule);
-        const stable = unambiguousExpression(property, checker, tsModule);
-        if (!stable)
-            return undefined;
-        candidates.push(stable);
-    }
-    const distinct = distinctExpressions(candidates, checker, tsModule);
-    return distinct.length === 1 ? distinct[0] : undefined;
-}
-export function stringPropertyFromExpression(expr, name, checker, tsModule) {
-    const value = propertyFromExpression(expr, name, checker, tsModule);
-    return stringLiteralText(value, tsModule);
 }
 function carrierExpression(api, expression, tsModule, explicitName, metadata) {
     const expr = unwrapExpression(expression, tsModule);
@@ -181,27 +161,6 @@ function contextualSignatureDeclarations(fn, checker, tsModule) {
     }
     return declarations;
 }
-function propertyFromObject(obj, name, checker, tsModule) {
-    for (const prop of [...obj.properties].reverse()) {
-        if (tsModule.isPropertyAssignment(prop)) {
-            if (propertyName(prop.name, tsModule) === name)
-                return prop.initializer;
-            continue;
-        }
-        // `{ schema }` — the value is the name itself.
-        if (tsModule.isShorthandPropertyAssignment(prop)) {
-            if (prop.name.text === name)
-                return prop.name;
-            continue;
-        }
-        if (tsModule.isSpreadAssignment(prop)) {
-            const fromSpread = propertyFromExpression(prop.expression, name, checker, tsModule);
-            if (fromSpread)
-                return fromSpread;
-        }
-    }
-    return undefined;
-}
 function namedTarget(api, expression, sourceFile, tsModule, explicitName, metadata) {
     const { line } = sourceFile.getLineAndCharacterOfPosition(expression.getStart(sourceFile));
     const expr = unwrapExpression(expression, tsModule);
@@ -225,14 +184,5 @@ export function stringValueFromExpression(expr, checker, tsModule) {
     }
     const distinct = new Set(values);
     return distinct.size === 1 ? values[0] : undefined;
-}
-function stringLiteralText(expr, tsModule) {
-    return expr && tsModule.isStringLiteralLike(expr) ? expr.text : undefined;
-}
-function propertyName(name, tsModule) {
-    if (tsModule.isIdentifier(name) || tsModule.isStringLiteral(name)) {
-        return name.text;
-    }
-    return undefined;
 }
 //# sourceMappingURL=target_resolution.js.map
