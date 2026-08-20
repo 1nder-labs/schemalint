@@ -1,7 +1,12 @@
+mod production;
 pub mod truth;
 
 use std::collections::HashMap;
 
+pub use production::{
+    evaluate_keyword_truth, evaluate_provider, evaluate_structural_truth, KeywordTruthOutcome,
+    ProductionEvaluationError, StructuralTruthOutcome,
+};
 use serde_json::Value;
 pub use truth::*;
 
@@ -74,6 +79,14 @@ pub fn evaluate(truth: &ProviderTruth, schema: &Value) -> TruthResult {
     }
 }
 
+/// Build a JSON Pointer for the declaration-only truth engine.
+///
+/// This pointer is intentionally NOT RFC 6901-escaped. Unlike the Rust
+/// normalizer and the Node and Python source-map builders, this pointer is
+/// never joined against arena output via `source_map.get(pointer)` — it only
+/// labels an error inside this function's own recursion over the truth
+/// schema. Do not treat this as a missed side of the escaping fix; it has no
+/// counterpart to stay byte-identical with.
 fn evaluate_value(
     value: &Value,
     pointer: &str,

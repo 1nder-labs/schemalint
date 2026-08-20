@@ -1,109 +1,89 @@
 import type * as ts from 'typescript';
 
+import {
+  adapterFor,
+  hasAdapterPrefix,
+  type SdkAdapter,
+} from './sdk_adapters.js';
+
+interface ImportedObject {
+  module: string;
+  exportPath: string;
+}
+
 export interface TargetImports {
-  outputCalls: Set<string>;
-  toolCalls: Set<string>;
-  formatCalls: Set<string>;
-  outputObjects: Set<string>;
-  aiNamespaces: Set<string>;
-  helperNamespaces: Set<string>;
+  functions: Map<string, SdkAdapter>;
+  objects: Map<string, ImportedObject>;
+  namespaces: Map<string, string>;
 }
-
-export interface CallRef {
-  name: string;
-  receiver?: string;
-}
-
-export const OUTPUT_CALLS = new Set(['generateObject', 'streamObject']);
-export const TOOL_CALLS = new Set(['tool', 'betaZodTool', 'zodFunction']);
-export const FORMAT_CALLS = new Set(['zodTextFormat', 'zodResponseFormat']);
 
 export function collectTargetImports(
   sourceFile: ts.SourceFile,
   tsModule: typeof ts
 ): TargetImports {
   const imports: TargetImports = {
-    outputCalls: new Set(),
-    toolCalls: new Set(),
-    formatCalls: new Set(),
-    outputObjects: new Set(),
-    aiNamespaces: new Set(),
-    helperNamespaces: new Set(),
+    functions: new Map(),
+    objects: new Map(),
+    namespaces: new Map(),
   };
 
   for (const stmt of sourceFile.statements) {
     if (!tsModule.isImportDeclaration(stmt)) continue;
     const spec = stmt.moduleSpecifier;
-    if (!tsModule.isStringLiteral(spec)) continue;
-
     const clause = stmt.importClause;
-    if (!clause) continue;
+    if (!tsModule.isStringLiteral(spec) || !clause) continue;
 
-    const mod = spec.text;
-    const isAiModule = mod === 'ai';
-    const isOpenAiHelper = mod === 'openai/helpers/zod';
-    const isAnthropicHelper = mod === '@anthropic-ai/sdk/helpers/zod';
-    if (!isAiModule && !isOpenAiHelper && !isAnthropicHelper) continue;
-
+    const module = spec.text;
     const bindings = clause.namedBindings;
     if (bindings && tsModule.isNamespaceImport(bindings)) {
-      if (isAiModule) imports.aiNamespaces.add(bindings.name.text);
-      if (isOpenAiHelper || isAnthropicHelper) {
-        imports.helperNamespaces.add(bindings.name.text);
-      }
+      imports.namespaces.set(bindings.name.text, module);
       continue;
     }
-
     if (!bindings || !tsModule.isNamedImports(bindings)) continue;
+
     for (const element of bindings.elements) {
       const importedName = element.propertyName?.text ?? element.name.text;
       const localName = element.name.text;
-      if (isAiModule) addAiImport(imports, importedName, localName);
-      if (isOpenAiHelper || isAnthropicHelper) {
-        addHelperImport(imports, importedName, localName);
+      const adapter = adapterFor(module, importedName);
+      if (adapter) {
+        imports.functions.set(localName, adapter);
+      } else if (hasAdapterPrefix(module, importedName)) {
+        imports.objects.set(localName, { module, exportPath: importedName });
       }
     }
   }
-
   return imports;
 }
 
-export function isProviderCall(
-  ref: CallRef,
-  imports: TargetImports
-): boolean {
-  if (ref.receiver) {
-    if (imports.aiNamespaces.has(ref.receiver)) {
-      return OUTPUT_CALLS.has(ref.name) || ref.name === 'tool';
-    }
-    if (imports.helperNamespaces.has(ref.receiver)) {
-      return FORMAT_CALLS.has(ref.name) || TOOL_CALLS.has(ref.name);
-    }
-    return ref.name === 'object' && imports.outputObjects.has(ref.receiver);
+export function resolveTargetAdapter(
+  expression: ts.Expression,
+  imports: TargetImports,
+  tsModule: typeof ts
+): SdkAdapter | undefined {
+  if (tsModule.isIdentifier(expression)) {
+    return imports.functions.get(expression.text);
   }
 
-  return (
-    imports.outputCalls.has(ref.name) ||
-    imports.toolCalls.has(ref.name) ||
-    imports.formatCalls.has(ref.name)
+  const path = propertyPath(expression, tsModule);
+  if (!path || path.length < 2) return undefined;
+  const [root, ...members] = path;
+  const namespaceModule = imports.namespaces.get(root);
+  if (namespaceModule) return adapterFor(namespaceModule, members.join('.'));
+
+  const object = imports.objects.get(root);
+  if (!object) return undefined;
+  return adapterFor(
+    object.module,
+    `${object.exportPath}.${members.join('.')}`
   );
 }
 
-function addAiImport(
-  imports: TargetImports,
-  importedName: string,
-  localName: string
-): void {
-  if (OUTPUT_CALLS.has(importedName)) imports.outputCalls.add(localName);
-  if (importedName === 'tool') imports.toolCalls.add(localName);
-  if (importedName === 'Output') imports.outputObjects.add(localName);
-}
-
-function addHelperImport(
-  imports: TargetImports,
-  importedName: string,
-  localName: string
-): void {
-  if (FORMAT_CALLS.has(importedName)) imports.formatCalls.add(localName);
-  if (TOOL_CALLS.has(importedName)) imports.toolCalls.add(localName);
+function propertyPath(
+  expression: ts.Expression,
+  tsModule: typeof ts
+): string[] | undefined {
+  if (tsModule.isIdentifier(expression)) return [expression.text];
+  if (!tsModule.isPropertyAccessExpression(expression)) return undefined;
+  const parent = propertyPath(expression.expression, tsModule);
+  return parent ? [...parent, expression.name.text] : undefined;
 }

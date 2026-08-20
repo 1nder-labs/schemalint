@@ -1,10 +1,12 @@
-export function pushExpressionOrCarrier(targets, carriers, api, expression, sourceFile, tsModule, explicitName) {
-    const carrier = carrierExpression(api, expression, tsModule, explicitName);
+import { propertyFromExpression, propertyName, stringLiteralText, stringPropertyFromExpression, } from './object_properties.js';
+import { staticAlternatives, unwrapExpression, } from './static_expression.js';
+export function pushExpressionOrCarrier(targets, carriers, api, expression, sourceFile, tsModule, explicitName, metadata) {
+    const carrier = carrierExpression(api, expression, tsModule, explicitName, metadata);
     if (carrier) {
         carriers.push(carrier);
         return;
     }
-    targets.push(namedTarget(api, expression, sourceFile, tsModule, explicitName));
+    targets.push(namedTarget(api, expression, sourceFile, tsModule, explicitName, metadata));
 }
 export function collectCarrierTargets(program, fileSet, checker, tsModule, carriers) {
     if (carriers.length === 0)
@@ -30,60 +32,8 @@ export function collectCarrierTargets(program, fileSet, checker, tsModule, carri
     }
     return targets;
 }
-export function objectExpression(expr, checker, tsModule) {
-    if (!expr)
-        return undefined;
-    const unwrapped = skipParens(expr, tsModule);
-    if (tsModule.isObjectLiteralExpression(unwrapped))
-        return unwrapped;
-    if (tsModule.isIdentifier(unwrapped)) {
-        const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
-        if (decl?.initializer) {
-            return objectExpression(decl.initializer, checker, tsModule);
-        }
-    }
-    if (tsModule.isConditionalExpression(unwrapped)) {
-        return (objectExpression(unwrapped.whenTrue, checker, tsModule) ??
-            objectExpression(unwrapped.whenFalse, checker, tsModule));
-    }
-    return undefined;
-}
-export function propertyFromExpression(expr, name, checker, tsModule) {
-    if (!expr)
-        return undefined;
-    const unwrapped = skipParens(expr, tsModule);
-    if (tsModule.isObjectLiteralExpression(unwrapped)) {
-        return propertyFromObject(unwrapped, name, checker, tsModule);
-    }
-    if (tsModule.isIdentifier(unwrapped)) {
-        const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
-        return propertyFromExpression(decl?.initializer, name, checker, tsModule);
-    }
-    if (tsModule.isConditionalExpression(unwrapped)) {
-        return (propertyFromExpression(unwrapped.whenTrue, name, checker, tsModule) ??
-            propertyFromExpression(unwrapped.whenFalse, name, checker, tsModule));
-    }
-    return undefined;
-}
-export function stringPropertyFromExpression(expr, name, checker, tsModule) {
-    const value = propertyFromExpression(expr, name, checker, tsModule);
-    return stringLiteralText(value, tsModule);
-}
-export function resolveVariableDeclaration(id, checker, tsModule) {
-    // In `{ schema }` the identifier's own symbol is the object literal's
-    // property, not the value it stands for — the checker exposes the value
-    // through a dedicated lookup.
-    const symbol = tsModule.isShorthandPropertyAssignment(id.parent)
-        ? checker.getShorthandAssignmentValueSymbol(id.parent)
-        : checker.getSymbolAtLocation(id);
-    const aliased = symbol && (symbol.flags & tsModule.SymbolFlags.Alias)
-        ? checker.getAliasedSymbol(symbol)
-        : symbol;
-    const decl = aliased?.valueDeclaration ?? aliased?.declarations?.[0];
-    return decl && tsModule.isVariableDeclaration(decl) ? decl : undefined;
-}
-function carrierExpression(api, expression, tsModule, explicitName) {
-    const expr = skipParens(expression, tsModule);
+function carrierExpression(api, expression, tsModule, explicitName, metadata) {
+    const expr = unwrapExpression(expression, tsModule);
     // `opts.schema` — the schema is a property of a whole parameter.
     if (tsModule.isPropertyAccessExpression(expr) &&
         tsModule.isIdentifier(expr.expression)) {
@@ -92,14 +42,20 @@ function carrierExpression(api, expression, tsModule, explicitName) {
         // of one would be a second hop this doesn't follow.
         if (!param || param.propertyName !== undefined)
             return undefined;
-        return { ...param, api, propertyName: expr.name.text, explicitName };
+        return {
+            ...param,
+            api,
+            propertyName: expr.name.text,
+            explicitName,
+            metadata,
+        };
     }
     // A bare `schema` — either the parameter itself (`f(schema)`) or destructured
     // out of a parameter object (`f({ schema })`). Both arrive at the call site
     // inside the same argument; `carrierParam` reports which read recovers it.
     if (tsModule.isIdentifier(expr)) {
         const param = carrierParam(expr, expr.text, tsModule);
-        return param && { ...param, api, explicitName };
+        return param && { ...param, api, explicitName, metadata };
     }
     return undefined;
 }
@@ -159,7 +115,10 @@ function carrierTargetFromCall(call, sourceFile, checker, tsModule, carrier) {
         return undefined;
     const name = carrier.explicitName ??
         stringPropertyFromExpression(argument, 'name', checker, tsModule);
-    return namedTarget(carrier.api, schema, sourceFile, tsModule, name);
+    return namedTarget(carrier.api, schema, sourceFile, tsModule, name, {
+        ...carrier.metadata,
+        usageSpan: spanFor(call, sourceFile),
+    });
 }
 function callsCarrier(call, fn, checker, tsModule) {
     const resolved = checker.getResolvedSignature(call)?.declaration;
@@ -202,50 +161,28 @@ function contextualSignatureDeclarations(fn, checker, tsModule) {
     }
     return declarations;
 }
-function propertyFromObject(obj, name, checker, tsModule) {
-    for (const prop of [...obj.properties].reverse()) {
-        if (tsModule.isPropertyAssignment(prop)) {
-            if (propertyName(prop.name, tsModule) === name)
-                return prop.initializer;
-            continue;
-        }
-        // `{ schema }` — the value is the name itself.
-        if (tsModule.isShorthandPropertyAssignment(prop)) {
-            if (prop.name.text === name)
-                return prop.name;
-            continue;
-        }
-        if (tsModule.isSpreadAssignment(prop)) {
-            const fromSpread = propertyFromExpression(prop.expression, name, checker, tsModule);
-            if (fromSpread)
-                return fromSpread;
-        }
-    }
-    return undefined;
-}
-function namedTarget(api, expression, sourceFile, tsModule, explicitName) {
+function namedTarget(api, expression, sourceFile, tsModule, explicitName, metadata) {
     const { line } = sourceFile.getLineAndCharacterOfPosition(expression.getStart(sourceFile));
-    const expr = skipParens(expression, tsModule);
+    const expr = unwrapExpression(expression, tsModule);
     const suffix = explicitName ??
         (tsModule.isIdentifier(expr) ? expr.text : `inline:${line + 1}`);
     return {
         name: `${api}:${suffix}`,
         sourceFile,
         expression,
+        metadata,
     };
 }
-function stringLiteralText(expr, tsModule) {
-    return expr && tsModule.isStringLiteralLike(expr) ? expr.text : undefined;
+export function spanFor(node, sourceFile) {
+    const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    return { file: sourceFile.fileName, line: line + 1, col: character + 1 };
 }
-function propertyName(name, tsModule) {
-    if (tsModule.isIdentifier(name) || tsModule.isStringLiteral(name)) {
-        return name.text;
+export function stringValueFromExpression(expr, checker, tsModule) {
+    const values = staticAlternatives(expr, checker, tsModule).map((alternative) => stringLiteralText(alternative, tsModule));
+    if (values.length === 0 || values.some((value) => value === undefined)) {
+        return undefined;
     }
-    return undefined;
-}
-function skipParens(node, tsModule) {
-    while (tsModule.isParenthesizedExpression(node))
-        node = node.expression;
-    return node;
+    const distinct = new Set(values);
+    return distinct.size === 1 ? values[0] : undefined;
 }
 //# sourceMappingURL=target_resolution.js.map

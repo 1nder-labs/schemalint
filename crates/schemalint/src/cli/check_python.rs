@@ -1,17 +1,25 @@
 use std::io::IsTerminal;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::cli::args::{CheckPythonArgs, OutputFormat};
+use crate::cli::discovery_policy::discover_batch;
 use crate::cli::pipeline::{
-    aggregate_results, attach_source_spans, emit_empty_output, emit_output, process_schemas,
+    build_report, build_rulesets, emit_failure, emit_output, evaluate_targets,
+    explicit_model_inputs, EnvelopePolicy,
 };
 use crate::cli::pyproject;
-use crate::rules::registry::RuleSet;
 
 use super::load_profiles_from_ids;
 
 pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     let start = std::time::Instant::now();
+    let format = args.format.unwrap_or_else(|| {
+        if std::io::stdout().is_terminal() {
+            OutputFormat::Human
+        } else {
+            OutputFormat::Json
+        }
+    });
 
     // -------------------------------------------------------------------
     // 1. Load pyproject.toml configuration
@@ -23,8 +31,14 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     let pyproject_config = match pyproject::load_pyproject_config(config_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "config",
+                e.to_string(),
+                vec![],
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
 
@@ -52,18 +66,35 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
             .collect()
     };
 
+    let exclude_globs = if args.excludes.is_empty() {
+        pyproject_config
+            .as_ref()
+            .map(|config| config.exclude.clone())
+            .unwrap_or_default()
+    } else {
+        args.excludes.clone()
+    };
+
     if packages.is_empty() {
-        eprintln!(
-            "error: no packages specified. Use --package or configure [tool.schemalint] in pyproject.toml"
+        return emit_failure(
+            format,
+            args.output.as_deref(),
+            "packages",
+            "no packages specified. Use --package or configure [tool.schemalint] in pyproject.toml",
+            vec![],
+            start.elapsed().as_millis() as u64,
         );
-        return 1;
     }
 
     if profile_args.is_empty() {
-        eprintln!(
-            "error: no profiles specified. Use --profile or configure [tool.schemalint] in pyproject.toml"
+        return emit_failure(
+            format,
+            args.output.as_deref(),
+            "profiles",
+            "no profiles specified. Use --profile or configure [tool.schemalint] in pyproject.toml",
+            vec![],
+            start.elapsed().as_millis() as u64,
         );
-        return 1;
     }
 
     // -------------------------------------------------------------------
@@ -72,116 +103,90 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     let profiles = match load_profiles_from_ids(&profile_args) {
         Ok(profiles) => profiles,
         Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "profiles",
+                e.to_string(),
+                vec![],
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
-
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = profiles
+    let profile_names: Vec<String> = profiles
         .iter()
-        .map(|p| (p, RuleSet::from_profile(p)))
+        .map(|profile| profile.name.clone())
         .collect();
 
-    let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
-
-    // -------------------------------------------------------------------
-    // 4. Determine output format
-    // -------------------------------------------------------------------
-    let format = args.format.unwrap_or_else(|| {
-        if std::io::stdout().is_terminal() {
-            OutputFormat::Human
-        } else {
-            OutputFormat::Json
-        }
-    });
-
-    // -------------------------------------------------------------------
-    // 5. Spawn Python helper and discover models
-    // -------------------------------------------------------------------
-    let mut helper = match crate::python::PythonHelper::spawn(args.python_path.as_deref()) {
-        Ok(h) => h,
+    let profile_rulesets = match build_rulesets(&profiles) {
+        Ok(rulesets) => rulesets,
         Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "profiles",
+                format!("failed to construct profile rules: {e}"),
+                profile_names,
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
 
-    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
-    let mut discovery_failures = 0usize;
-    for package in &packages {
-        match helper.discover(package) {
-            Ok(resp) => {
-                for model in resp.models {
-                    discovered_models.push(model);
-                }
-            }
-            Err(e) => {
-                eprintln!("error: discovery failed for package '{}': {}", package, e);
-                discovery_failures += 1;
-            }
-        }
+    // -------------------------------------------------------------------
+    // 5. Discover packages in isolated helpers. User import hangs or protocol
+    //    failures cannot poison continuation for later packages.
+    // -------------------------------------------------------------------
+    let discovery = discover_batch(
+        &packages,
+        &exclude_globs,
+        args.continue_on_discovery_error,
+        "package",
+        |package, exclusions| {
+            let mut helper = crate::python::PythonHelper::spawn(args.python_path.as_deref())?;
+            let result = helper.discover_with_exclusions(package, exclusions);
+            helper.shutdown();
+            result
+        },
+    );
+    for failure in &discovery.failures {
+        eprintln!(
+            "error: discovery failed for {}: {}",
+            failure.target, failure.message
+        );
+    }
+    for warning in &discovery.warnings {
+        eprintln!("warning: {}: {}", warning.target, warning.message);
     }
 
-    helper.shutdown();
-
-    if discovered_models.is_empty() {
-        if discovery_failures > 0 {
-            eprintln!(
-                "error: all {} package(s) failed discovery",
-                discovery_failures
-            );
-            return 1;
-        }
+    if discovery.models.is_empty() {
         eprintln!("warning: no Pydantic models discovered in packages");
-        return emit_empty_output(format, &profile_names, args.output.as_deref());
     }
 
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
-    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovered_models
-        .iter()
-        .map(|m| {
-            (
-                PathBuf::from(&m.module_path),
-                m.name.clone(),
-                m.schema.clone(),
-            )
-        })
-        .collect();
-
-    let results = process_schemas(schema_entries, &profile_rulesets);
-
-    // -------------------------------------------------------------------
-    // 7. Attach source spans from discovery
-    // -------------------------------------------------------------------
-    let all_diagnostics = attach_source_spans(results, &discovered_models);
+    let inputs =
+        explicit_model_inputs(&discovery.models, &profile_rulesets, EnvelopePolicy::Ignore);
+    let results = evaluate_targets(inputs, &profile_rulesets);
 
     // -------------------------------------------------------------------
     // 8. Aggregate results
     // -------------------------------------------------------------------
-    let (all_diagnostics, total_errors, total_warnings, fatal_errors) =
-        aggregate_results(all_diagnostics);
+    let report = build_report(
+        discovery.coverage,
+        discovery.failures,
+        discovery.warnings,
+        results,
+        profile_names,
+        Some(start.elapsed().as_millis() as u64),
+    );
 
     // -------------------------------------------------------------------
     // 9. Emit output
     // -------------------------------------------------------------------
-    let duration_ms = Some(start.elapsed().as_millis() as u64);
-    if let Err(exit_code) = emit_output(
-        format,
-        &all_diagnostics,
-        total_errors,
-        total_warnings,
-        &profile_names,
-        duration_ms,
-        args.output.as_deref(),
-    ) {
+    if let Err(exit_code) = emit_output(format, &report, args.output.as_deref()) {
         return exit_code;
     }
 
-    if total_errors > 0 || fatal_errors > 0 || discovery_failures > 0 {
-        1
-    } else {
-        0
-    }
+    report.exit_code()
 }

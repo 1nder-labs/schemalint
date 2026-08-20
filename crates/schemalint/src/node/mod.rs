@@ -98,7 +98,15 @@ impl NodeHelper {
     /// After `MAX_STALE_DRAIN` mismatches, an error is returned to prevent
     /// infinite loops in a corrupted protocol state.
     pub fn discover(&mut self, source: &str) -> Result<DiscoverResponse, NodeError> {
-        let params = serde_json::json!({ "source": source });
+        self.discover_with_exclusions(source, &[])
+    }
+
+    pub(crate) fn discover_with_exclusions(
+        &mut self,
+        source: &str,
+        exclusions: &[String],
+    ) -> Result<DiscoverResponse, NodeError> {
+        let params = serde_json::json!({ "source": source, "exclude": exclusions });
         let result = self.client.send_discover(params);
         result.map_err(|e| match e {
             // serialize/write/flush: no stderr augmentation
@@ -117,23 +125,8 @@ impl NodeHelper {
 
     /// Drain captured stderr lines and append them to the error message.
     fn augment_error(&self, err: NodeError) -> NodeError {
-        let lines = self.client.take_stderr();
-        if lines.is_empty() {
+        let Some(stderr_tail) = self.client.take_stderr_tail("Node") else {
             return err;
-        }
-        let stderr_tail = if lines.len() > 10 {
-            let tail: Vec<_> = lines.iter().rev().take(10).map(|s| s.as_str()).collect();
-            format!(
-                "\n--- Node stderr (last {} of {} lines) ---\n{}\n--- end stderr ---",
-                10,
-                lines.len(),
-                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
-            )
-        } else {
-            format!(
-                "\n--- Node stderr ---\n{}\n--- end stderr ---",
-                lines.join("\n")
-            )
         };
         match err {
             NodeError::DiscoverFailed(msg) => {

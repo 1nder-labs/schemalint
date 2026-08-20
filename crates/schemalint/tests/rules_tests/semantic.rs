@@ -60,7 +60,7 @@ fn empty_object_rule_fires() {
         "type": "object",
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -84,7 +84,7 @@ fn empty_object_rule_error_when_forbid_empty_object() {
         "type": "object",
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -112,7 +112,7 @@ fn empty_object_rule_fires_with_empty_properties() {
         "properties": {},
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -134,7 +134,7 @@ fn empty_object_rule_negative_with_properties() {
         "properties": { "x": {} },
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -153,7 +153,7 @@ fn empty_object_rule_negative_no_ap_false() {
     let schema = normalize_schema(serde_json::json!({
         "type": "object"
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -173,7 +173,7 @@ fn additional_properties_object_rule_fires() {
         "type": "object",
         "additionalProperties": {}
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -195,7 +195,7 @@ fn additional_properties_object_rule_negative_bool() {
         "type": "object",
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -215,7 +215,7 @@ fn additional_properties_object_rule_negative_true() {
         "type": "object",
         "additionalProperties": true
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -239,7 +239,7 @@ fn anyof_objects_hint_fires() {
             }
         }
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -260,7 +260,7 @@ fn anyof_objects_hint_negative_mixed() {
     let schema = normalize_schema(serde_json::json!({
         "anyOf": [{ "type": "string" }, { "type": "object" }]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -279,7 +279,7 @@ fn anyof_objects_hint_negative_empty() {
     let schema = normalize_schema(serde_json::json!({
         "anyOf": []
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -299,7 +299,7 @@ fn allof_with_ref_rule_fires_anthropic() {
         "$defs": { "X": { "type": "string" } },
         "allOf": [{ "$ref": "#/$defs/X" }]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -321,7 +321,7 @@ fn allof_with_ref_rule_negative_openai() {
         "$defs": { "X": { "type": "string" } },
         "allOf": [{ "$ref": "#/$defs/X" }]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -340,7 +340,7 @@ fn allof_with_ref_rule_negative_no_ref() {
     let schema = normalize_schema(serde_json::json!({
         "allOf": [{ "type": "string" }]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -363,7 +363,7 @@ fn external_refs_file_scheme_flagged() {
     let schema = normalize_schema(serde_json::json!({
         "$ref": "file:///schemas/foo.json"
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -383,7 +383,7 @@ fn external_refs_relative_same_dir_flagged() {
     let schema = normalize_schema(serde_json::json!({
         "$ref": "./models/user.json"
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -403,7 +403,7 @@ fn external_refs_relative_parent_dir_flagged() {
     let schema = normalize_schema(serde_json::json!({
         "$ref": "../common/base.json"
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -424,7 +424,7 @@ fn external_refs_fragment_not_flagged() {
         "$defs": { "Foo": { "type": "string" } },
         "properties": { "x": { "$ref": "#/$defs/Foo" } }
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -456,7 +456,7 @@ fn anyof_objects_hint_suppressed_at_root() {
             { "type": "object", "properties": { "b": { "type": "number" } } }
         ]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()

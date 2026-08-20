@@ -1,20 +1,23 @@
 use std::io::IsTerminal;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
-use rayon::prelude::*;
-
-use crate::cache::{hash_bytes, Cache};
 use crate::cli::args::{CheckArgs, OutputFormat};
 use crate::cli::discover;
-use crate::cli::pipeline::{aggregate_results, check_rulesets, emit_empty_output, emit_output};
-use crate::normalize::normalize;
-use crate::rules::registry::{Diagnostic, RuleSet};
+use crate::cli::pipeline::{
+    build_report, build_rulesets, emit_failure, emit_output, evaluate_targets, raw_target_input,
+};
 
 use super::load_profiles_from_ids;
 
 pub(super) fn run_check(args: CheckArgs) -> i32 {
     let start = std::time::Instant::now();
+    let format = args.format.unwrap_or_else(|| {
+        if std::io::stdout().is_terminal() {
+            OutputFormat::Human
+        } else {
+            OutputFormat::Json
+        }
+    });
     let mut profile_args: Vec<String> = args
         .profiles
         .iter()
@@ -36,112 +39,81 @@ pub(super) fn run_check(args: CheckArgs) -> i32 {
     let profiles = match load_profiles_from_ids(&profile_args) {
         Ok(profiles) => profiles,
         Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "profiles",
+                e.to_string(),
+                vec![],
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
-
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = profiles
+    let profile_names: Vec<String> = profiles
         .iter()
-        .map(|p| (p, RuleSet::from_profile(p)))
+        .map(|profile| profile.name.clone())
         .collect();
 
-    let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
-
-    // -----------------------------------------------------------------------
-    // Determine output format
-    // -----------------------------------------------------------------------
-    let format = args.format.unwrap_or_else(|| {
-        if std::io::stdout().is_terminal() {
-            OutputFormat::Human
-        } else {
-            OutputFormat::Json
+    let profile_rulesets = match build_rulesets(&profiles) {
+        Ok(rulesets) => rulesets,
+        Err(e) => {
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "profiles",
+                format!("failed to construct profile rules: {e}"),
+                profile_names,
+                start.elapsed().as_millis() as u64,
+            );
         }
-    });
+    };
 
     // -----------------------------------------------------------------------
     // Discover schema files
     // -----------------------------------------------------------------------
     if args.paths.is_empty() {
-        eprintln!("error: no schema files or directories provided");
-        return 1;
+        return emit_failure(
+            format,
+            args.output.as_deref(),
+            "input",
+            "no schema files or directories provided",
+            profile_names,
+            start.elapsed().as_millis() as u64,
+        );
     }
-    let files = discover::discover(&args.paths);
-    if files.is_empty() {
-        return emit_empty_output(format, &profile_names, args.output.as_deref());
-    }
+    let discovery = discover::discover(&args.paths, &args.excludes);
 
     // -----------------------------------------------------------------------
     // Process schemas (parallel)
     // -----------------------------------------------------------------------
-    let cache = Mutex::new(Cache::new());
-
-    let results: Vec<(PathBuf, Result<Vec<Diagnostic>, String>)> = files
-        .into_par_iter()
-        .map(|path| {
-            let bytes = match std::fs::read(&path) {
-                Ok(b) => b,
-                Err(e) => return (path, Err(format!("failed to read file: {}", e))),
-            };
-
-            let hash = hash_bytes(&bytes);
-            let cached_schema = {
-                let cache_guard = cache.lock().unwrap();
-                cache_guard.get(hash, &bytes).cloned()
-            };
-            if let Some(cached) = cached_schema {
-                let diags = check_rulesets(&cached.arena, &profile_rulesets);
-                return (path, Ok(diags));
-            }
-
-            let value = match serde_json::from_slice::<serde_json::Value>(&bytes) {
-                Ok(v) => v,
-                Err(e) => return (path, Err(format!("invalid JSON: {}", e))),
-            };
-
-            let normalized = match normalize(value) {
-                Ok(n) => n,
-                Err(e) => return (path, Err(format!("normalization failed: {}", e))),
-            };
-
-            let diags = check_rulesets(&normalized.arena, &profile_rulesets);
-            cache.lock().unwrap().insert(hash, bytes, normalized);
-            (path, Ok(diags))
-        })
+    let inputs = discovery
+        .files
+        .into_iter()
+        .map(|path| raw_target_input(path, &profile_names, profile_rulesets.len()))
         .collect();
+    let results = evaluate_targets(inputs, &profile_rulesets);
 
     // -----------------------------------------------------------------------
     // Aggregate results
     // -----------------------------------------------------------------------
-    let (all_diagnostics, total_errors, total_warnings, fatal_errors) = aggregate_results(
-        results
-            .into_iter()
-            .map(|(p, r)| (p, String::new(), r))
-            .collect(),
+    let report = build_report(
+        discovery.coverage,
+        discovery.failures,
+        vec![],
+        results,
+        profile_names,
+        Some(start.elapsed().as_millis() as u64),
     );
 
     // -----------------------------------------------------------------------
     // Emit output
     // -----------------------------------------------------------------------
-    let duration_ms = Some(start.elapsed().as_millis() as u64);
-    if let Err(exit_code) = emit_output(
-        format,
-        &all_diagnostics,
-        total_errors,
-        total_warnings,
-        &profile_names,
-        duration_ms,
-        args.output.as_deref(),
-    ) {
+    if let Err(exit_code) = emit_output(format, &report, args.output.as_deref()) {
         return exit_code;
     }
 
     // -----------------------------------------------------------------------
     // Exit code
     // -----------------------------------------------------------------------
-    if total_errors > 0 || fatal_errors > 0 {
-        1
-    } else {
-        0
-    }
+    report.exit_code()
 }

@@ -30,8 +30,8 @@ fn diagnostics_match(actual: &[serde_json::Value], expected: &[serde_json::Value
     }
     let mut a_sorted: Vec<_> = actual.to_vec();
     let mut e_sorted: Vec<_> = expected.to_vec();
-    a_sorted.sort_by(|a, b| diag_key(a).cmp(&diag_key(b)));
-    e_sorted.sort_by(|a, b| diag_key(a).cmp(&diag_key(b)));
+    a_sorted.sort_by_key(diag_key);
+    e_sorted.sort_by_key(diag_key);
     for (a, e) in a_sorted.iter().zip(e_sorted.iter()) {
         for field in ["code", "severity", "message", "pointer", "profile"] {
             if a.get(field) != e.get(field) {

@@ -1,6 +1,7 @@
 use serde::Serialize;
 
 use crate::cli::docs_url::rule_url;
+use crate::cli::report::{CheckReport, CoverageCounts};
 use crate::rules::registry::{DiagnosticSeverity, SourceSpan};
 use crate::rules::Diagnostic;
 
@@ -11,6 +12,7 @@ struct JsonOutput {
     profiles: Vec<String>,
     summary: Summary,
     diagnostics: Vec<JsonDiagnostic>,
+    report: serde_json::Value,
 }
 
 #[derive(Serialize)]
@@ -51,8 +53,29 @@ pub fn emit_json_to_string(
     profile_names: &[String],
     duration_ms: Option<u64>,
 ) -> String {
+    let checked = diagnostics.len();
+    let report = CheckReport {
+        coverage: CoverageCounts {
+            attempted: checked,
+            discovered: checked,
+            checked,
+            ..CoverageCounts::default()
+        },
+        failures: vec![],
+        warnings: vec![],
+        targets: vec![],
+        diagnostics: diagnostics.to_vec(),
+        total_errors,
+        total_warnings,
+        profiles: profile_names.to_vec(),
+        duration_ms,
+    };
+    emit_report_to_string(&report)
+}
+
+pub(crate) fn emit_report_to_string(report: &CheckReport) -> String {
     let mut json_diags = Vec::new();
-    for (path, diags) in diagnostics {
+    for (path, diags) in &report.diagnostics {
         for d in diags {
             let source = d.source.clone().map(|mut s| {
                 s.file = s.file.replace('\\', "/");
@@ -81,20 +104,21 @@ pub fn emit_json_to_string(
     }
 
     let output = JsonOutput {
-        schema_version: "1.0".to_string(),
+        schema_version: "1.1".to_string(),
         tool: ToolMeta {
             name: "schemalint".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
         },
-        profiles: profile_names.to_vec(),
+        profiles: report.profiles.clone(),
         summary: Summary {
-            total_issues: total_errors + total_warnings,
-            errors: total_errors,
-            warnings: total_warnings,
-            schemas_checked: diagnostics.len(),
-            duration_ms,
+            total_issues: report.total_errors + report.total_warnings,
+            errors: report.total_errors,
+            warnings: report.total_warnings,
+            schemas_checked: report.coverage.checked,
+            duration_ms: report.duration_ms,
         },
         diagnostics: json_diags,
+        report: report.report_json(),
     };
 
     serde_json::to_string_pretty(&output).unwrap() + "\n"

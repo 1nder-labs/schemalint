@@ -6,6 +6,7 @@ use crate::normalize::dialect::Dialect;
 
 pub mod desugar;
 pub mod dialect;
+pub mod pointer;
 pub mod refs;
 pub mod traverse;
 
@@ -48,9 +49,9 @@ pub fn normalize(value: Value) -> Result<NormalizedSchema, NormalizeError> {
     // Expand the full tree so that every $ref node exists before resolution.
     traverse::expand_and_dfs(&mut arena, root_id)?;
 
-    let _ref_edges = refs::resolve_refs(&mut arena, &defs)?;
-    let transitive_edges = refs::transitive_ref_edges(&arena, &defs);
-    refs::tarjan_scc(&mut arena, &transitive_edges);
+    let ref_edges = refs::resolve_refs(&mut arena)?;
+    let cycle_edges = refs::cycle_edges(&arena, &ref_edges);
+    refs::tarjan_scc(&mut arena, &cycle_edges);
 
     // Desugar type arrays for all nodes.
     let all_ids: Vec<NodeId> = arena.iter().map(|(id, _)| id).collect();
@@ -81,7 +82,8 @@ fn build_defs(
         for (name, val) in map {
             let child = parse_node(val).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
-            arena[child_id].json_pointer = format!("/\u{24}defs/{}", name);
+            arena[child_id].json_pointer =
+                format!("/\u{24}defs/{}", pointer::escape_pointer_segment(&name));
             arena[child_id].parent = Some(root_id);
             arena[child_id].depth = 1;
             arena[root_id].children.push(child_id);
@@ -89,19 +91,23 @@ fn build_defs(
         }
     }
 
-    // `definitions` (Draft 7) — `$defs` takes precedence on name conflict.
+    // `definitions` (Draft 7) — `$defs` takes precedence on name conflict,
+    // but only in the `defs` lookup map used for `$ref` resolution. A
+    // colliding `definitions` entry is still allocated as its own node so a
+    // rule can visit it: the provider still sees that subtree even when a
+    // schema author never references it, so it still needs to be linted.
     if let Some(Value::Object(map)) = definitions_val {
         for (name, val) in map {
-            if defs.contains_key(&name) {
-                continue;
-            }
             let child = parse_node(val).map_err(|e| NormalizeError::ParseError(e.to_string()))?;
             let child_id = arena.alloc(child);
-            arena[child_id].json_pointer = format!("/definitions/{}", name);
+            arena[child_id].json_pointer =
+                format!("/definitions/{}", pointer::escape_pointer_segment(&name));
             arena[child_id].parent = Some(root_id);
             arena[child_id].depth = 1;
             arena[root_id].children.push(child_id);
-            defs.insert(name, child_id);
+            if !defs.contains_key(&name) {
+                defs.insert(name, child_id);
+            }
         }
     }
 

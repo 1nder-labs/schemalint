@@ -1,0 +1,370 @@
+"""Tests for the discover module."""
+
+import sys
+import os
+import importlib
+import tempfile
+import textwrap
+
+import pytest
+
+# Ensure the canonical wheel source tree is importable.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from schemalint_pydantic.discover import (
+    discover_models,
+    _find_field_declaration_line,
+    _escape_pointer_segment,
+)
+
+
+@pytest.fixture
+def temp_package():
+    """Create a temporary Python package with Pydantic v2 models."""
+    import uuid
+    pkg_name = f"testmodels_{uuid.uuid4().hex[:8]}"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        pkg_dir = os.path.join(tmpdir, pkg_name)
+        os.makedirs(pkg_dir)
+        init_path = os.path.join(pkg_dir, "__init__.py")
+
+        init_content = textwrap.dedent("""
+        from pydantic import BaseModel, Field
+        from typing import Optional, Annotated
+
+        class SimpleModel(BaseModel):
+            name: str
+            age: int
+
+        class NestedModel(BaseModel):
+            title: str
+            child: SimpleModel
+
+        class EmptyModel(BaseModel):
+            pass
+
+        class ModelWithDefault(BaseModel):
+            status: str = "active"
+            count: int = 0
+        """)
+
+        with open(init_path, "w") as f:
+            f.write(init_content)
+
+        # Add parent to sys.path
+        sys.path.insert(0, tmpdir)
+        try:
+            yield pkg_name
+        finally:
+            sys.path.remove(tmpdir)
+            # Clean up cached module to prevent cross-test contamination
+            sys.modules.pop(pkg_name, None)
+            importlib.invalidate_caches()
+
+
+class TestFindFieldDeclarationLine:
+    """Tests for _find_field_declaration_line."""
+
+    def test_simple_declaration(self):
+        lines = ["class Foo(BaseModel):\n", "    name: str\n", "    age: int\n"]
+        result = _find_field_declaration_line(lines, 10, "name")
+        assert result == 11
+
+    def test_declaration_with_default(self):
+        lines = ["class Foo(BaseModel):\n", "    status: str = 'active'\n"]
+        result = _find_field_declaration_line(lines, 5, "status")
+        assert result == 6
+
+    def test_field_not_found(self):
+        lines = ["class Foo(BaseModel):\n", "    name: str\n"]
+        result = _find_field_declaration_line(lines, 1, "nonexistent")
+        assert result is None
+
+    def test_empty_lines(self):
+        lines = []
+        result = _find_field_declaration_line(lines, 1, "field")
+        assert result is None
+
+
+class TestDiscoverModels:
+    """Integration tests for discover_models."""
+
+    def test_discovers_simple_model(self, temp_package):
+        try:
+            result = discover_models(temp_package)
+        except ImportError:
+            pytest.skip("pydantic not installed")
+
+        models = result["models"]
+        names = {m["name"] for m in models}
+        assert "SimpleModel" in names
+        assert "NestedModel" in names
+        assert "EmptyModel" in names
+        assert "ModelWithDefault" in names
+
+    def test_simple_model_has_schema(self, temp_package):
+        try:
+            result = discover_models(temp_package)
+        except ImportError:
+            pytest.skip("pydantic not installed")
+
+        simple = next(m for m in result["models"] if m["name"] == "SimpleModel")
+        assert "schema" in simple
+        schema = simple["schema"]
+        assert "properties" in schema
+        assert "name" in schema["properties"]
+        assert "age" in schema["properties"]
+        assert result["counts"]["attempted"] == len(result["models"])
+        assert result["counts"]["discovered"] == len(result["models"])
+        assert result["counts"]["failed"] == 0
+
+    def test_root_package_excluded_before_import(self, temp_package):
+        result = discover_models(temp_package, [temp_package])
+
+        assert result["models"] == []
+        assert result["counts"] == {
+            "attempted": 0,
+            "excluded": 1,
+            "discovered": 0,
+            "failed": 0,
+        }
+
+    def test_simple_model_has_source_map(self, temp_package):
+        try:
+            result = discover_models(temp_package)
+        except ImportError:
+            pytest.skip("pydantic not installed")
+
+        simple = next(m for m in result["models"] if m["name"] == "SimpleModel")
+        source_map = simple["source_map"]
+        assert "/properties/name" in source_map
+        assert "/properties/age" in source_map
+        assert "file" in source_map["/properties/name"]
+        assert "line" in source_map["/properties/name"]
+
+    def test_empty_model_has_valid_schema(self, temp_package):
+        try:
+            result = discover_models(temp_package)
+        except ImportError:
+            pytest.skip("pydantic not installed")
+
+        empty = next(m for m in result["models"] if m["name"] == "EmptyModel")
+        schema = empty["schema"]
+        assert "properties" in schema
+        assert schema["properties"] == {}
+        assert empty["source_map"] == {}
+
+    def test_nested_model_has_child_reference(self, temp_package):
+        try:
+            result = discover_models(temp_package)
+        except ImportError:
+            pytest.skip("pydantic not installed")
+
+        nested = next(m for m in result["models"] if m["name"] == "NestedModel")
+        schema = nested["schema"]
+        assert "child" in schema["properties"]
+
+    def test_invalid_package_raises(self):
+        with pytest.raises(ImportError, match="Cannot import"):
+            discover_models("nonexistent.package.xyz")
+
+    def test_pydantic_v1_model_is_discovered_with_notice(self):
+        try:
+            from pydantic.v1 import BaseModel
+        except ImportError:
+            from pydantic import BaseModel
+
+        class LegacyModel(BaseModel):
+            name: str
+
+        module = sys.modules[__name__]
+        setattr(module, "LegacyModel", LegacyModel)
+        try:
+            result = discover_models(__name__)
+        finally:
+            delattr(module, "LegacyModel")
+
+        assert any(model["name"] == "LegacyModel" for model in result["models"])
+        assert any(warning.get("type") == "pydantic_v1" for warning in result["warnings"])
+
+
+class TestDiscoverErrors:
+    """Error path tests."""
+
+    def test_non_package_string_raises(self):
+        # A builtin module with no path won't have BaseModel subclasses
+        result = discover_models("json")
+        assert result["models"] == []
+
+    def test_submodule_import_failure_is_counted_and_visible(self):
+        import uuid
+
+        package_name = f"partialmodels_{uuid.uuid4().hex[:8]}"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            package = os.path.join(tmpdir, package_name)
+            os.makedirs(package)
+            with open(os.path.join(package, "__init__.py"), "w"):
+                pass
+            with open(os.path.join(package, "good.py"), "w") as source:
+                source.write(
+                    "from pydantic import BaseModel\n"
+                    "class RetainedModel(BaseModel):\n"
+                    "    value: str\n"
+                )
+            with open(os.path.join(package, "broken.py"), "w") as source:
+                source.write('raise RuntimeError("intentional import failure")\n')
+
+            sys.path.insert(0, tmpdir)
+            try:
+                result = discover_models(package_name)
+            finally:
+                sys.path.remove(tmpdir)
+                for module_name in list(sys.modules):
+                    if module_name == package_name or module_name.startswith(
+                        package_name + "."
+                    ):
+                        sys.modules.pop(module_name, None)
+                importlib.invalidate_caches()
+
+        assert [model["name"] for model in result["models"]] == ["RetainedModel"]
+        assert result["counts"] == {
+            "attempted": 2,
+            "excluded": 0,
+            "discovered": 1,
+            "failed": 1,
+        }
+        assert result["failures"] == [
+            {
+                "kind": "evaluation",
+                "target": f"{package_name}.broken",
+                "message": "module import failed: intentional import failure",
+            }
+        ]
+
+    def test_reexported_model_is_discovered_once(self):
+        import uuid
+
+        package_name = f"reexportedmodels_{uuid.uuid4().hex[:8]}"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            package = os.path.join(tmpdir, package_name)
+            os.makedirs(package)
+            with open(os.path.join(package, "__init__.py"), "w") as source:
+                source.write("from .models import ReExportedModel\n")
+            with open(os.path.join(package, "models.py"), "w") as source:
+                source.write(
+                    "from pydantic import BaseModel\n"
+                    "class ReExportedModel(BaseModel):\n"
+                    "    value: str\n"
+                )
+
+            sys.path.insert(0, tmpdir)
+            try:
+                result = discover_models(package_name)
+            finally:
+                sys.path.remove(tmpdir)
+                for module_name in list(sys.modules):
+                    if module_name == package_name or module_name.startswith(
+                        package_name + "."
+                    ):
+                        sys.modules.pop(module_name, None)
+                importlib.invalidate_caches()
+
+        assert [model["name"] for model in result["models"]] == [
+            "ReExportedModel"
+        ]
+        assert result["models"][0]["module_path"] == f"{package_name}.models"
+        assert result["counts"] == {
+            "attempted": 1,
+            "excluded": 0,
+            "discovered": 1,
+            "failed": 0,
+        }
+        assert result["failures"] == []
+
+    def test_introspection_failure_is_visible_and_recursion_continues(self):
+        import uuid
+
+        package_name = f"opaquemodels_{uuid.uuid4().hex[:8]}"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            package = os.path.join(tmpdir, package_name)
+            nested = os.path.join(package, "opaque")
+            os.makedirs(nested)
+            with open(os.path.join(package, "__init__.py"), "w"):
+                pass
+            with open(os.path.join(package, "getter.py"), "w") as source:
+                source.write(
+                    "def __dir__():\n"
+                    "    return ['Explosive']\n"
+                    "def __getattr__(name):\n"
+                    "    raise RuntimeError('intentional getattr failure')\n"
+                )
+            with open(os.path.join(nested, "__init__.py"), "w") as source:
+                source.write(
+                    "def __dir__():\n"
+                    "    raise RuntimeError('intentional introspection failure')\n"
+                )
+            with open(os.path.join(nested, "models.py"), "w") as source:
+                source.write(
+                    "from pydantic import BaseModel\n"
+                    "class RetainedModel(BaseModel):\n"
+                    "    value: str\n"
+                )
+
+            sys.path.insert(0, tmpdir)
+            try:
+                result = discover_models(package_name)
+            finally:
+                sys.path.remove(tmpdir)
+                for module_name in list(sys.modules):
+                    if module_name == package_name or module_name.startswith(
+                        package_name + "."
+                    ):
+                        sys.modules.pop(module_name, None)
+                importlib.invalidate_caches()
+
+        assert [model["name"] for model in result["models"]] == ["RetainedModel"]
+        assert result["counts"] == {
+            "attempted": 3,
+            "excluded": 0,
+            "discovered": 1,
+            "failed": 2,
+        }
+        assert result["failures"] == [
+            {
+                "kind": "evaluation",
+                "target": f"{package_name}.getter",
+                "message": "module introspection failed: intentional getattr failure",
+            },
+            {
+                "kind": "evaluation",
+                "target": f"{package_name}.opaque",
+                "message": (
+                    "module introspection failed: "
+                    "intentional introspection failure"
+                ),
+            }
+        ]
+
+
+def test_escaper_matches_the_cross_language_contract():
+    """The Python escaper against the shared RFC 6901 table.
+
+    The Rust normalizer and the Node sidecar assert the same table. All three
+    build pointers independently and the Rust side joins them with an exact
+    string match, so a divergence drops source attribution silently rather
+    than failing.
+    """
+    import json
+
+    fixture = os.path.join(
+        os.path.dirname(__file__),
+        "..", "..", "..", "schemalint", "tests", "fixtures", "pointer-escaping.json",
+    )
+    with open(os.path.normpath(fixture), encoding="utf-8") as handle:
+        contract = json.load(handle)
+
+    assert contract["cases"], "fixture must carry cases"
+    for case in contract["cases"]:
+        assert _escape_pointer_segment(case["input"]) == case["escaped"], (
+            f"escaping {case['input']!r} must match the cross-language contract"
+        )

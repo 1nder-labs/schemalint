@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Top-level truth declaration for a single provider.
 #[derive(Debug, Clone, Deserialize)]
@@ -54,6 +54,31 @@ pub enum KeywordBehavior {
     Accept,
     Reject,
     Strip,
+}
+
+/// Classification persisted by opt-in live refreshes. Provider verdicts are
+/// never inferred from authentication, transport, or incomplete local lint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum LiveRefreshState {
+    ProviderAccepted,
+    ProviderRejected {
+        message: String,
+    },
+    InfrastructureFailure {
+        kind: InfrastructureFailureKind,
+        message: String,
+    },
+    IncompleteLintEvaluation {
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InfrastructureFailureKind {
+    Authentication,
+    Transport,
 }
 
 /// Structural limit test case.

@@ -1,0 +1,24 @@
+{
+  "contract": "RFC 6901 pointer-segment escaping. Three independent implementations must produce byte-identical output for every case below, because the Rust normalizer and the two sidecars build pointers separately and `source_map.get(pointer)` joins them by exact string match. A mismatch silently drops source attribution rather than erroring.",
+  "implementations": [
+    "crates/schemalint/src/normalize/pointer.rs :: escape_pointer_segment",
+    "npm/schemalint/src/discover_ast.ts :: escapePointerSegment",
+    "crates/schemalint-python/python/schemalint_pydantic/discover.py :: _escape_pointer_segment"
+  ],
+  "note": "`a/b` and `a/b~c` are the order-sensitive cases: escaping `/` before `~` yields `a~01b` instead of `a~1b`. Keep them.",
+  "cases": [
+    { "input": "plain", "escaped": "plain" },
+    { "input": "", "escaped": "" },
+    { "input": "a/b", "escaped": "a~1b" },
+    { "input": "c~d", "escaped": "c~0d" },
+    { "input": "/", "escaped": "~1" },
+    { "input": "~", "escaped": "~0" },
+    { "input": "//", "escaped": "~1~1" },
+    { "input": "~~", "escaped": "~0~0" },
+    { "input": "~1", "escaped": "~01" },
+    { "input": "~0", "escaped": "~00" },
+    { "input": "a/b~c", "escaped": "a~1b~0c" },
+    { "input": "^x/y$", "escaped": "^x~1y$" },
+    { "input": "shared/config", "escaped": "shared~1config" }
+  ]
+}

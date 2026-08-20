@@ -75,14 +75,11 @@ max_object_depth = -1
 }
 
 // ---------------------------------------------------------------------------
-// P4: Unknown keys inside [structural] are silently ignored (no deny_unknown_fields)
+// Unknown structural keys fail closed
 // ---------------------------------------------------------------------------
 
-/// Guard that StructuralLimits deserialization does NOT use `deny_unknown_fields`.
-/// Adding new fields to the struct (or third-party profiles that use keys we
-/// don't yet recognise) must not break profile loading.
 #[test]
-fn structural_unknown_key_is_ignored() {
+fn structural_unknown_key_is_rejected() {
     let toml = r#"
 name = "test"
 version = "1.0"
@@ -93,8 +90,68 @@ some_future_key_not_yet_known = true
 another_unknown_integer = 42
 "#;
 
-    // Must succeed — unknown keys must be silently ignored, not rejected.
+    let error = load(toml.as_bytes()).unwrap_err();
+    assert!(matches!(error, ProfileError::InvalidToml(_)));
+    assert!(error.to_string().contains("some_future_key_not_yet_known"));
+}
+
+// ---------------------------------------------------------------------------
+// unknown_keyword_policy
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unknown_keyword_policy_absent_defaults_to_warn() {
+    let toml = r#"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+"#;
+
     let profile = load(toml.as_bytes()).unwrap();
-    // Known fields still deserialize correctly.
-    assert_eq!(profile.structural.require_object_root, false);
+    assert_eq!(
+        profile.structural.unknown_keyword_policy,
+        UnknownKeywordPolicy::Warn
+    );
+}
+
+#[test]
+fn unknown_keyword_policy_parses_allow_warn_forbid() {
+    for (value, expected) in [
+        ("allow", UnknownKeywordPolicy::Allow),
+        ("warn", UnknownKeywordPolicy::Warn),
+        ("forbid", UnknownKeywordPolicy::Forbid),
+    ] {
+        let toml = format!(
+            r#"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+unknown_keyword_policy = "{value}"
+"#
+        );
+        let profile = load(toml.as_bytes()).unwrap();
+        assert_eq!(
+            profile.structural.unknown_keyword_policy, expected,
+            "unknown_keyword_policy = \"{value}\" did not parse to {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn unknown_keyword_policy_invalid_value_errors() {
+    let toml = r#"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+unknown_keyword_policy = "strip"
+"#;
+
+    let error = load(toml.as_bytes()).unwrap_err();
+    assert!(matches!(error, ProfileError::InvalidToml(_)));
 }

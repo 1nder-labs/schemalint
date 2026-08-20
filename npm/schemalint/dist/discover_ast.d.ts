@@ -8,17 +8,21 @@ export interface ExportedSchemaCall {
  * Find top-level `const` declarations that are `z.object({...})` calls.
  */
 export declare function findExportedSchemaCalls(sourceFile: ts.SourceFile, tsModule: typeof ts): ExportedSchemaCall[];
-/**
- * Scan a source file's import declarations for provider SDKs.
- * Returns "openai" or "anthropic" if detected, undefined otherwise.
- */
-export declare function scanProviderImports(sourceFile: ts.SourceFile, tsModule: typeof ts): string | undefined;
 export declare function hasExportModifier(node: ts.Node, tsModule: typeof ts): boolean;
 /**
  * Given a node, if it is `z.object({...})`, return the ObjectLiteralExpression argument.
  * Handles chaining: `z.object({...}).extend({...})` — returns the initial object.
  */
 export declare function findZObjectCall(node: ts.Node, tsModule: typeof ts): ts.ObjectLiteralExpression | null;
+/**
+ * Escape a single JSON Pointer (RFC 6901) segment.
+ *
+ * `~` is replaced with `~0` first, then `/` is replaced with `~1`. The order
+ * matters: escaping `/` first would introduce new `~1` sequences that the
+ * `~` step would then re-escape, corrupting a name that already contains a
+ * literal `~1`.
+ */
+export declare function escapePointerSegment(segment: string): string;
 /**
  * Walk an ObjectLiteralExpression (`{ email: z.string(), ... }`) and build a
  * source map mapping JSON Pointer paths to file:line locations.

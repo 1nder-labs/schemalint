@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "properties": {
+    "tuple": {
+      "type": "array",
+      "items": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "count": {
+              "type": "number"
+            }
+          },
+          "required": ["count"],
+          "additionalProperties": false,
+          "minProperties": 1
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    }
+  },
+  "required": ["tuple"],
+  "additionalProperties": false
+}

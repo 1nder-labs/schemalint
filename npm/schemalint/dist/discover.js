@@ -14,10 +14,36 @@ import { evaluateSchema, evaluateSyntheticSchema } from './evaluate.js';
 export function toPosixPath(p, sep = path.sep) {
     return sep === '/' ? p : p.split(sep).join('/');
 }
-import { buildSourceMapFromObjectLiteral, findExportedSchemaCalls, scanProviderImports, } from './discover_ast.js';
+import { buildSourceMapFromObjectLiteral, findExportedSchemaCalls, } from './discover_ast.js';
 import { findSchemaTargets } from './targets.js';
+/**
+ * Name the cause of an empty discovery result when the source glob matched
+ * no file in the TypeScript program.
+ *
+ * `matchedFiles === 0` reads the same way for two different causes: no file
+ * exists on disk at all, or files exist but the tsconfig `include` list does
+ * not reach them. Tell them apart by checking the glob directly against disk
+ * with `tsModule.sys.readDirectory` — the same file-listing primitive
+ * tsconfig's own `include` resolution uses, so no new dependency is needed
+ * and the glob syntax matches what the user already writes in `include`.
+ */
+function emptyDiscoveryWarning(tsModule, projectRoot, sourceGlob) {
+    const diskMatches = tsModule.sys.readDirectory(projectRoot, undefined, undefined, [sourceGlob]);
+    if (diskMatches.length === 0) {
+        return {
+            model: '',
+            message: `No file on disk matched source glob '${sourceGlob}'.`,
+        };
+    }
+    return {
+        model: '',
+        message: `${diskMatches.length} file(s) on disk matched source glob '${sourceGlob}' ` +
+            'but are outside the TypeScript program. Add them to the "include" ' +
+            'list in tsconfig.json.',
+    };
+}
 /** Import each target and convert it to JSON Schema, recording per-target failures. */
-async function evaluateTargets(locations, warnings) {
+async function evaluateTargets(locations, failures) {
     const models = [];
     for (const loc of locations) {
         try {
@@ -29,12 +55,17 @@ async function evaluateTargets(locations, warnings) {
                 module_path: loc.filePath,
                 schema: schemaJson,
                 source_map: loc.sourceMap,
+                canonical_kind: loc.canonicalKind,
+                provider: loc.provider,
+                envelope: loc.envelope,
+                usage_span: loc.usageSpan,
             });
         }
         catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            warnings.push({
-                model: loc.name,
+            failures.push({
+                kind: 'evaluation',
+                target: loc.name,
                 message: `Failed to evaluate schema '${loc.name}' in ${loc.filePath}: ${message}`,
             });
         }
@@ -46,11 +77,20 @@ function exportedSchemaTargets(sourceFiles, tsModule) {
     const targets = [];
     for (const sourceFile of sourceFiles) {
         for (const exp of findExportedSchemaCalls(sourceFile, tsModule)) {
+            const sourceMap = buildSourceMapFromObjectLiteral(exp.objectArg, sourceFile, tsModule);
             targets.push({
                 name: exp.name,
                 filePath: sourceFile.fileName,
                 exportName: exp.name,
-                sourceMap: buildSourceMapFromObjectLiteral(exp.objectArg, sourceFile, tsModule),
+                sourceMap,
+                canonicalKind: 'zod.export',
+                provider: { certainty: 'ambiguous' },
+                envelope: {},
+                usageSpan: {
+                    file: sourceFile.fileName,
+                    line: sourceMap['']?.line ?? 1,
+                    col: 1,
+                },
             });
         }
     }
@@ -66,7 +106,7 @@ function exportedSchemaTargets(sourceFiles, tsModule) {
  * 5. Dynamically imports each file and evaluates schemas at runtime.
  * 6. Converts schemas to JSON Schema via zod-to-json-schema or native.
  */
-export async function discoverZodSchemas(sourceGlob) {
+export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     const tsModule = await import('typescript');
     const pm = await import('picomatch');
     // Resolve tsconfig.json
@@ -112,8 +152,27 @@ export async function discoverZodSchemas(sourceGlob) {
         const relPath = toPosixPath(path.relative(projectRoot, f));
         return isMatch(relPath);
     });
+    const matchedFiles = fileNames.length;
+    const excludeMatchers = exclusions.map((pattern) => picomatch(pattern, { dot: true }));
+    fileNames = fileNames.filter((file) => {
+        const relative = toPosixPath(path.relative(projectRoot, file));
+        return !excludeMatchers.some((matches) => matches(relative));
+    });
+    const excluded = matchedFiles - fileNames.length;
     if (fileNames.length === 0) {
-        return { models: [], warnings: [] };
+        // Only diagnose a cause when the glob itself matched nothing in the
+        // TypeScript program (matchedFiles === 0). When files matched but were
+        // then all removed by --exclude, that is ordinary exclusion behavior,
+        // not one of the three causes this unit distinguishes.
+        const warnings = matchedFiles === 0
+            ? [emptyDiscoveryWarning(tsModule, projectRoot, sourceGlob)]
+            : [];
+        return {
+            models: [],
+            warnings,
+            failures: [],
+            counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
+        };
     }
     // Create program and walk ASTs to discover schemas
     const program = tsModule.createProgram(fileNames, compilerOptions);
@@ -121,34 +180,52 @@ export async function discoverZodSchemas(sourceGlob) {
     const selectedSourceFiles = program.getSourceFiles().filter((sourceFile) => !sourceFile.isDeclarationFile &&
         !sourceFile.fileName.includes('node_modules') &&
         fileSet.has(sourceFile.fileName));
-    // Step 0: Scan provider imports for auto-detection
-    let providerHint;
-    for (const sourceFile of selectedSourceFiles) {
-        const hint = scanProviderImports(sourceFile, tsModule);
-        if (hint) {
-            providerHint = hint;
-            break;
-        }
-    }
     // Step 1: Prefer provider-facing call sites. This catches schemas passed to
     // AI SDK, OpenAI helpers, and Anthropic helper APIs. Legacy exported-schema
     // discovery remains as a fallback for simple projects and explicit schema
     // modules that are not wired to a provider call in the selected source glob.
-    const callsiteTargets = findSchemaTargets(program, fileSet, tsModule, compilerOptions);
-    const nonFatal = [];
-    const models = await evaluateTargets(callsiteTargets, nonFatal);
+    const callsiteDiscovery = findSchemaTargets(program, fileSet, tsModule, compilerOptions);
+    const discoveredLocations = [...callsiteDiscovery.targets];
+    const discoveryFailures = [...callsiteDiscovery.failures];
+    // Copy, do not alias: `attempted` below reads `discoveryFailures.length`, so
+    // pushing evaluation failures into the same array would inflate the attempt
+    // count and trip the caller's coverage accounting check.
+    const failures = [...discoveryFailures];
+    const models = await evaluateTargets(discoveredLocations, failures);
     // Legacy exported-schema discovery, for projects with no provider call site
     // in the source glob. It keys off evaluated models rather than resolved
     // targets: a target that resolves but then fails to evaluate would otherwise
     // hold this gate shut and leave the run linting nothing at all.
     if (models.length === 0) {
         const exported = exportedSchemaTargets(selectedSourceFiles, tsModule);
-        models.push(...(await evaluateTargets(exported, nonFatal)));
+        discoveredLocations.push(...exported);
+        models.push(...(await evaluateTargets(exported, failures)));
     }
-    const response = { models, warnings: nonFatal };
-    if (providerHint) {
-        response.provider_hint = providerHint;
+    if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
+        return {
+            models: [],
+            warnings: [
+                {
+                    model: '',
+                    message: `Checked ${fileNames.length} file(s) matched by source glob ` +
+                        `'${sourceGlob}' for Zod schemas but found none.`,
+                },
+            ],
+            failures: [],
+            counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
+        };
     }
+    const response = {
+        models,
+        warnings: [],
+        failures,
+        counts: {
+            attempted: discoveredLocations.length + discoveryFailures.length,
+            excluded,
+            discovered: models.length,
+            failed: failures.length,
+        },
+    };
     return response;
 }
 //# sourceMappingURL=discover.js.map

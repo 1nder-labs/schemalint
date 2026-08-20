@@ -1,19 +1,21 @@
 import { resolveTarget } from './target_emit.js';
-import { collectTargetImports, FORMAT_CALLS, isProviderCall, OUTPUT_CALLS, TOOL_CALLS, } from './target_imports.js';
-import { collectCarrierTargets, objectExpression, propertyFromExpression, pushExpressionOrCarrier, } from './target_resolution.js';
+import { collectTargetImports, resolveTargetAdapter, } from './target_imports.js';
+import { collectCarrierTargets, pushExpressionOrCarrier, spanFor, stringValueFromExpression, } from './target_resolution.js';
+import { propertyFromExpression } from './object_properties.js';
+import { unambiguousExpression } from './static_expression.js';
 export function findSchemaTargets(program, fileSet, tsModule, compilerOptions) {
     const checker = program.getTypeChecker();
     const carrierExpressions = [];
     const targets = [];
+    const failures = [];
     const seen = new Set();
     for (const sourceFile of program.getSourceFiles()) {
         if (sourceFile.isDeclarationFile ||
-            sourceFile.fileName.includes('node_modules')) {
+            sourceFile.fileName.includes('node_modules') ||
+            !fileSet.has(sourceFile.fileName)) {
             continue;
         }
-        if (!fileSet.has(sourceFile.fileName))
-            continue;
-        const found = collectTargetExpressions(sourceFile, checker, tsModule, carrierExpressions);
+        const found = collectTargetExpressions(sourceFile, checker, tsModule, carrierExpressions, failures);
         for (const target of found) {
             pushTarget(targets, seen, resolveTarget(target, checker, tsModule, compilerOptions));
         }
@@ -21,96 +23,86 @@ export function findSchemaTargets(program, fileSet, tsModule, compilerOptions) {
     for (const target of collectCarrierTargets(program, fileSet, checker, tsModule, carrierExpressions)) {
         pushTarget(targets, seen, resolveTarget(target, checker, tsModule, compilerOptions));
     }
-    return targets;
+    return { targets, failures };
 }
-function collectTargetExpressions(sourceFile, checker, tsModule, carrierExpressions) {
+function collectTargetExpressions(sourceFile, checker, tsModule, carrierExpressions, failures) {
     const targets = [];
     const imports = collectTargetImports(sourceFile, tsModule);
     function walk(node) {
         if (tsModule.isCallExpression(node)) {
-            collectFromCall(node, sourceFile, checker, tsModule, imports, targets, carrierExpressions);
+            collectFromCall(node, sourceFile, checker, tsModule, imports, targets, carrierExpressions, failures);
         }
         tsModule.forEachChild(node, walk);
     }
     tsModule.forEachChild(sourceFile, walk);
     return targets;
 }
-function collectFromCall(call, sourceFile, checker, tsModule, imports, targets, carrierExpressions) {
-    const ref = callRef(call.expression, tsModule);
-    if (!ref || !isProviderCall(ref, imports))
+function collectFromCall(call, sourceFile, checker, tsModule, imports, targets, carriers, failures) {
+    const adapter = resolveTargetAdapter(call.expression, imports, tsModule);
+    if (!adapter)
         return;
-    const name = ref.name;
-    if (OUTPUT_CALLS.has(name)) {
-        const schema = propertyFromExpression(call.arguments[0], 'schema', checker, tsModule);
-        if (schema) {
-            pushExpressionOrCarrier(targets, carrierExpressions, name, schema, sourceFile, tsModule);
+    const schema = schemaExpression(call, adapter, checker, tsModule);
+    if (!schema) {
+        failures.push({
+            kind: 'metadata',
+            target: adapter.kind,
+            message: `required schema metadata is not statically resolvable at ${formatSpan(spanFor(call, sourceFile))}`,
+        });
+        return;
+    }
+    const envelope = {};
+    for (const selector of adapter.envelope) {
+        const expression = selector.property
+            ? propertyFromExpression(call.arguments[selector.argument], selector.property, checker, tsModule)
+            : call.arguments[selector.argument];
+        const value = stringValueFromExpression(expression, checker, tsModule);
+        if (selector.required && value === undefined) {
+            failures.push({
+                kind: 'metadata',
+                target: adapter.kind,
+                message: `required field '${selector.name}' is not statically resolvable at ${formatSpan(spanFor(expression ?? call, sourceFile))}`,
+            });
+            return;
         }
-        return;
-    }
-    if (name === 'object' && isOutputObjectCall(call, tsModule, imports)) {
-        const schema = propertyFromExpression(call.arguments[0], 'schema', checker, tsModule);
-        if (schema) {
-            pushExpressionOrCarrier(targets, carrierExpressions, 'Output.object', schema, sourceFile, tsModule);
+        if (expression) {
+            envelope[selector.name] = {
+                required: selector.required,
+                span: spanFor(expression, sourceFile),
+                ...(value === undefined ? {} : { value }),
+            };
         }
-        return;
     }
-    if (TOOL_CALLS.has(name)) {
-        const arg = objectExpression(call.arguments[0], checker, tsModule);
-        const schema = arg &&
-            (propertyExpression(arg, 'inputSchema', tsModule) ??
-                propertyExpression(arg, 'parameters', tsModule));
-        if (schema) {
-            pushExpressionOrCarrier(targets, carrierExpressions, name, schema, sourceFile, tsModule, stringProperty(arg, 'name', tsModule));
+    const metadata = {
+        adapterModule: adapter.module,
+        canonicalKind: adapter.kind,
+        provider: adapter.provider
+            ? { certainty: 'definitive', provider: adapter.provider }
+            : { certainty: 'ambiguous' },
+        envelope,
+        usageSpan: spanFor(call, sourceFile),
+    };
+    pushExpressionOrCarrier(targets, carriers, adapter.exportPath, schema, sourceFile, tsModule, envelope.name?.value, metadata);
+}
+function schemaExpression(call, adapter, checker, tsModule) {
+    if ('properties' in adapter.schema) {
+        for (const property of adapter.schema.properties) {
+            const found = propertyFromExpression(call.arguments[adapter.schema.argument], property, checker, tsModule);
+            if (found)
+                return found;
         }
-        return;
+        return undefined;
     }
-    if (FORMAT_CALLS.has(name) && call.arguments[0]) {
-        const schemaName = stringLiteralText(call.arguments[1], tsModule);
-        pushExpressionOrCarrier(targets, carrierExpressions, name, call.arguments[0], sourceFile, tsModule, schemaName);
-    }
+    return unambiguousExpression(call.arguments[adapter.schema.argument], checker, tsModule);
 }
 function pushTarget(targets, seen, resolved) {
-    const key = `${resolved.filePath}:${resolved.exportName}:${resolved.name}`;
+    const usage = resolved.usageSpan;
+    const key = `${resolved.canonicalKind}:${usage.file}:${usage.line}:${usage.col}:${resolved.name}`;
     if (seen.has(key))
         return;
     seen.add(key);
     targets.push(resolved);
 }
-function propertyExpression(obj, name, tsModule) {
-    for (const prop of obj.properties) {
-        if (!tsModule.isPropertyAssignment(prop))
-            continue;
-        if (propertyName(prop.name, tsModule) === name)
-            return prop.initializer;
-    }
-    return undefined;
-}
-function stringProperty(obj, name, tsModule) {
-    const expr = propertyExpression(obj, name, tsModule);
-    return stringLiteralText(expr, tsModule);
-}
-function stringLiteralText(expr, tsModule) {
-    return expr && tsModule.isStringLiteralLike(expr) ? expr.text : undefined;
-}
-function propertyName(name, tsModule) {
-    if (tsModule.isIdentifier(name) || tsModule.isStringLiteral(name))
-        return name.text;
-    return undefined;
-}
-function callRef(expr, tsModule) {
-    if (tsModule.isIdentifier(expr))
-        return { name: expr.text };
-    if (tsModule.isPropertyAccessExpression(expr) &&
-        tsModule.isIdentifier(expr.expression)) {
-        return { name: expr.name.text, receiver: expr.expression.text };
-    }
-    return undefined;
-}
-function isOutputObjectCall(call, tsModule, imports) {
-    const expr = call.expression;
-    return tsModule.isPropertyAccessExpression(expr) &&
-        tsModule.isIdentifier(expr.expression) &&
-        imports.outputObjects.has(expr.expression.text) &&
-        expr.name.text === 'object';
+function formatSpan(span) {
+    return `${span.file}:${span.line}:${span.col}`;
 }
 //# sourceMappingURL=targets.js.map

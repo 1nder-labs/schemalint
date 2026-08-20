@@ -7,7 +7,7 @@ use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use clap::Parser;
-use schemalint_conformance::{evaluate, parse_truth, ProviderTruth, TruthResult};
+use schemalint_conformance::{evaluate_provider, parse_truth, ProviderTruth, TruthResult};
 
 #[derive(Parser)]
 #[command(name = "schemalint-conformance")]
@@ -314,7 +314,18 @@ fn handle_connection(
         };
 
         // Evaluate.
-        let result = evaluate(truth, &schema);
+        let result = match evaluate_provider(truth, &schema) {
+            Ok(result) => result,
+            Err(error) => {
+                let body = serde_json::json!({
+                    "status": "incomplete_lint_evaluation",
+                    "error": error.to_string(),
+                })
+                .to_string();
+                let _ = send_json_response(&mut stream, 500, &body);
+                return;
+            }
+        };
         let response_body = match &result {
             TruthResult::Accepted { transformed } => {
                 serde_json::json!({"status": "accepted", "transformed": transformed}).to_string()
@@ -349,6 +360,7 @@ fn send_json_response(stream: &mut TcpStream, status: u16, body: &str) -> std::i
         404 => "Not Found",
         413 => "Payload Too Large",
         431 => "Request Header Fields Too Large",
+        500 => "Internal Server Error",
         _ => "Internal Server Error",
     };
     let response = format!(

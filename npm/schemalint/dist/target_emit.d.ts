@@ -1,11 +1,16 @@
 import type * as ts from 'typescript';
 import type { SourceMapEntry } from './discover.js';
-import { type TargetExpression } from './target_resolution.js';
+import type { TargetExpression } from './target_resolution.js';
+import type { EnvelopeField, ProviderResolution, TargetSpan } from './sdk_adapters.js';
 export interface SchemaTarget {
     name: string;
     filePath: string;
     exportName: string;
     sourceMap: Record<string, SourceMapEntry>;
+    canonicalKind: string;
+    provider: ProviderResolution;
+    envelope: Record<string, EnvelopeField>;
+    usageSpan: TargetSpan;
     syntheticSource?: string;
 }
 export declare function resolveTarget(target: TargetExpression, checker: ts.TypeChecker, tsModule: typeof ts, compilerOptions: ts.CompilerOptions): SchemaTarget;

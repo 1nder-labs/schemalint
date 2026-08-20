@@ -18,7 +18,7 @@ fn server_check_invalid_schema_root_type() {
         "id": 1
     });
     let response = send_request(&mut child, &request.to_string());
-    assert_eq!(response["result"]["success"], false);
+    assert!(!response["result"]["success"].as_bool().unwrap());
     assert!(response["result"]["error"]
         .as_str()
         .unwrap()
@@ -45,13 +45,13 @@ fn server_check_schema_number_root_type() {
         "jsonrpc": "2.0",
         "method": "check",
         "params": {
-            "schema": 3.14,
+            "schema": std::f64::consts::PI,
             "profiles": ["openai.so.2026-04-30"]
         },
         "id": 1
     });
     let response = send_request(&mut child, &request.to_string());
-    assert_eq!(response["result"]["success"], false);
+    assert!(!response["result"]["success"].as_bool().unwrap());
     let err = response["result"]["error"].as_str().unwrap();
     assert!(err.contains("Normalization failed"), "got: {err}");
 
@@ -87,7 +87,7 @@ fn server_check_invalid_format() {
         "id": 1
     });
     let response = send_request(&mut child, &request.to_string());
-    assert_eq!(response["result"]["success"], false);
+    assert!(!response["result"]["success"].as_bool().unwrap());
     let err = response["result"]["error"].as_str().unwrap();
     assert!(err.contains("Unknown format"), "got: {err}");
 
@@ -238,7 +238,7 @@ fn server_multiple_errors_then_success() {
         &mut child,
         r#"{"jsonrpc":"2.0","method":"check","params":{"profiles":["openai.so.2026-04-30"]},"id":3}"#,
     );
-    assert_eq!(r3["result"]["success"], false);
+    assert!(!r3["result"]["success"].as_bool().unwrap());
 
     let r4 = send_request(
         &mut child,
@@ -246,7 +246,7 @@ fn server_multiple_errors_then_success() {
             "jsonrpc": "2.0",
             "method": "check",
             "params": {
-                "schema": {"type": "string"},
+                "schema": {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"], "additionalProperties": false},
                 "profiles": ["openai.so.2026-04-30"]
             },
             "id": 4

@@ -11,3 +11,8 @@ include!("normalizer_tests/part_01.rs");
 include!("normalizer_tests/part_02.rs");
 include!("normalizer_tests/part_03.rs");
 include!("normalizer_tests/part_04.rs");
+include!("normalizer_tests/part_05.rs");
+include!("normalizer_tests/part_06.rs");
+include!("normalizer_tests/part_07.rs");
+include!("normalizer_tests/part_08.rs");
+include!("normalizer_tests/part_09.rs");

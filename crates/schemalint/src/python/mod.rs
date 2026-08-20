@@ -61,7 +61,15 @@ impl PythonHelper {
 
     /// Send a `discover` request for the given package and return discovered models.
     pub fn discover(&mut self, package: &str) -> Result<DiscoverResponse, PythonError> {
-        let params = serde_json::json!({ "package": package });
+        self.discover_with_exclusions(package, &[])
+    }
+
+    pub(crate) fn discover_with_exclusions(
+        &mut self,
+        package: &str,
+        exclusions: &[String],
+    ) -> Result<DiscoverResponse, PythonError> {
+        let params = serde_json::json!({ "package": package, "exclude": exclusions });
         let result = self.client.send_discover(params);
         result.map_err(|e| match e {
             // serialize/write/flush: no stderr augmentation
@@ -80,23 +88,8 @@ impl PythonHelper {
 
     /// Drain captured stderr lines and append them to the error message.
     fn augment_error(&self, err: PythonError) -> PythonError {
-        let lines = self.client.take_stderr();
-        if lines.is_empty() {
+        let Some(stderr_tail) = self.client.take_stderr_tail("Python") else {
             return err;
-        }
-        let stderr_tail = if lines.len() > 10 {
-            let tail: Vec<_> = lines.iter().rev().take(10).map(|s| s.as_str()).collect();
-            format!(
-                "\n--- Python stderr (last {} of {} lines) ---\n{}\n--- end stderr ---",
-                10,
-                lines.len(),
-                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
-            )
-        } else {
-            format!(
-                "\n--- Python stderr ---\n{}\n--- end stderr ---",
-                lines.join("\n")
-            )
         };
         match err {
             PythonError::DiscoverFailed(msg) => {

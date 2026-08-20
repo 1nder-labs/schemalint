@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "payload": {
+      "type": "string",
+      "contentEncoding": "base64"
+    }
+  },
+  "required": ["payload"],
+  "additionalProperties": false
+}

@@ -2,8 +2,10 @@ mod array;
 mod budget;
 pub(crate) mod helpers;
 mod object;
+mod recursion;
 mod refs;
 mod root;
+mod unknown_keyword;
 
 use crate::profile::Profile;
 use crate::rules::registry::Rule;
@@ -11,10 +13,12 @@ use crate::rules::registry::Rule;
 pub(crate) use helpers::schema_is_object;
 
 use array::ArrayItemsRule;
-use budget::{BudgetRule, MaxDepthRule};
+use budget::{BudgetRule, ConditionalEnumStringBudgetRule, MaxDepthRule};
 use object::{AdditionalPropertiesFalseRule, AllPropertiesRequiredRule, ObjectRootRule};
+use recursion::RecursiveSchemaRule;
 use refs::{AllOfWithRefRule, ExternalRefsRule};
 use root::{RootAnyOfRule, RootEnumRule};
+use unknown_keyword::{policy_severity, UnknownKeywordRule};
 
 /// Generate all Class B structural rules from a loaded profile.
 pub fn generate_class_b_rules(profile: &Profile) -> Vec<Box<dyn Rule>> {
@@ -75,6 +79,13 @@ pub fn generate_class_b_rules(profile: &Profile) -> Vec<Box<dyn Rule>> {
             profile.name.clone(),
         )));
     }
+    if s.enum_string_length_threshold > 0 && s.max_enum_string_length > 0 {
+        rules.push(Box::new(ConditionalEnumStringBudgetRule {
+            threshold: s.enum_string_length_threshold,
+            limit: s.max_enum_string_length,
+            profile_name: profile.name.clone(),
+        }));
+    }
     if s.max_optional_properties > 0 {
         rules.push(Box::new(BudgetRule::max_optional_properties(
             s.max_optional_properties,
@@ -94,6 +105,17 @@ pub fn generate_class_b_rules(profile: &Profile) -> Vec<Box<dyn Rule>> {
     }
     if s.forbid_allof_with_ref {
         rules.push(Box::new(AllOfWithRefRule {
+            profile_name: profile.name.clone(),
+        }));
+    }
+    if s.forbid_recursive_schemas {
+        rules.push(Box::new(RecursiveSchemaRule {
+            profile_name: profile.name.clone(),
+        }));
+    }
+    if let Some(severity) = policy_severity(s.unknown_keyword_policy) {
+        rules.push(Box::new(UnknownKeywordRule {
+            severity,
             profile_name: profile.name.clone(),
         }));
     }

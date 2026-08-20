@@ -9,16 +9,26 @@ import {
   findZObjectCall,
   hasExportModifier,
 } from './discover_ast.js';
+import type { TargetExpression } from './target_resolution.js';
 import {
   resolveVariableDeclaration,
-  type TargetExpression,
-} from './target_resolution.js';
+  unwrapExpression,
+} from './static_expression.js';
+import type {
+  EnvelopeField,
+  ProviderResolution,
+  TargetSpan,
+} from './sdk_adapters.js';
 
 export interface SchemaTarget {
   name: string;
   filePath: string;
   exportName: string;
   sourceMap: Record<string, SourceMapEntry>;
+  canonicalKind: string;
+  provider: ProviderResolution;
+  envelope: Record<string, EnvelopeField>;
+  usageSpan: TargetSpan;
   syntheticSource?: string;
 }
 
@@ -40,6 +50,10 @@ export function resolveTarget(
         filePath: exported.filePath,
         exportName: exported.exportName,
         sourceMap,
+        canonicalKind: target.metadata.canonicalKind,
+        provider: target.metadata.provider,
+        envelope: target.metadata.envelope,
+        usageSpan: target.metadata.usageSpan,
       };
     }
   }
@@ -50,12 +64,17 @@ export function resolveTarget(
     filePath: sourceFile.fileName,
     exportName,
     sourceMap,
+    canonicalKind: target.metadata.canonicalKind,
+    provider: target.metadata.provider,
+    envelope: target.metadata.envelope,
+    usageSpan: target.metadata.usageSpan,
     syntheticSource: buildSyntheticModule(
       sourceFile,
       expr,
       exportName,
       tsModule,
-      compilerOptions
+      compilerOptions,
+      target.metadata.adapterModule
     ),
   };
 }
@@ -74,7 +93,7 @@ function unwrapLocalAlias(
   checker: ts.TypeChecker,
   tsModule: typeof ts
 ): ts.Expression {
-  let current = skipParens(expression, tsModule);
+  let current = unwrapExpression(expression, tsModule);
   // ponytail: bounded rather than cycle-tracked; `const a = b, b = a` is not
   // valid code, so the only chains here are short alias hops.
   for (let hop = 0; hop < 8 && tsModule.isIdentifier(current); hop++) {
@@ -84,7 +103,7 @@ function unwrapLocalAlias(
     const moduleLevel =
       tsModule.isVariableStatement(stmt) && tsModule.isSourceFile(stmt.parent);
     if (moduleLevel) break;
-    current = skipParens(decl.initializer, tsModule);
+    current = unwrapExpression(decl.initializer, tsModule);
   }
   return current;
 }
@@ -115,31 +134,84 @@ function buildSyntheticModule(
   expr: ts.Expression,
   exportName: string,
   tsModule: typeof ts,
-  compilerOptions: ts.CompilerOptions
+  compilerOptions: ts.CompilerOptions,
+  adapterModule: string
 ): string {
   const parts: string[] = [];
-  // Identify the top-level statement that directly contains the target
-  // expression so we can skip it (we replace it with the export below).
-  const containingStmt = sourceFile.statements.find(
-    (stmt) =>
-      stmt.getStart(sourceFile) <= expr.getStart(sourceFile) &&
-      expr.getEnd() <= stmt.getEnd()
-  );
+  const adapterNames = importedNames(sourceFile, adapterModule, tsModule);
 
   for (const stmt of sourceFile.statements) {
     if (tsModule.isImportDeclaration(stmt)) {
+      if (
+        tsModule.isStringLiteral(stmt.moduleSpecifier) &&
+        stmt.moduleSpecifier.text === adapterModule
+      ) {
+        continue;
+      }
       parts.push(rewriteImport(stmt, sourceFile, tsModule, compilerOptions));
       continue;
     }
-    // Include all reusable declarations except the one containing the target
-    // expression. This allows the target to reference helpers declared either
-    // before or after it in source order without a ReferenceError.
-    if (stmt !== containingStmt && isReusableDeclaration(stmt, tsModule)) {
+    // Keep every reusable declaration except those that use a name imported
+    // from the adapter module, since that import is stripped above and the
+    // statement could not run without it (and would call the provider SDK at
+    // import time if it could).
+    //
+    // This used to drop the statement *containing* the target instead, which
+    // is wrong whenever the target resolved into a declaration: a schema
+    // reached through `const First = z.object(...)` lost that binding while
+    // other retained declarations still referenced `First`, so the synthetic
+    // module died with a ReferenceError. Whether that happened depended on
+    // whether symbol resolution succeeded, which made it look intermittent.
+    if (isReusableDeclaration(stmt, tsModule) && !usesAny(stmt, adapterNames, tsModule)) {
       parts.push(stmt.getText(sourceFile));
     }
   }
   parts.push(`export const ${exportName} = ${expr.getText(sourceFile)};`);
   return parts.join('\n\n');
+}
+
+/** Names this module imports from `moduleSpecifier`. */
+function importedNames(
+  sourceFile: ts.SourceFile,
+  moduleSpecifier: string,
+  tsModule: typeof ts
+): Set<string> {
+  const names = new Set<string>();
+  for (const stmt of sourceFile.statements) {
+    if (!tsModule.isImportDeclaration(stmt)) continue;
+    if (!tsModule.isStringLiteral(stmt.moduleSpecifier)) continue;
+    if (stmt.moduleSpecifier.text !== moduleSpecifier) continue;
+    const clause = stmt.importClause;
+    if (clause?.name) names.add(clause.name.text);
+    const bindings = clause?.namedBindings;
+    if (bindings && tsModule.isNamedImports(bindings)) {
+      for (const element of bindings.elements) names.add(element.name.text);
+    }
+    if (bindings && tsModule.isNamespaceImport(bindings)) {
+      names.add(bindings.name.text);
+    }
+  }
+  return names;
+}
+
+/** Whether `node` references any of `names`. */
+function usesAny(
+  node: ts.Node,
+  names: ReadonlySet<string>,
+  tsModule: typeof ts
+): boolean {
+  if (names.size === 0) return false;
+  let found = false;
+  const visit = (child: ts.Node): void => {
+    if (found) return;
+    if (tsModule.isIdentifier(child) && names.has(child.text)) {
+      found = true;
+      return;
+    }
+    tsModule.forEachChild(child, visit);
+  };
+  visit(node);
+  return found;
 }
 
 function isReusableDeclaration(stmt: ts.Statement, tsModule: typeof ts): boolean {
@@ -211,11 +283,6 @@ function sourceMapForTarget(
   }
 
   return sourceMapForExpression(expr, sourceFile, tsModule);
-}
-
-function skipParens(node: ts.Expression, tsModule: typeof ts): ts.Expression {
-  while (tsModule.isParenthesizedExpression(node)) node = node.expression;
-  return node;
 }
 
 function safeName(name: string): string {

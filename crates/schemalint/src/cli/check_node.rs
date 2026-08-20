@@ -1,16 +1,26 @@
 use std::io::IsTerminal;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::cli::args::{CheckNodeArgs, OutputFormat};
-use crate::cli::glob::glob_match;
+use crate::cli::discovery_policy::discover_batch;
 use crate::cli::node_config;
-use crate::cli::pipeline::{aggregate_results, attach_source_spans, emit_output, process_schemas};
-use crate::rules::registry::RuleSet;
+use crate::cli::node_policy::{automatic_profile_ids, automatic_target_inputs};
+use crate::cli::pipeline::{
+    build_report, build_rulesets, emit_failure, emit_output, evaluate_targets,
+    explicit_model_inputs, EnvelopePolicy,
+};
 
-use super::{default_profile_ids, load_profiles_from_ids, ANTHROPIC_PROFILE_ID, OPENAI_PROFILE_ID};
+use super::load_profiles_from_ids;
 
 pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     let start = std::time::Instant::now();
+    let format = args.format.unwrap_or_else(|| {
+        if std::io::stdout().is_terminal() {
+            OutputFormat::Human
+        } else {
+            OutputFormat::Json
+        }
+    });
 
     // -------------------------------------------------------------------
     // 1. Load package.json configuration
@@ -19,17 +29,17 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
         .config
         .as_deref()
         .unwrap_or_else(|| Path::new("package.json"));
-    // Directory to search for provider-detection purposes if we fall all the
-    // way through to the deps-based default (step 5 below).
-    let profile_start_dir: &Path = config_path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
     let node_config = match node_config::load_node_config(config_path) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "config",
+                e.to_string(),
+                vec![],
+                start.elapsed().as_millis() as u64,
+            );
         }
     };
 
@@ -57,16 +67,24 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
             .collect()
     };
 
-    let exclude_globs: Vec<String> = node_config
-        .as_ref()
-        .map(|c| c.exclude.clone())
-        .unwrap_or_default();
+    let exclude_globs = if args.excludes.is_empty() {
+        node_config
+            .as_ref()
+            .map(|c| c.exclude.clone())
+            .unwrap_or_default()
+    } else {
+        args.excludes.clone()
+    };
 
     if sources.is_empty() {
-        eprintln!(
-            "error: no sources specified. Use --source or configure \"schemalint\" in package.json"
+        return emit_failure(
+            format,
+            args.output.as_deref(),
+            "sources",
+            "no sources specified. Use --source or configure \"schemalint\" in package.json",
+            vec![],
+            start.elapsed().as_millis() as u64,
         );
-        return 1;
     }
 
     let explicit_profiles = if profile_args.is_empty() {
@@ -75,78 +93,53 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
         match load_profiles_from_ids(&profile_args) {
             Ok(profiles) => Some(profiles),
             Err(e) => {
-                eprintln!("error: {}", e);
-                return 1;
+                return emit_failure(
+                    format,
+                    args.output.as_deref(),
+                    "profiles",
+                    e.to_string(),
+                    vec![],
+                    start.elapsed().as_millis() as u64,
+                );
             }
         }
     };
 
     // -------------------------------------------------------------------
-    // 3. Determine output format
+    // 4. Discover schemas in isolated helpers. One wedged source cannot poison
+    //    continuation for later sources on the serial JSON-RPC transport.
     // -------------------------------------------------------------------
-    let format = args.format.unwrap_or_else(|| {
-        if std::io::stdout().is_terminal() {
-            OutputFormat::Human
-        } else {
-            OutputFormat::Json
-        }
-    });
-
-    // -------------------------------------------------------------------
-    // 4. Spawn Node helper and discover schemas
-    // -------------------------------------------------------------------
-    let mut helper = match crate::node::NodeHelper::spawn(args.node_path.as_deref()) {
-        Ok(h) => h,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            return 1;
-        }
-    };
-
-    let mut discovered_models: Vec<crate::ingest::DiscoveredModel> = Vec::new();
-    let mut discovery_failures = 0usize;
-    let mut provider_hint: Option<String> = None;
-    for source in &sources {
-        match helper.discover(source) {
-            Ok(resp) => {
-                if provider_hint.is_none() {
-                    provider_hint = resp.provider_hint.clone();
-                }
-                for model in resp.models {
-                    discovered_models.push(model);
-                }
-                // Log discovery warnings
-                for warning in &resp.warnings {
-                    eprintln!(
-                        "warning: discovery warning for '{}' in source '{}': {}",
-                        warning.model, source, warning.message
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("error: discovery failed for source '{}': {}", source, e);
-                discovery_failures += 1;
-            }
-        }
+    let discovery = discover_batch(
+        &sources,
+        &exclude_globs,
+        args.continue_on_discovery_error,
+        "source",
+        |source, exclusions| {
+            let mut helper = crate::node::NodeHelper::spawn(args.node_path.as_deref())?;
+            let result = helper.discover_with_exclusions(source, exclusions);
+            helper.shutdown();
+            result
+        },
+    );
+    for failure in &discovery.failures {
+        eprintln!(
+            "error: discovery failed for {}: {}",
+            failure.target, failure.message
+        );
+    }
+    for warning in &discovery.warnings {
+        eprintln!("warning: {}: {}", warning.target, warning.message);
     }
 
-    // Apply exclude patterns
-    if !exclude_globs.is_empty() {
-        discovered_models.retain(|m| {
-            !exclude_globs.iter().any(|g| {
-                let core = g.trim_start_matches("**/");
-                let core = core
-                    .strip_suffix("/**")
-                    .or_else(|| core.strip_suffix("/*"))
-                    .unwrap_or(core);
-                glob_match(core, &m.module_path)
-            })
-        });
-    }
-
-    let total_discovered = discovered_models.len();
+    let total_discovered = discovery.models.len();
     if total_discovered == 0 {
-        eprintln!("warning: no Zod schemas discovered in source globs");
+        // The sidecar names the cause when it can (no file on disk, files
+        // outside the TypeScript program, or files checked with no schema).
+        // Printing the vague line after a specific one puts the message this
+        // unit exists to replace back in front of the user.
+        if discovery.warnings.is_empty() {
+            eprintln!("warning: no Zod schemas discovered in source globs");
+        }
     } else {
         eprintln!(
             "info: discovered {} Zod schema(s) in {} source glob(s)",
@@ -155,112 +148,89 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
         );
     }
 
-    helper.shutdown();
-
-    if discovered_models.is_empty() && discovery_failures > 0 {
-        eprintln!(
-            "error: all {} source(s) failed discovery",
-            discovery_failures
-        );
-        return 1;
-    }
-
     // -------------------------------------------------------------------
-    // 5. Resolve a default profile if none was given yet: source-import
-    //    provider hint first (existing signal), then package.json
-    //    dependencies, then the openai default. This never hard-errors — it
-    //    always resolves to a profile and prints an `info:` line explaining
-    //    the choice.
+    // 5. Resolve automatic profiles from per-usage ownership. Ambiguous
+    //    targets are retained and become typed pipeline failures below.
     // -------------------------------------------------------------------
     if profile_args.is_empty() {
-        match provider_hint.as_deref() {
-            Some("openai") => {
-                eprintln!(
-                    "info: auto-detected provider 'openai' from source imports → using profile '{}'",
-                    OPENAI_PROFILE_ID
-                );
-                profile_args.push(OPENAI_PROFILE_ID.to_string());
-            }
-            Some("anthropic") => {
-                eprintln!(
-                    "info: auto-detected provider 'anthropic' from source imports → using profile '{}'",
-                    ANTHROPIC_PROFILE_ID
-                );
-                profile_args.push(ANTHROPIC_PROFILE_ID.to_string());
-            }
-            Some(other) => {
-                eprintln!("error: unknown provider hint '{}' from source files", other);
-                return 1;
-            }
-            None => {
-                profile_args = default_profile_ids(profile_start_dir);
-            }
+        profile_args = automatic_profile_ids(&discovery.models);
+        if !profile_args.is_empty() {
+            eprintln!(
+                "info: auto-selected per-target profile(s): {}",
+                profile_args.join(", ")
+            );
         }
     }
+    let uses_explicit_profiles = explicit_profiles.is_some();
     let profiles = match explicit_profiles {
         Some(profiles) => profiles,
+        None if profile_args.is_empty() => Vec::new(),
         None => match load_profiles_from_ids(&profile_args) {
             Ok(profiles) => profiles,
             Err(e) => {
-                eprintln!("error: {}", e);
-                return 1;
+                return emit_failure(
+                    format,
+                    args.output.as_deref(),
+                    "profiles",
+                    e.to_string(),
+                    vec![],
+                    start.elapsed().as_millis() as u64,
+                );
             }
         },
     };
 
-    let profile_rulesets: Vec<(&crate::profile::Profile, RuleSet)> = profiles
+    let profile_names: Vec<String> = profiles
         .iter()
-        .map(|p| (p, RuleSet::from_profile(p)))
+        .map(|profile| profile.name.clone())
         .collect();
 
-    let profile_names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
+    let profile_rulesets = match build_rulesets(&profiles) {
+        Ok(rulesets) => rulesets,
+        Err(e) => {
+            return emit_failure(
+                format,
+                args.output.as_deref(),
+                "profiles",
+                format!("failed to construct profile rules: {e}"),
+                profile_names,
+                start.elapsed().as_millis() as u64,
+            );
+        }
+    };
 
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
-    let schema_entries: Vec<(PathBuf, String, serde_json::Value)> = discovered_models
-        .iter()
-        .map(|m| {
-            (
-                PathBuf::from(&m.module_path),
-                m.name.clone(),
-                m.schema.clone(),
-            )
-        })
-        .collect();
-
-    let results = process_schemas(schema_entries, &profile_rulesets);
-
-    // -------------------------------------------------------------------
-    // 7. Attach source spans from discovery
-    // -------------------------------------------------------------------
-    let all_diagnostics = attach_source_spans(results, &discovered_models);
+    let inputs = if uses_explicit_profiles {
+        explicit_model_inputs(
+            &discovery.models,
+            &profile_rulesets,
+            EnvelopePolicy::Validate,
+        )
+    } else {
+        automatic_target_inputs(&discovery.models, &profile_rulesets)
+    };
+    let results = evaluate_targets(inputs, &profile_rulesets);
 
     // -------------------------------------------------------------------
     // 8. Aggregate results
     // -------------------------------------------------------------------
-    let (all_diagnostics, total_errors, total_warnings, fatal_errors) =
-        aggregate_results(all_diagnostics);
+    let report = build_report(
+        discovery.coverage,
+        discovery.failures,
+        discovery.warnings,
+        results,
+        profile_names,
+        Some(start.elapsed().as_millis() as u64),
+    );
 
     // -------------------------------------------------------------------
     // 9. Emit output
     // -------------------------------------------------------------------
-    let duration_ms = Some(start.elapsed().as_millis() as u64);
-    if let Err(exit_code) = emit_output(
-        format,
-        &all_diagnostics,
-        total_errors,
-        total_warnings,
-        &profile_names,
-        duration_ms,
-        args.output.as_deref(),
-    ) {
+    if let Err(exit_code) = emit_output(format, &report, args.output.as_deref()) {
         return exit_code;
     }
 
-    if total_errors > 0 || fatal_errors > 0 || discovery_failures > 0 {
-        1
-    } else {
-        0
-    }
+    report.exit_code()
 }

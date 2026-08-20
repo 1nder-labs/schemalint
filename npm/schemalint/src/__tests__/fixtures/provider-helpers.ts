@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { zodFunction, zodTextFormat } from 'openai/helpers/zod';
-import { betaZodTool } from '@anthropic-ai/sdk/helpers/zod';
+import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
 
 const ResponseSchema = z.object({
   answer: z.string(),

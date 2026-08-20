@@ -39,33 +39,6 @@ export function findExportedSchemaCalls(sourceFile, tsModule) {
     tsModule.forEachChild(sourceFile, walk);
     return results;
 }
-/**
- * Scan a source file's import declarations for provider SDKs.
- * Returns "openai" or "anthropic" if detected, undefined otherwise.
- */
-export function scanProviderImports(sourceFile, tsModule) {
-    for (const stmt of sourceFile.statements) {
-        if (!tsModule.isImportDeclaration(stmt))
-            continue;
-        const spec = stmt.moduleSpecifier;
-        if (!tsModule.isStringLiteral(spec))
-            continue;
-        const mod = spec.text;
-        if (mod === 'openai' || mod.startsWith('openai/')) {
-            return 'openai';
-        }
-        if (mod === '@ai-sdk/openai' || mod.startsWith('@ai-sdk/openai/')) {
-            return 'openai';
-        }
-        if (mod === '@anthropic-ai/sdk' || mod.startsWith('@anthropic-ai/')) {
-            return 'anthropic';
-        }
-        if (mod === '@ai-sdk/anthropic' || mod.startsWith('@ai-sdk/anthropic/')) {
-            return 'anthropic';
-        }
-    }
-    return undefined;
-}
 export function hasExportModifier(node, tsModule) {
     if (!tsModule.canHaveModifiers(node))
         return false;
@@ -134,6 +107,17 @@ function isZObjectCallExpression(node, tsModule) {
         expr.name.text === 'object');
 }
 /**
+ * Escape a single JSON Pointer (RFC 6901) segment.
+ *
+ * `~` is replaced with `~0` first, then `/` is replaced with `~1`. The order
+ * matters: escaping `/` first would introduce new `~1` sequences that the
+ * `~` step would then re-escape, corrupting a name that already contains a
+ * literal `~1`.
+ */
+export function escapePointerSegment(segment) {
+    return segment.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+/**
  * Walk an ObjectLiteralExpression (`{ email: z.string(), ... }`) and build a
  * source map mapping JSON Pointer paths to file:line locations.
  *
@@ -166,15 +150,15 @@ export function buildSourceMapFromObjectLiteral(objLit, sourceFile, tsModule) {
             continue;
         }
         const { line } = sourceFile.getLineAndCharacterOfPosition(prop.getStart(sourceFile));
-        // Pointer keys intentionally use the raw property name — NOT RFC 6901-escaped
-        // (i.e. '/' is NOT replaced with '~1', nor '~' with '~0').
-        // The Rust normalizer builds pointers the same way:
-        //   `format!("{}/properties/{}", ptr, key)` in crates/schemalint/src/normalize/traverse.rs
-        // Both sides must be byte-identical so that `source_map.get(&pointer)` matches.
-        // Escaping only this side would desync the two and break source-mapping for any
-        // property whose name contains '/' or '~'.  A coordinated change on both sides
-        // would be required if RFC-6901 canonical pointers are ever desired.
-        const pointer = `/properties/${propName}`;
+        // Pointer keys are RFC 6901-escaped: '~' becomes '~0', then '/' becomes
+        // '~1'. The Rust normalizer escapes the same way at the same join:
+        //   `format!("{}/properties/{}", ptr, escape_pointer_segment(key))`
+        //   in crates/schemalint/src/normalize/traverse.rs
+        // Both sides must stay byte-identical so that `source_map.get(&pointer)`
+        // matches. Escaping only one side would desync the two and break
+        // source-mapping for any property whose name contains '/' or '~'.
+        const escapedPropName = escapePointerSegment(propName);
+        const pointer = `/properties/${escapedPropName}`;
         map[pointer] = {
             file: sourceFile.fileName,
             line: line + 1, // 1-indexed
@@ -184,7 +168,7 @@ export function buildSourceMapFromObjectLiteral(objLit, sourceFile, tsModule) {
         if (innerCall) {
             const nested = buildSourceMapFromObjectLiteral(innerCall, sourceFile, tsModule);
             for (const [nestedPointer, nestedSpan] of Object.entries(nested)) {
-                map[`/properties/${propName}${nestedPointer}`] = nestedSpan;
+                map[`/properties/${escapedPropName}${nestedPointer}`] = nestedSpan;
             }
         }
     }

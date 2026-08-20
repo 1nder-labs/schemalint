@@ -1,20 +1,20 @@
 use crate::ir::{Arena, NodeId};
+use crate::normalize::pointer;
 use crate::normalize::NormalizeError;
-use indexmap::IndexMap;
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 /// Resolve internal `$ref` strings to `NodeId` targets.
 ///
-/// Phase 1 only resolves refs pointing directly to `$defs` or `definitions`
-/// entries. Any other internal ref pattern is a fatal error.
+/// An internal `$ref` (a fragment starting with `#`) may point at any node
+/// in the document, not only a `$defs`/`definitions` entry — this is the
+/// exact shape `zod-to-json-schema` emits when one sub-schema is reused
+/// across two locations (e.g. `{"$ref": "#/properties/a"}`). Only a
+/// fragment that names no existing node is a fatal error.
 /// External refs — any `$ref` that does not start with `#` (e.g. http://,
 /// https://, file://, absolute paths, relative paths like `./x.json` or
 /// `../x.json`, bare filenames) — are left unresolved and will be caught by
 /// structural rules (ExternalRefsRule / U6).
-pub fn resolve_refs(
-    arena: &mut Arena,
-    defs: &IndexMap<String, NodeId>,
-) -> Result<Vec<(NodeId, NodeId)>, NormalizeError> {
+pub(crate) fn resolve_refs(arena: &mut Arena) -> Result<Vec<(NodeId, NodeId)>, NormalizeError> {
     // Collect ref strings first to avoid borrow issues.
     let refs: Vec<(NodeId, String)> = arena
         .iter()
@@ -26,10 +26,29 @@ pub fn resolve_refs(
         })
         .collect();
 
+    // Most schemas carry no `$ref` at all. Building the index below walks the
+    // whole arena and clones every pointer, so skip it entirely rather than
+    // pay that on every normalize for nothing.
+    if refs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Every node's JSON Pointer is already set by the time this runs
+    // (`expand_and_dfs` runs before `resolve_refs`), and every pointer
+    // segment built from a user-controlled key is already RFC 6901 escaped
+    // (see `pointer::escape_pointer_segment`). A `$ref` fragment written by
+    // a schema author uses the same escaping, so a straight lookup against
+    // the arena's own pointers — after percent-decoding — resolves any
+    // internal ref without a second escape/unescape pass.
+    let pointer_index: HashMap<String, NodeId> = arena
+        .iter()
+        .map(|(id, node)| (node.json_pointer.clone(), id))
+        .collect();
+
     let mut edges = Vec::new();
 
     for (node_id, ref_str) in &refs {
-        if let Some(target) = resolve_ref_string(ref_str, defs)? {
+        if let Some(target) = resolve_ref_string(ref_str, &pointer_index)? {
             arena[*node_id].ref_target = Some(target);
             edges.push((*node_id, target));
         }
@@ -49,62 +68,49 @@ pub fn resolve_refs(
 
 fn resolve_ref_string(
     ref_str: &str,
-    defs: &IndexMap<String, NodeId>,
+    pointer_index: &HashMap<String, NodeId>,
 ) -> Result<Option<NodeId>, NormalizeError> {
-    // Strip the fragment prefix.
-    let pointer = ref_str.strip_prefix('#').unwrap_or(ref_str);
-    // Decode percent-encoded segments (e.g. %24 -> $).
+    // External refs — never resolved internally.
+    if ref_str.starts_with("http://") || ref_str.starts_with("https://") || ref_str.starts_with('/')
+    {
+        return Ok(None);
+    }
+    // Any other non-fragment ref (relative paths, bare filenames) is also
+    // external and left unresolved.
+    let Some(pointer) = ref_str.strip_prefix('#') else {
+        return Ok(None);
+    };
+
+    // Decode percent-encoded segments (e.g. %24 -> $). The pointer segments
+    // themselves stay in their RFC 6901 escaped form (`~0`, `~1`) because
+    // that is exactly how the arena's own `json_pointer` values are stored.
     let decoded = percent_encoding::percent_decode_str(pointer)
         .decode_utf8()
         .map_err(|e| {
             NormalizeError::ParseError(format!("invalid percent-encoding in $ref: {e}"))
         })?;
-    let decoded = decoded.as_ref();
 
-    // Internal refs to $defs.
-    if let Some(name) = decoded.strip_prefix("/$defs/") {
-        return Ok(defs.get(name).copied());
-    }
-    // Internal refs to definitions (Draft 7).
-    if let Some(name) = decoded.strip_prefix("/definitions/") {
-        return Ok(defs.get(name).copied());
-    }
-    // External refs — not resolved in Phase 1.
-    if ref_str.starts_with("http://") || ref_str.starts_with("https://") || ref_str.starts_with('/')
-    {
-        return Ok(None);
-    }
-    // Any other internal ref pattern is treated as unresolved.
-    Ok(None)
+    Ok(pointer_index.get(decoded.as_ref()).copied())
 }
 
-/// Build transitive ref edges for cycle detection.
+/// Edges for cycle detection: containment plus reference.
 ///
-/// For every `$ref` node, emit an edge from the **schema node that owns the
-/// reference** to the ref target.
+/// A schema is recursive when following containment downward and then a `$ref`
+/// across returns to where it started. The tree supplies containment
+/// (`parent -> child`) and `resolve_refs` supplies the references, so the union
+/// of the two is exactly that graph. A tree on its own is acyclic, so only a
+/// `$ref` can close a cycle.
 ///
-/// - If the `$ref` node itself is a `$defs` entry, the edge is from that node.
-/// - Otherwise the edge is from the `$ref` node's parent (the containing schema).
-///
-/// This captures the logical dependency needed for Tarjan SCC.
-pub fn transitive_ref_edges(
-    arena: &Arena,
-    defs: &IndexMap<String, NodeId>,
-) -> Vec<(NodeId, NodeId)> {
-    let def_ids: HashSet<NodeId> = defs.values().copied().collect();
-    let mut edges = Vec::new();
-    for (node_id, node) in arena.iter() {
-        if let Some(target) = node.ref_target {
-            let source = if def_ids.contains(&node_id) {
-                node_id
-            } else if let Some(parent_id) = node.parent {
-                parent_id
-            } else {
-                node_id
-            };
-            edges.push((source, target));
-        }
-    }
+/// This replaces an earlier form that approximated containment with a single
+/// hop from the `$ref` node to its parent. That closed a cycle only when the
+/// `$ref` sat exactly one level beneath its target; a deeper one was never
+/// marked cyclic at all, so no rule could report it.
+pub(crate) fn cycle_edges(arena: &Arena, ref_edges: &[(NodeId, NodeId)]) -> Vec<(NodeId, NodeId)> {
+    let mut edges: Vec<(NodeId, NodeId)> = arena
+        .iter()
+        .flat_map(|(id, node)| node.children.iter().map(move |&child| (id, child)))
+        .collect();
+    edges.extend_from_slice(ref_edges);
     edges
 }
 
@@ -114,7 +120,7 @@ pub fn transitive_ref_edges(
 
 /// Run Tarjan's strongly-connected-components algorithm on the `$ref` graph
 /// and mark every node that participates in a cycle.
-pub fn tarjan_scc(arena: &mut Arena, edges: &[(NodeId, NodeId)]) {
+pub(crate) fn tarjan_scc(arena: &mut Arena, edges: &[(NodeId, NodeId)]) {
     let n = arena.len();
     if n == 0 {
         return;
@@ -148,12 +154,39 @@ pub fn tarjan_scc(arena: &mut Arena, edges: &[(NodeId, NodeId)]) {
     }
 
     // Mark nodes in SCCs of size > 1 or with self-loops.
+    //
+    // `is_cyclic` marks every participant, which is what a budget or traversal
+    // concern wants. A rule that reports a cycle wants the opposite: exactly
+    // one node. The component structure is known only here, so the single node
+    // to report at is chosen here too, rather than left for a rule to
+    // reconstruct from a per-node boolean it cannot group.
+    //
+    // Every `$defs`/`definitions` entry in the component is marked, because
+    // each one is a name a schema author can act on: a mutually recursive
+    // `A` and `B` should point at both. A cycle containing no such entry —
+    // reachable since `$ref` resolves to any pointer, not only a definition —
+    // falls back to the component's lowest node, so it still reports once
+    // instead of vanishing. Both choices are index-based and deterministic,
+    // and neither degrades to one diagnostic per participating node.
     for component in &sccs {
         let size = component.len();
         let has_self_loop = size == 1 && adj[component[0]].contains(&component[0]);
         if size > 1 || has_self_loop {
             for &node_idx in component {
                 arena[NodeId(node_idx as u32)].is_cyclic = true;
+            }
+            let named: Vec<usize> = component
+                .iter()
+                .copied()
+                .filter(|&i| pointer::is_defs_entry(&arena[NodeId(i as u32)].json_pointer))
+                .collect();
+            let roots = if named.is_empty() {
+                component.iter().copied().min().into_iter().collect()
+            } else {
+                named
+            };
+            for root in roots {
+                arena[NodeId(root as u32)].is_cycle_root = true;
             }
         }
     }

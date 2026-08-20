@@ -8,6 +8,7 @@
       "file": "crates/schemalint/tests/corpus/ant_schema_25.json"
     },
     "profile": "anthropic.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/discriminator"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/discriminator",
+    "hint": "remove 'discriminator' from the schema. If you need the constraint, check it in your own code after the model responds."
   }
 ]

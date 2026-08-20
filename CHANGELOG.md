@@ -14,6 +14,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- A `definitions` entry shadowed by a same-named `$defs` entry is now linted. It was never allocated, so a forbidden keyword inside it reported nothing while the provider still received that subtree
+- A `$ref` to any in-document pointer now resolves, not only `#/$defs/<name>` and `#/definitions/<name>`. A Zod 3 project that reuses one sub-schema emits `{"$ref": "#/properties/a"}` and previously failed to lint entirely
+- The draft-07 tuple form `items: [A, B]` now normalizes. Zod 3 emits it for `z.tuple()`, and it previously aborted the whole target
+- A `$ref` cycle is now detected wherever it closes, including through several levels of nesting or with no `$defs` entry involved, and is reported once per named definition
+- JSON pointers are escaped per RFC 6901 in the Rust normalizer and both sidecars, so a property, pattern, or definition name containing `/` or `~` addresses the right node
+- A nested diagnostic falls back to its nearest mapped ancestor for file and line instead of reporting no location
+- An empty Zod discovery names its cause: no file on disk, files outside the TypeScript program, or files with no schema
+
+### Added
+- A profile-level `unknown_keyword_policy` (allow / warn / forbid, default warn) reporting keywords the engine does not recognize, and traversal into subschemas nested inside `unevaluatedItems`, `additionalItems`, `contentSchema`, and draft-07 `dependencies`
+- Anthropic rules for recursive schemas and non-object roots, both documented as unsupported
+
+### Changed
+- Anthropic's `max_optional_properties` and `max_union_properties` are removed. Anthropic publishes no such limits, so they rejected schemas the API accepts
+- OpenAI's `minLength`, `maxLength`, `patternProperties`, and `discriminator` now warn. None appears in OpenAI's supported list, and none is documented as rejected
+
+### Upgrade notes
+- These fixes make the linter see schema content it previously could not, so a schema you did not edit can newly report errors: a shadowed `definitions` entry, a keyword nested inside an unrecognized applicator, a recursive schema, or a non-object root under the Anthropic profile. That is the defect being corrected, not a regression
+- The unknown-keyword rule and the four OpenAI reclassifications emit warnings only, which never affect the exit code
+- Both dated profiles were corrected in place, so a pinned `openai.so.2026-04-30` or `anthropic.so.2026-04-30` resolves to a changed ruleset. The date names the provider's capability snapshot, not a schemalint release: none of these changes reflect a provider changing behavior, they correct what we believed the provider accepted on that date. A new dated profile is reserved for an actual provider-side change
+
 ### Added
 - Multi-provider static analysis for JSON Schema compatibility with LLM structured-output APIs
 - Built-in capability profiles for OpenAI and Anthropic Structured Outputs
@@ -22,12 +44,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multiple output formats: human, json, sarif, gha, junit
 - Python and Node.js ingestion helpers via JSON-RPC
 - Regression corpus with 80+ synthetic schemas
+- JSON output schema 1.1 with additive target, coverage, failure, and warning data
+- Current OpenAI, Anthropic, and AI SDK 6 structured-output helper discovery
+- Packed-runtime verification for Node 18/20/22 and wheel verification for Python 3.9+ with Pydantic 1.10/2.x
 
 ### Changed
+- Exit 0 now requires complete discovery, conversion, attribution, and lint coverage in addition to zero error diagnostics
+- The PyPI wheel installs the public `schemalint` command and bundles the Pydantic sidecar
+- The npm runtime bundles its TypeScript loader and handles Zod v3, v4 from 4.0.1, current v4, and `zod/mini`
+- Provider budgets and envelope checks now match retained provider evidence, including OpenAI enum-string budgets
+- Release packaging uses one immutable, digest-anchored artifact bundle for smoke tests and publication
 
 ### Fixed
+- Node and Python discovery failures can no longer be reported as successful lint runs
+- Provider identity and required output/tool metadata are retained per SDK usage site
+- Invalid profile keyword names or restriction shapes are rejected during profile loading
 
 ### Removed
+- Persistent on-disk schema caching; caches are bounded and process-local
 
 ## [1.0.0] - 2026-05-05
 

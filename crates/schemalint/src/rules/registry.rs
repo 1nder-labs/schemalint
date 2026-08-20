@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ir::{Arena, Node, NodeId};
-use crate::profile::{Profile, Severity};
+use crate::ir::{Arena, NodeId};
+use crate::profile::{Keyword, Profile, Severity};
+
+pub use crate::profile::KeywordAccessor;
 
 /// Severity of a diagnostic emitted by the rule engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,12 +65,27 @@ pub struct RuleSet {
     dynamic_rules: Vec<Box<dyn Rule>>,
 }
 
+/// Profile configuration errors discovered while constructing dynamic rules.
+#[derive(Debug, thiserror::Error)]
+pub enum RuleSetError {
+    #[error("keyword '{0}' cannot define both a severity and a restriction")]
+    ConflictingKeyword(Keyword),
+}
+
 impl RuleSet {
     /// Build a RuleSet from a loaded profile. Generates Class A keyword and
     /// restriction rules from the profile data and includes all compile-time
     /// registered rules.
-    pub fn from_profile(profile: &Profile) -> Self {
+    pub fn from_profile(profile: &Profile) -> Result<Self, RuleSetError> {
         let mut dynamic_rules: Vec<Box<dyn Rule>> = Vec::new();
+
+        if let Some(keyword) = profile
+            .keyword_map
+            .keys()
+            .find(|keyword| profile.restrictions.contains_key(*keyword))
+        {
+            return Err(RuleSetError::ConflictingKeyword(*keyword));
+        }
 
         // Class A keyword rules.
         for (&keyword, &severity) in &profile.keyword_map {
@@ -77,26 +94,22 @@ impl RuleSet {
                 Severity::Warn => DiagnosticSeverity::Warning,
                 _ => continue,
             };
-            let accessor = keyword_accessor(keyword)
-                .unwrap_or_else(|| panic!("profile contains unknown keyword '{}'", keyword));
             dynamic_rules.push(Box::new(super::class_a::KeywordRule {
                 keyword,
-                accessor,
+                accessor: keyword.accessor(),
                 severity: diag_severity,
-                code: format!("{}-K-{}", profile.code_prefix, keyword),
+                code: format!("{}-K-{}", profile.code_prefix, keyword.as_str()),
                 profile_name: profile.name.clone(),
             }));
         }
 
         // Class A restriction rules.
         for (&keyword, restriction) in &profile.restrictions {
-            let accessor = keyword_accessor(keyword)
-                .unwrap_or_else(|| panic!("profile contains unknown keyword '{}'", keyword));
             dynamic_rules.push(Box::new(super::class_a::RestrictionRule {
                 keyword,
-                accessor,
+                accessor: keyword.accessor(),
                 allowed_values: restriction.allowed_values.clone(),
-                code: format!("{}-K-{}-restricted", profile.code_prefix, keyword),
+                code: format!("{}-K-{}-restricted", profile.code_prefix, keyword.as_str()),
                 profile_name: profile.name.clone(),
             }));
         }
@@ -104,10 +117,10 @@ impl RuleSet {
         // Class B structural rules.
         dynamic_rules.extend(super::class_b::generate_class_b_rules(profile));
 
-        Self {
+        Ok(Self {
             static_rules: &*RULES,
             dynamic_rules,
-        }
+        })
     }
 
     /// Run every rule in the set against a single node.
@@ -141,57 +154,10 @@ impl RuleSet {
 // Keyword accessor
 // ---------------------------------------------------------------------------
 
-/// Function pointer type for extracting a keyword value from a node.
-pub type KeywordAccessor = fn(&Node) -> Option<&serde_json::Value>;
-
 /// Return a function pointer that extracts the value for a known keyword.
 ///
 /// This compiles the 40-arm match into a single function-pointer dispatch,
 /// eliminating string comparison overhead in hot rule loops.
 pub fn keyword_accessor(keyword: &str) -> Option<KeywordAccessor> {
-    match keyword {
-        "type" => Some(|n| n.annotations.r#type.as_ref()),
-        "properties" => Some(|n| n.annotations.properties.as_ref()),
-        "required" => Some(|n| n.annotations.required.as_ref()),
-        "additionalProperties" => Some(|n| n.annotations.additional_properties.as_ref()),
-        "items" => Some(|n| n.annotations.items.as_ref()),
-        "prefixItems" => Some(|n| n.annotations.prefix_items.as_ref()),
-        "minItems" => Some(|n| n.annotations.min_items.as_ref()),
-        "maxItems" => Some(|n| n.annotations.max_items.as_ref()),
-        "uniqueItems" => Some(|n| n.annotations.unique_items.as_ref()),
-        "contains" => Some(|n| n.annotations.contains.as_ref()),
-        "minimum" => Some(|n| n.annotations.minimum.as_ref()),
-        "maximum" => Some(|n| n.annotations.maximum.as_ref()),
-        "exclusiveMinimum" => Some(|n| n.annotations.exclusive_minimum.as_ref()),
-        "exclusiveMaximum" => Some(|n| n.annotations.exclusive_maximum.as_ref()),
-        "multipleOf" => Some(|n| n.annotations.multiple_of.as_ref()),
-        "minLength" => Some(|n| n.annotations.min_length.as_ref()),
-        "maxLength" => Some(|n| n.annotations.max_length.as_ref()),
-        "pattern" => Some(|n| n.annotations.pattern.as_ref()),
-        "format" => Some(|n| n.annotations.format.as_ref()),
-        "enum" => Some(|n| n.annotations.enum_values.as_ref()),
-        "const" => Some(|n| n.annotations.const_value.as_ref()),
-        "patternProperties" => Some(|n| n.annotations.pattern_properties.as_ref()),
-        "unevaluatedProperties" => Some(|n| n.annotations.unevaluated_properties.as_ref()),
-        "propertyNames" => Some(|n| n.annotations.property_names.as_ref()),
-        "minProperties" => Some(|n| n.annotations.min_properties.as_ref()),
-        "maxProperties" => Some(|n| n.annotations.max_properties.as_ref()),
-        "description" => Some(|n| n.annotations.description.as_ref()),
-        "title" => Some(|n| n.annotations.title.as_ref()),
-        "default" => Some(|n| n.annotations.default.as_ref()),
-        "discriminator" => Some(|n| n.annotations.discriminator.as_ref()),
-        "$ref" => Some(|n| n.annotations.r#ref.as_ref()),
-        "$defs" => Some(|n| n.annotations.defs.as_ref()),
-        "definitions" => Some(|n| n.annotations.definitions.as_ref()),
-        "anyOf" => Some(|n| n.annotations.any_of.as_ref()),
-        "allOf" => Some(|n| n.annotations.all_of.as_ref()),
-        "oneOf" => Some(|n| n.annotations.one_of.as_ref()),
-        "not" => Some(|n| n.annotations.not.as_ref()),
-        "if" => Some(|n| n.annotations.if_schema.as_ref()),
-        "then" => Some(|n| n.annotations.then_schema.as_ref()),
-        "else" => Some(|n| n.annotations.else_schema.as_ref()),
-        "dependentRequired" => Some(|n| n.annotations.dependent_required.as_ref()),
-        "dependentSchemas" => Some(|n| n.annotations.dependent_schemas.as_ref()),
-        _ => None,
-    }
+    keyword.parse::<Keyword>().ok().map(Keyword::accessor)
 }

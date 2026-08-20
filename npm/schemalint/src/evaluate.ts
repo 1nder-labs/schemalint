@@ -4,8 +4,8 @@
  * Given a file path and export name, dynamically imports the user's TypeScript
  * file, accesses the exported Zod schema, and converts it to JSON Schema.
  *
- * Uses `zod-to-json-schema` by default, but detects Zod v4's native
- * `toJSONSchema()` method when available.
+ * Uses Zod v4's package-level `toJSONSchema()` API for v4 and Mini schemas,
+ * and `zod-to-json-schema` for Zod v3.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -39,7 +39,7 @@ export async function evaluateSchema(
       );
     }
 
-    return zodToJsonSchema(schema);
+    return zodToJsonSchema(schema, filePath);
   });
 }
 
@@ -116,21 +116,34 @@ function findNearestNodeModules(filePath: string): string | undefined {
  * Detects Zod v4's native `toJSONSchema()` method and uses it when available.
  * Falls back to `zod-to-json-schema` for Zod v3.
  */
-function zodToJsonSchema(schema: unknown): Record<string, unknown> {
-  // Check for Zod v4 native toJSONSchema()
-  if (
-    schema &&
-    typeof schema === 'object' &&
-    '_def' in schema &&
-    'toJSONSchema' in schema &&
-    typeof (schema as Record<string, unknown>).toJSONSchema === 'function'
-  ) {
-    return (
-      schema as { toJSONSchema: () => Record<string, unknown> }
-    ).toJSONSchema();
+function zodToJsonSchema(
+  schema: unknown,
+  sourceFile: string
+): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') {
+    throw new Error('Discovered value is not a Zod schema');
   }
 
-  // Fall back to zod-to-json-schema (Zod v3)
+  // Zod 4 and Zod Mini share the stable `_zod` core marker. Conversion is a
+  // package-level API, so resolve it from the user's project, not this helper.
+  if ('_zod' in schema) {
+    const userRequire = createRequire(pathToFileURL(sourceFile));
+    const zod = userRequire('zod') as {
+      toJSONSchema?: (value: unknown) => unknown;
+    };
+    if (typeof zod.toJSONSchema !== 'function') {
+      throw new Error(
+        "Zod v4 schema detected, but its package does not export toJSONSchema"
+      );
+    }
+    return zod.toJSONSchema(schema) as Record<string, unknown>;
+  }
+
+  if (!('_def' in schema)) {
+    throw new Error('Discovered value is not a recognized Zod v3/v4 schema');
+  }
+
+  // Zod v3 conversion remains helper-owned.
   // Use createRequire to load from the helper's own node_modules.
   const zodToJsonSchemaModule = localRequire('zod-to-json-schema') as {
     zodToJsonSchema: (s: unknown) => unknown;

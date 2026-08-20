@@ -108,9 +108,9 @@ fn test_emit_json_multi_diag() {
     ];
     let output = emit_json_to_string(&[(path, diags)], 1, 1, &["openai.so".into()], Some(100));
     let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
-    assert_eq!(parsed["schema_version"], "1.0");
+    assert_eq!(parsed["schema_version"], "1.1");
     assert_eq!(parsed["tool"]["name"], "schemalint");
-    assert!(parsed["tool"]["version"].as_str().unwrap().len() > 0);
+    assert!(!parsed["tool"]["version"].as_str().unwrap().is_empty());
     assert_eq!(parsed["profiles"][0], "openai.so");
     assert_eq!(parsed["summary"]["total_issues"], 2);
     assert_eq!(parsed["summary"]["errors"], 1);

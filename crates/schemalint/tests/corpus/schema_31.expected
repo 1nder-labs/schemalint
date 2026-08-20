@@ -8,7 +8,8 @@
       "file": "crates/schemalint/tests/corpus/schema_31.json"
     },
     "profile": "openai.so.2026-04-30",
-    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/dependentSchemas"
+    "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/dependentSchemas",
+    "hint": "remove 'dependentSchemas' from the schema. If you need the constraint, check it in your own code after the model responds."
   },
   {
     "code": "OAI-S-all-properties-required",

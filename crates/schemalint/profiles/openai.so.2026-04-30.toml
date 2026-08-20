@@ -18,13 +18,20 @@ maximum = "allow"
 exclusiveMinimum = "allow"
 exclusiveMaximum = "allow"
 multipleOf = "allow"
-minLength = "allow"
-maxLength = "allow"
+# minLength and maxLength warn rather than allow: OpenAI's Structured
+# Outputs guide lists only `pattern` and `format` among supported string
+# properties, and never names these two. Not documented as rejected either,
+# so warn rather than forbid.
+minLength = "warn"
+maxLength = "warn"
 pattern = "allow"
 format = { kind = "restricted", allowed = ["date-time", "time", "date", "duration", "email", "hostname", "ipv4", "ipv6", "uuid"] }
 enum = "allow"
 const = "allow"
-patternProperties = "allow"
+# patternProperties warns: OpenAI's guide names it only as an exclusion for
+# fine-tuned models, implying it was never on the standard supported list.
+# Not documented as rejected, so warn rather than forbid.
+patternProperties = "warn"
 unevaluatedProperties = "forbid"
 propertyNames = "forbid"
 minProperties = "forbid"
@@ -32,7 +39,10 @@ maxProperties = "forbid"
 description = "allow"
 title = "allow"
 default = "allow"
-discriminator = "allow"
+# discriminator warns: it is an OpenAPI keyword, not JSON Schema, and is
+# absent from OpenAI's supported list. Not documented as rejected, so warn
+# rather than forbid. (The Anthropic profile forbids it outright.)
+discriminator = "warn"
 "$ref" = "allow"
 "$defs" = "allow"
 definitions = "allow"
@@ -61,4 +71,11 @@ max_object_depth = 10
 max_total_properties = 5000
 max_total_enum_values = 1000
 max_string_length_total = 120000
+enum_string_length_threshold = 250
+max_enum_string_length = 15000
 external_refs = true
+# A keyword the engine does not recognize at all (not the same as a
+# recognized keyword with unverified provider status) warns rather than
+# errors: common, unrecognized keys such as $id or examples are not
+# documented as rejected by any provider.
+unknown_keyword_policy = "warn"

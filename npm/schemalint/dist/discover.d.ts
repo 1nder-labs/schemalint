@@ -10,6 +10,7 @@
  * POSIX machine — pass `'\\'` to simulate Windows `path.sep`.
  */
 export declare function toPosixPath(p: string, sep?: string): string;
+import type { EnvelopeField, ProviderResolution, TargetSpan } from './sdk_adapters.js';
 export interface SourceMapEntry {
     file: string;
     line?: number;
@@ -19,15 +20,31 @@ export interface DiscoveredModel {
     module_path: string;
     schema: Record<string, unknown>;
     source_map: Record<string, SourceMapEntry>;
+    canonical_kind: string;
+    provider: ProviderResolution;
+    envelope: Record<string, EnvelopeField>;
+    usage_span: TargetSpan;
 }
 export interface DiscoveryWarning {
     model: string;
     message: string;
 }
+export interface DiscoveryFailure {
+    kind: 'evaluation' | 'metadata';
+    target: string;
+    message: string;
+}
+export interface DiscoveryCounts {
+    attempted: number;
+    excluded: number;
+    discovered: number;
+    failed: number;
+}
 export interface DiscoverResponse {
     models: DiscoveredModel[];
     warnings: DiscoveryWarning[];
-    provider_hint?: string;
+    failures: DiscoveryFailure[];
+    counts: DiscoveryCounts;
 }
 /**
  * Discover Zod schemas by walking TypeScript ASTs.
@@ -39,5 +56,5 @@ export interface DiscoverResponse {
  * 5. Dynamically imports each file and evaluates schemas at runtime.
  * 6. Converts schemas to JSON Schema via zod-to-json-schema or native.
  */
-export declare function discoverZodSchemas(sourceGlob: string): Promise<DiscoverResponse>;
+export declare function discoverZodSchemas(sourceGlob: string, exclusions?: string[]): Promise<DiscoverResponse>;
 //# sourceMappingURL=discover.d.ts.map

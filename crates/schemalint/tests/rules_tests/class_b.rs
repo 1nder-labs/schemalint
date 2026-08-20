@@ -109,6 +109,58 @@ external_refs = true
     )
 }
 
+fn recursive_schema_profile() -> schemalint::profile::Profile {
+    load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+forbid_recursive_schemas = true
+"##,
+    )
+}
+
+fn unknown_keyword_warn_profile() -> schemalint::profile::Profile {
+    load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+unknown_keyword_policy = "warn"
+"##,
+    )
+}
+
+fn unknown_keyword_forbid_profile() -> schemalint::profile::Profile {
+    load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+unknown_keyword_policy = "forbid"
+"##,
+    )
+}
+
+fn unknown_keyword_allow_profile() -> schemalint::profile::Profile {
+    load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+unknown_keyword_policy = "allow"
+"##,
+    )
+}
+
 /// Profile with every Class B flag on, for testing metadata coverage.
 fn all_class_b_profile() -> schemalint::profile::Profile {
     load_test_profile(
@@ -126,6 +178,7 @@ forbid_root_any_of = true
 forbid_root_enum = true
 external_refs = true
 forbid_allof_with_ref = true
+forbid_recursive_schemas = true
 "##,
     )
 }
@@ -138,7 +191,7 @@ forbid_allof_with_ref = true
 fn array_items_rule_fires_when_array_without_items() {
     let profile = array_items_profile();
     let schema = normalize_schema(serde_json::json!({ "type": "array" }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -164,7 +217,7 @@ fn array_items_rule_not_fire_when_array_has_items() {
         "type": "array",
         "items": { "type": "string" }
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -185,7 +238,7 @@ fn array_items_rule_not_fire_for_non_array_type() {
         "properties": { "x": { "type": "string" } },
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -209,7 +262,7 @@ fn array_items_rule_fires_for_nested_array_without_items() {
         },
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -237,7 +290,7 @@ fn root_anyof_rule_fires_at_root() {
             { "type": "number" }
         ]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -264,7 +317,7 @@ fn root_anyof_rule_not_fire_when_no_anyof_at_root() {
         "properties": { "x": { "type": "string" } },
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -294,7 +347,7 @@ fn root_anyof_rule_not_fire_when_anyof_nested_not_root() {
         },
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -322,7 +375,7 @@ require_object_root = false
     let schema = normalize_schema(serde_json::json!({
         "anyOf": [{ "type": "string" }, { "type": "number" }]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -346,7 +399,7 @@ fn root_enum_rule_fires_at_root() {
         "type": "string",
         "enum": ["yes", "no"]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -373,7 +426,7 @@ fn root_enum_rule_not_fire_when_no_enum_at_root() {
         "properties": { "x": { "type": "string" } },
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -400,7 +453,7 @@ fn root_enum_rule_not_fire_when_enum_nested_not_root() {
         },
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -428,7 +481,7 @@ require_object_root = false
         "type": "string",
         "enum": ["a", "b"]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -449,7 +502,7 @@ require_object_root = false
 fn object_root_rule_fires_for_string_root() {
     let profile = object_root_profile();
     let schema = normalize_schema(serde_json::json!({ "type": "string" }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -471,7 +524,7 @@ fn object_root_rule_fires_for_array_root() {
         "type": "array",
         "items": { "type": "string" }
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -494,7 +547,7 @@ fn object_root_rule_not_fire_for_object_root() {
         "properties": { "x": { "type": "string" } },
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -518,7 +571,7 @@ fn object_root_rule_not_fire_for_child_non_object_nodes() {
         },
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -542,7 +595,7 @@ fn additional_properties_false_rule_fires_when_missing() {
         "type": "object",
         "properties": { "x": { "type": "string" } }
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -565,7 +618,7 @@ fn additional_properties_false_rule_fires_when_ap_is_true() {
         "properties": { "x": { "type": "string" } },
         "additionalProperties": true
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -588,7 +641,7 @@ fn additional_properties_false_rule_fires_when_ap_is_object_schema() {
         "properties": { "x": { "type": "string" } },
         "additionalProperties": { "type": "string" }
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -611,7 +664,7 @@ fn additional_properties_false_rule_not_fire_when_ap_is_false() {
         "properties": { "x": { "type": "string" } },
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -628,7 +681,7 @@ fn additional_properties_false_rule_not_fire_when_ap_is_false() {
 fn additional_properties_false_rule_not_fire_for_non_object() {
     let profile = additional_properties_false_profile();
     let schema = normalize_schema(serde_json::json!({ "type": "string" }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -658,7 +711,7 @@ fn all_properties_required_rule_fires_with_missing_singular() {
         "required": ["name"],
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -693,7 +746,7 @@ fn all_properties_required_rule_fires_with_missing_plural() {
         "required": ["a"],
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -734,7 +787,7 @@ fn all_properties_required_rule_fires_more_than_eight_missing() {
         "required": ["a"],
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -767,7 +820,7 @@ fn all_properties_required_rule_not_fire_when_all_required() {
         "required": ["name", "age"],
         "additionalProperties": false
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -784,7 +837,7 @@ fn all_properties_required_rule_not_fire_when_all_required() {
 fn all_properties_required_rule_not_fire_for_non_object() {
     let profile = all_properties_required_profile();
     let schema = normalize_schema(serde_json::json!({ "type": "string" }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -808,7 +861,7 @@ fn allof_with_ref_rule_fires_direct_ref_in_branch() {
         "$defs": { "Base": { "type": "object" } },
         "allOf": [{ "$ref": "#/$defs/Base" }]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -839,7 +892,7 @@ fn allof_with_ref_rule_fires_nested_ref_in_branch() {
             }
         ]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -860,7 +913,7 @@ fn allof_with_ref_rule_not_fire_when_no_ref_in_branches() {
     let schema = normalize_schema(serde_json::json!({
         "allOf": [{ "type": "string" }, { "type": "number" }]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -890,7 +943,7 @@ require_object_root = false
         "$defs": { "X": { "type": "string" } },
         "allOf": [{ "$ref": "#/$defs/X" }]
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -913,7 +966,7 @@ fn external_refs_rule_fires_for_http_ref() {
     let schema = normalize_schema(serde_json::json!({
         "$ref": "https://example.com/schema.json"
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -942,7 +995,7 @@ require_object_root = false
     let schema = normalize_schema(serde_json::json!({
         "$ref": "https://example.com/schema.json"
     }));
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let diagnostics = ruleset.check_all(&schema.arena, &profile);
     let hits: Vec<_> = diagnostics
         .iter()
@@ -956,13 +1009,213 @@ require_object_root = false
 }
 
 // ===========================================================================
+// RecursiveSchemaRule
+// ===========================================================================
+
+#[test]
+fn recursive_schema_rule_fires_once_for_self_referencing_defs_entry() {
+    let profile = recursive_schema_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$defs": {
+            "Node": {
+                "type": "object",
+                "properties": { "next": { "$ref": "#/$defs/Node" } }
+            }
+        },
+        "type": "object",
+        "properties": { "root": { "$ref": "#/$defs/Node" } }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "a self-referencing $defs entry must report exactly once, not once per cyclic node, got {:?}",
+        diagnostics
+    );
+    assert_eq!(hits[0].severity, DiagnosticSeverity::Error);
+    assert_eq!(hits[0].pointer, "/$defs/Node");
+}
+
+#[test]
+fn recursive_schema_rule_fires_for_a_cycle_with_no_defs_entry() {
+    // Regression: the rule originally gated on the node's pointer having the
+    // shape `/$defs/<name>`, which was a stand-in for "report this cycle
+    // once". Widening `$ref` resolution to any in-document pointer made a
+    // cycle with no `$defs` entry reachable, and such a cycle then reported
+    // nothing at all — a false green in a rule whose whole job is to catch it.
+    let profile = recursive_schema_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "object",
+        "properties": {
+            "a": {
+                "type": "object",
+                "properties": { "b": { "$ref": "#/properties/a" } }
+            }
+        }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "a cycle through no $defs entry must still report exactly once, got {:?}",
+        diagnostics
+    );
+    assert_eq!(hits[0].pointer, "/properties/a");
+}
+
+#[test]
+fn recursive_schema_rule_fires_for_a_cycle_closed_through_nesting() {
+    // Regression: cycle detection used to approximate containment with a
+    // single hop from the `$ref` node to its parent, so a cycle only closed
+    // when the `$ref` sat exactly one level beneath its target. Here it sits
+    // two levels down, so the schema was never marked cyclic at all and no
+    // rule could report it. The graph now unions the containment tree with
+    // the real ref edges.
+    let profile = recursive_schema_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "object",
+        "properties": {
+            "a": {
+                "type": "object",
+                "properties": {
+                    "b": {
+                        "type": "object",
+                        "properties": { "c": { "$ref": "#/properties/a" } }
+                    }
+                }
+            }
+        }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "a cycle closed through two levels of nesting must report once, got {:?}",
+        diagnostics
+    );
+    assert_eq!(
+        hits[0].pointer, "/properties/a",
+        "the outermost node of the cycle is the actionable one"
+    );
+}
+
+#[test]
+fn recursive_schema_rule_fires_once_per_definition_for_mutual_recursion() {
+    let profile = recursive_schema_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$defs": {
+            "A": {
+                "type": "object",
+                "properties": { "b": { "$ref": "#/$defs/B" } }
+            },
+            "B": {
+                "type": "object",
+                "properties": { "a": { "$ref": "#/$defs/A" } }
+            }
+        },
+        "type": "object",
+        "properties": { "root": { "$ref": "#/$defs/A" } }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let mut pointers: Vec<&str> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .map(|d| d.pointer.as_str())
+        .collect();
+    pointers.sort_unstable();
+    assert_eq!(
+        pointers,
+        vec!["/$defs/A", "/$defs/B"],
+        "a mutually recursive pair must report exactly one diagnostic per named definition, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn recursive_schema_rule_not_fire_for_shared_definition_without_cycle() {
+    let profile = recursive_schema_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$defs": {
+            "Common": { "type": "string" }
+        },
+        "type": "object",
+        "properties": {
+            "x": { "$ref": "#/$defs/Common" },
+            "y": { "$ref": "#/$defs/Common" }
+        }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "a definition referenced twice without a cycle must not be reported, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn recursive_schema_rule_not_fire_when_flag_unset() {
+    // With forbid_recursive_schemas = false (default), no RecursiveSchemaRule is generated.
+    let profile = load_test_profile(
+        r##"
+name = "test"
+version = "1.0"
+
+[structural]
+require_object_root = false
+"##,
+    );
+    let schema = normalize_schema(serde_json::json!({
+        "$defs": {
+            "Node": {
+                "type": "object",
+                "properties": { "next": { "$ref": "#/$defs/Node" } }
+            }
+        },
+        "type": "object",
+        "properties": { "root": { "$ref": "#/$defs/Node" } }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-recursive-schema")
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "recursive-schema must not fire when forbid_recursive_schemas is false, got {:?}",
+        diagnostics
+    );
+}
+
+// ===========================================================================
 // Class B rule metadata() coverage — all flags on, find by name
 // ===========================================================================
 
 #[test]
 fn class_b_array_items_metadata_fields() {
     let profile = all_class_b_profile();
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let meta = ruleset
         .dynamic_rules()
         .filter_map(|r| r.metadata())
@@ -985,7 +1238,7 @@ fn class_b_array_items_metadata_fields() {
 #[test]
 fn class_b_root_anyof_metadata_fields() {
     let profile = all_class_b_profile();
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let meta = ruleset
         .dynamic_rules()
         .filter_map(|r| r.metadata())
@@ -1001,7 +1254,7 @@ fn class_b_root_anyof_metadata_fields() {
 #[test]
 fn class_b_root_enum_metadata_fields() {
     let profile = all_class_b_profile();
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let meta = ruleset
         .dynamic_rules()
         .filter_map(|r| r.metadata())
@@ -1015,9 +1268,28 @@ fn class_b_root_enum_metadata_fields() {
 }
 
 #[test]
+fn class_b_recursive_schema_metadata_fields() {
+    let profile = all_class_b_profile();
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let meta = ruleset
+        .dynamic_rules()
+        .filter_map(|r| r.metadata())
+        .find(|m| m.name == "recursive-schema")
+        .expect("RecursiveSchemaRule must return metadata");
+
+    assert_eq!(meta.code, "{prefix}-S-recursive-schema");
+    assert_eq!(meta.category.as_str(), "structural");
+    assert!(!meta.description.is_empty());
+    assert!(!meta.rationale.is_empty());
+    assert!(!meta.bad_example.is_empty());
+    assert!(!meta.good_example.is_empty());
+    assert_eq!(meta.profile.as_deref(), Some("test"));
+}
+
+#[test]
 fn class_b_additional_properties_false_metadata_fields() {
     let profile = all_class_b_profile();
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let meta = ruleset
         .dynamic_rules()
         .filter_map(|r| r.metadata())
@@ -1033,7 +1305,7 @@ fn class_b_additional_properties_false_metadata_fields() {
 #[test]
 fn class_b_all_properties_required_metadata_fields() {
     let profile = all_class_b_profile();
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let meta = ruleset
         .dynamic_rules()
         .filter_map(|r| r.metadata())
@@ -1049,7 +1321,7 @@ fn class_b_all_properties_required_metadata_fields() {
 #[test]
 fn class_b_external_refs_metadata_fields() {
     let profile = all_class_b_profile();
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let meta = ruleset
         .dynamic_rules()
         .filter_map(|r| r.metadata())
@@ -1065,7 +1337,7 @@ fn class_b_external_refs_metadata_fields() {
 #[test]
 fn class_b_allof_with_ref_metadata_fields() {
     let profile = all_class_b_profile();
-    let ruleset = RuleSet::from_profile(&profile);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
     let meta = ruleset
         .dynamic_rules()
         .filter_map(|r| r.metadata())
@@ -1075,6 +1347,203 @@ fn class_b_allof_with_ref_metadata_fields() {
     assert_eq!(meta.code, "{prefix}-S-allof-with-ref");
     assert_eq!(meta.category.as_str(), "structural");
     assert!(!meta.description.is_empty());
+    assert_eq!(meta.profile.as_deref(), Some("test"));
+}
+
+// ===========================================================================
+// UnknownKeywordRule
+// ===========================================================================
+
+#[test]
+fn unknown_keyword_rule_fires_one_warning_under_default_policy() {
+    let profile = unknown_keyword_warn_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "string",
+        "contentEncoding": "base64"
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-unknown-keyword")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected exactly one unknown-keyword diagnostic, got {:?}",
+        diagnostics
+    );
+    assert_eq!(hits[0].severity, DiagnosticSeverity::Warning);
+    assert!(hits[0].message.contains("contentEncoding"));
+}
+
+#[test]
+fn unknown_keyword_rule_fires_error_under_forbid_policy() {
+    let profile = unknown_keyword_forbid_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "string",
+        "contentEncoding": "base64"
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-unknown-keyword")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected exactly one unknown-keyword diagnostic, got {:?}",
+        diagnostics
+    );
+    assert_eq!(hits[0].severity, DiagnosticSeverity::Error);
+}
+
+#[test]
+fn unknown_keyword_rule_silent_under_allow_policy() {
+    let profile = unknown_keyword_allow_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "string",
+        "contentEncoding": "base64"
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    assert!(
+        diagnostics.is_empty(),
+        "expected no diagnostics under the allow policy, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn unknown_keyword_rule_reports_one_diagnostic_per_key() {
+    let profile = unknown_keyword_warn_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "string",
+        "contentEncoding": "base64",
+        "contentMediaType": "text/plain"
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-unknown-keyword")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        2,
+        "expected two diagnostics for two unrecognized keys on one node, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn unknown_keyword_rule_reports_nested_key_at_its_own_pointer() {
+    let profile = unknown_keyword_warn_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "type": "object",
+        "properties": {
+            "x": { "type": "string", "contentEncoding": "base64" }
+        }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-unknown-keyword")
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected one diagnostic for the nested unrecognized key, got {:?}",
+        diagnostics
+    );
+    assert_eq!(hits[0].pointer, "/properties/x");
+}
+
+#[test]
+fn unknown_keyword_rule_pointer_escapes_user_controlled_property_name() {
+    let profile = unknown_keyword_warn_profile();
+    // The property name itself carries `~` and `/`, so the owning node's
+    // pointer must escape it (`~` -> `~0` before `/` -> `~1`) before the
+    // diagnostic is built.
+    let schema = normalize_schema(serde_json::json!({
+        "type": "object",
+        "properties": {
+            "a/b~c": { "type": "string", "contentEncoding": "base64" }
+        }
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    let hits: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == "TEST-S-unknown-keyword")
+        .collect();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].pointer, "/properties/a~1b~0c");
+}
+
+#[test]
+fn unknown_keyword_rule_never_fires_for_fully_recognized_schema() {
+    let schema = normalize_schema(serde_json::json!({
+        "type": "object",
+        "properties": { "x": { "type": "string" } },
+        "required": ["x"],
+        "additionalProperties": false
+    }));
+    for profile in [
+        unknown_keyword_warn_profile(),
+        unknown_keyword_forbid_profile(),
+        unknown_keyword_allow_profile(),
+    ] {
+        let ruleset = RuleSet::from_profile(&profile).unwrap();
+        let diagnostics = ruleset.check_all(&schema.arena, &profile);
+        assert!(
+            diagnostics.iter().all(|d| d.code != "TEST-S-unknown-keyword"),
+            "no recognized-keyword schema should trigger unknown-keyword under any policy, got {:?}",
+            diagnostics
+        );
+    }
+}
+
+#[test]
+fn unknown_keyword_rule_does_not_fire_for_schema_keyword() {
+    // $schema is routed to dialect detection in the IR parser and never
+    // enters Node::unknown, so it must never trigger this rule — checked
+    // under the strictest (forbid) policy so a silent inclusion would
+    // surface as an error.
+    let profile = unknown_keyword_forbid_profile();
+    let schema = normalize_schema(serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+    }));
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    assert!(
+        diagnostics
+            .iter()
+            .all(|d| d.code != "TEST-S-unknown-keyword"),
+        "expected $schema to be excluded from the unknown-keyword map, got {:?}",
+        diagnostics
+    );
+}
+
+#[test]
+fn class_b_unknown_keyword_metadata_fields() {
+    let profile = unknown_keyword_warn_profile();
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let meta = ruleset
+        .dynamic_rules()
+        .filter_map(|r| r.metadata())
+        .find(|m| m.name == "unknown-keyword")
+        .expect("UnknownKeywordRule must return metadata");
+
+    assert_eq!(meta.code, "{prefix}-S-unknown-keyword");
+    assert_eq!(meta.category.as_str(), "structural");
+    assert!(!meta.description.is_empty());
+    assert!(!meta.rationale.is_empty());
+    assert!(!meta.bad_example.is_empty());
+    assert!(!meta.good_example.is_empty());
     assert_eq!(meta.profile.as_deref(), Some("test"));
 }
 

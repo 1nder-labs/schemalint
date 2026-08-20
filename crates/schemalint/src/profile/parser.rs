@@ -1,6 +1,7 @@
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use serde_json::Value;
+
+use super::Keyword;
 
 /// Severity levels for keyword and structural rules in a profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -26,16 +27,34 @@ impl Severity {
     }
 }
 
+/// Policy for a keyword the engine does not recognize at all — one that
+/// carries no accessor in `Keyword` and lands in `Node::unknown`.
+///
+/// This is deliberately a separate type from `Severity`. `Severity::Unknown`
+/// already states a different fact: a keyword the engine DOES recognize, but
+/// whose provider status was never verified. Reusing that variant here would
+/// merge two statements ("the engine does not know this keyword" vs. "the
+/// engine knows this keyword but not the provider's stance on it") that must
+/// stay distinguishable in the profile data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UnknownKeywordPolicy {
+    Allow,
+    #[default]
+    Warn,
+    Forbid,
+}
+
 /// A loaded capability profile.
 #[derive(Debug, Clone)]
 pub struct Profile {
     pub name: String,
     pub version: String,
     pub code_prefix: String,
-    /// Keyword → severity mapping. Keys are leaked `&'static str` for O(1) lookup.
-    pub keyword_map: HashMap<&'static str, Severity>,
+    /// Keyword → severity mapping in profile declaration order.
+    pub keyword_map: IndexMap<Keyword, Severity>,
     /// Keyword → allowed values mapping for restricted keywords.
-    pub restrictions: HashMap<&'static str, Restriction>,
+    pub restrictions: IndexMap<Keyword, Restriction>,
     pub structural: StructuralLimits,
 }
 
@@ -47,7 +66,7 @@ pub struct Restriction {
 
 /// Structural limits from the profile `[structural]` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct StructuralLimits {
     pub require_object_root: bool,
     pub require_additional_properties_false: bool,
@@ -64,6 +83,12 @@ pub struct StructuralLimits {
     pub max_total_properties: u32,
     pub max_total_enum_values: u32,
     pub max_string_length_total: u32,
+    /// Apply the per-enum string budget only when an enum has more values
+    /// than this threshold. Zero disables the conditional budget.
+    pub enum_string_length_threshold: u32,
+    /// Maximum Unicode-character count for one enum after the threshold is
+    /// exceeded. Zero disables the conditional budget.
+    pub max_enum_string_length: u32,
     pub max_optional_properties: u32,
     pub max_union_properties: u32,
     pub external_refs: bool,
@@ -71,6 +96,13 @@ pub struct StructuralLimits {
     /// branches are rejected.  Currently used by the Anthropic profile, which
     /// does not support that pattern in Structured Outputs.
     pub forbid_allof_with_ref: bool,
+    /// When `true`, a `$defs`/`definitions` entry that forms a `$ref` cycle
+    /// is rejected. Anthropic's structured-outputs documentation names
+    /// "Recursive schemas" as unsupported.
+    pub forbid_recursive_schemas: bool,
+    /// Policy for a keyword the engine does not recognize at all (see
+    /// `UnknownKeywordPolicy`). Absent from the TOML means `Warn`.
+    pub unknown_keyword_policy: UnknownKeywordPolicy,
 }
 
 /// Errors that can occur when loading a profile.
@@ -82,8 +114,16 @@ pub enum ProfileError {
     MissingField(&'static str),
     #[error("invalid severity '{0}'; expected one of: allow, warn, strip, forbid, unknown")]
     InvalidSeverity(String),
+    #[error("unknown JSON Schema keyword '{0}' in profile")]
+    UnknownKeyword(String),
+    #[error("invalid value for keyword '{0}'; expected a severity string or restricted table")]
+    InvalidKeywordValue(String),
+    #[error("invalid restrictions container; expected an array of tables")]
+    InvalidRestrictionsContainer,
     #[error("invalid restriction for keyword '{0}': missing 'allowed' array")]
     InvalidRestriction(String),
+    #[error("keyword '{0}' cannot define both a severity and a restriction")]
+    ConflictingKeyword(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -120,53 +160,8 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
             first_segment.to_uppercase()
         });
 
-    let mut keyword_map = HashMap::new();
-    let mut restrictions = HashMap::new();
-
-    const KNOWN_KEYWORDS: &[&str] = &[
-        "type",
-        "properties",
-        "required",
-        "additionalProperties",
-        "items",
-        "prefixItems",
-        "minItems",
-        "maxItems",
-        "uniqueItems",
-        "contains",
-        "minimum",
-        "maximum",
-        "exclusiveMinimum",
-        "exclusiveMaximum",
-        "multipleOf",
-        "minLength",
-        "maxLength",
-        "pattern",
-        "format",
-        "enum",
-        "const",
-        "patternProperties",
-        "unevaluatedProperties",
-        "propertyNames",
-        "minProperties",
-        "maxProperties",
-        "description",
-        "title",
-        "default",
-        "discriminator",
-        "$ref",
-        "$defs",
-        "definitions",
-        "anyOf",
-        "allOf",
-        "oneOf",
-        "not",
-        "if",
-        "then",
-        "else",
-        "dependentRequired",
-        "dependentSchemas",
-    ];
+    let mut keyword_map = IndexMap::new();
+    let mut restrictions = IndexMap::new();
 
     // Walk top-level entries for keywords and restrictions.
     for (key, val) in table {
@@ -175,47 +170,31 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
             _ => {}
         }
 
-        if !KNOWN_KEYWORDS.contains(&key.as_str()) {
-            return Err(ProfileError::InvalidSeverity(format!(
-                "unknown keyword '{}' in profile; expected a known JSON Schema keyword",
-                key
-            )));
-        }
+        let keyword = key
+            .parse::<Keyword>()
+            .map_err(|()| ProfileError::UnknownKeyword(key.clone()))?;
 
         match val {
             toml::Value::String(s) => {
                 let sev = Severity::parse(s)?;
-                keyword_map.insert(leak_str(key), sev);
+                keyword_map.insert(keyword, sev);
             }
             toml::Value::Table(t)
                 if t.get("kind").and_then(|v| v.as_str()) == Some("restricted") =>
             {
-                let allowed = t
-                    .get("allowed")
-                    .and_then(|v| v.as_array())
-                    .ok_or_else(|| ProfileError::InvalidRestriction(key.clone()))?;
-                let mut values = Vec::new();
-                for v in allowed {
-                    values.push(toml_to_json(v.clone())?);
-                }
-                restrictions.insert(
-                    leak_str(key),
-                    Restriction {
-                        allowed_values: values,
-                    },
-                );
+                restrictions.insert(keyword, parse_restriction(t, key)?);
             }
             _ => {
-                return Err(ProfileError::InvalidSeverity(format!(
-                    "invalid value for keyword '{}': expected string severity or restricted table",
-                    key
-                )));
+                return Err(ProfileError::InvalidKeywordValue(key.clone()));
             }
         }
     }
 
     // Also process [[restrictions]] array-of-tables if present.
-    if let Some(toml::Value::Array(arr)) = table.get("restrictions") {
+    if let Some(container) = table.get("restrictions") {
+        let arr = container
+            .as_array()
+            .ok_or(ProfileError::InvalidRestrictionsContainer)?;
         for entry in arr {
             let t = entry
                 .as_table()
@@ -224,20 +203,13 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
                 .get("keyword")
                 .and_then(|v| v.as_str())
                 .ok_or(ProfileError::MissingField("restrictions.keyword"))?;
-            let allowed = t
-                .get("allowed")
-                .and_then(|v| v.as_array())
-                .ok_or_else(|| ProfileError::InvalidRestriction(keyword.to_string()))?;
-            let mut values = Vec::new();
-            for v in allowed {
-                values.push(toml_to_json(v.clone())?);
+            let typed_keyword = keyword
+                .parse::<Keyword>()
+                .map_err(|()| ProfileError::UnknownKeyword(keyword.to_string()))?;
+            if keyword_map.contains_key(&typed_keyword) {
+                return Err(ProfileError::ConflictingKeyword(keyword.to_string()));
             }
-            restrictions.insert(
-                leak_str(keyword),
-                Restriction {
-                    allowed_values: values,
-                },
-            );
+            restrictions.insert(typed_keyword, parse_restriction(t, keyword)?);
         }
     }
 
@@ -253,6 +225,19 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
     })
 }
 
+fn parse_restriction(table: &toml::Table, keyword: &str) -> Result<Restriction, ProfileError> {
+    let allowed = table
+        .get("allowed")
+        .and_then(toml::Value::as_array)
+        .ok_or_else(|| ProfileError::InvalidRestriction(keyword.to_string()))?;
+    let allowed_values = allowed
+        .iter()
+        .cloned()
+        .map(toml_to_json)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Restriction { allowed_values })
+}
+
 fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, ProfileError> {
     let Some(v @ toml::Value::Table(_)) = val else {
         // Missing [structural] is fatal in Phase 1 per plan U3.
@@ -260,10 +245,6 @@ fn parse_structural(val: Option<&toml::Value>) -> Result<StructuralLimits, Profi
     };
     // toml::de::Error is #[from]-mapped to ProfileError::InvalidToml.
     Ok(v.clone().try_into()?)
-}
-
-fn leak_str(s: &str) -> &'static str {
-    Box::leak(s.to_owned().into_boxed_str())
 }
 
 fn toml_to_json(val: toml::Value) -> Result<Value, ProfileError> {

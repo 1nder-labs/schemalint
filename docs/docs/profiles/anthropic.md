@@ -20,10 +20,10 @@ Anthropic supports standard JSON Schema with documented limitations. Numeric and
 |-------|-------|
 | Root schema type | Object not required, but recommended |
 | `additionalProperties` | Must be `false` on all objects |
-| Max nesting depth | Unlimited |
-| Max total properties | Unlimited |
-| Max total enum values | Unlimited |
-| Max string length budget | Unlimited |
+| Max nesting depth | Not capped by this profile |
+| Max total properties | Not capped by this profile |
+| Max total enum values | Not capped by this profile |
+| Max string length budget | Not capped by this profile |
 | Optional properties | 24 across strict schemas |
 | Union parameters (`anyOf` / type arrays) | 16 across strict schemas |
 | External `$ref` | Allowed |
@@ -34,6 +34,13 @@ compatibility layer. Anthropic documents that the compatibility layer ignores
 OpenAI `response_format`, and ignores `strict` for function calling; use the
 native Claude API for guaranteed schema conformance.
 
+For Zod source discovery, current native SDK syntax is
+`zodOutputFormat(schema)` from `@anthropic-ai/sdk/helpers/zod`. The retained
+beta tool helper is `betaZodTool({ name, inputSchema })` from
+`@anthropic-ai/sdk/helpers/beta/zod`; it is deprecated in SchemaLint and will be
+removed in SchemaLint 2.0. Canonical, aliased, and namespace imports are
+recognized.
+
 ## Reference
 
-[Anthropic Structured Outputs documentation](https://platform.claude.com/docs/en/docs/build-with-claude/structured-outputs)
+[Anthropic Structured Outputs documentation](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)

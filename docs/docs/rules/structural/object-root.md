@@ -7,6 +7,7 @@
 | Profile | Code |
 |---------|------|
 | openai.so.2026-04-30 | `OAI-S-object-root` |
+| anthropic.so.2026-04-30 | `ANT-S-object-root` |
 
 ## Description
 

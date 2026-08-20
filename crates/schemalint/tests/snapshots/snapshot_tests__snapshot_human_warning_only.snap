@@ -7,6 +7,8 @@ warning[TEST-K-uniqueItems]: keyword 'uniqueItems' is not supported by test
      |
      = profile: test
      = schema path: 
+     = hint: test may ignore or strip 'uniqueItems'. Do not rely on it; check the constraint in your own code after the model responds.
      = see: https://1nder-labs.github.io/schemalint/rules/keyword/uniqueItems
 
 1 issue found (0 errors, 1 warning) across 1 schema in [DURATION]ms
+coverage complete (1 attempted, 0 excluded, 1 discovered, 1 checked, 0 failed)

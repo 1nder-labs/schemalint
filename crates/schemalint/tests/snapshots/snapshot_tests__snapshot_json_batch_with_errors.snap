@@ -3,7 +3,7 @@ source: crates/schemalint/tests/snapshot_tests/part_01.rs
 expression: "normalize_temp_paths(&stdout, dir.path())"
 ---
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "tool": {
     "name": "schemalint",
     "version": "[version]"
@@ -28,7 +28,55 @@ expression: "normalize_temp_paths(&stdout, dir.path())"
         "file": "[TEMP_DIR]/a.json"
       },
       "profile": "test",
+      "hint": "remove 'allOf' from the schema. If you need the constraint, check it in your own code after the model responds.",
       "seeUrl": "https://1nder-labs.github.io/schemalint/rules/keyword/allOf"
     }
-  ]
+  ],
+  "report": {
+    "coverage": {
+      "attempted": 2,
+      "checked": 2,
+      "discovered": 2,
+      "excluded": 0,
+      "failed": 0,
+      "status": "complete"
+    },
+    "failures": [],
+    "success": false,
+    "targets": [
+      {
+        "canonical_kind": "json-schema",
+        "effective_profiles": [
+          "test"
+        ],
+        "envelope": {},
+        "module_path": "[TEMP_DIR]/a.json",
+        "name": "",
+        "provider": {
+          "certainty": "ambiguous"
+        },
+        "status": "checked",
+        "usage_span": {
+          "file": "[TEMP_DIR]/a.json"
+        }
+      },
+      {
+        "canonical_kind": "json-schema",
+        "effective_profiles": [
+          "test"
+        ],
+        "envelope": {},
+        "module_path": "[TEMP_DIR]/b.json",
+        "name": "",
+        "provider": {
+          "certainty": "ambiguous"
+        },
+        "status": "checked",
+        "usage_span": {
+          "file": "[TEMP_DIR]/b.json"
+        }
+      }
+    ],
+    "warnings": []
+  }
 }

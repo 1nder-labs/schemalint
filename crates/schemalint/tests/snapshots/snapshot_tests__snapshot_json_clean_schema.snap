@@ -1,9 +1,9 @@
 ---
-source: crates/schemalint/tests/snapshot_tests.rs
+source: crates/schemalint/tests/snapshot_tests/part_01.rs
 expression: "normalize_temp_paths(&stdout, dir.path())"
 ---
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "tool": {
     "name": "schemalint",
     "version": "[version]"
@@ -18,5 +18,36 @@ expression: "normalize_temp_paths(&stdout, dir.path())"
     "schemas_checked": 1,
     "duration_ms": [DURATION]
   },
-  "diagnostics": []
+  "diagnostics": [],
+  "report": {
+    "coverage": {
+      "attempted": 1,
+      "checked": 1,
+      "discovered": 1,
+      "excluded": 0,
+      "failed": 0,
+      "status": "complete"
+    },
+    "failures": [],
+    "success": true,
+    "targets": [
+      {
+        "canonical_kind": "json-schema",
+        "effective_profiles": [
+          "test"
+        ],
+        "envelope": {},
+        "module_path": "[TEMP_DIR]/schema.json",
+        "name": "",
+        "provider": {
+          "certainty": "ambiguous"
+        },
+        "status": "checked",
+        "usage_span": {
+          "file": "[TEMP_DIR]/schema.json"
+        }
+      }
+    ],
+    "warnings": []
+  }
 }

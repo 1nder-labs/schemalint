@@ -51,11 +51,12 @@ pub mod server;
 mod check;
 mod check_node;
 mod check_python;
+mod discovery_policy;
 mod glob;
+mod node_policy;
 mod pipeline;
 mod profiles_cmd;
-
-pub(crate) use pipeline::check_rulesets;
+mod report;
 
 /// CLI entry point.
 pub fn run() {
@@ -93,7 +94,20 @@ pub fn run() {
 /// names `"openai"` / `"anthropic"` and the `"openai.so.latest"` /
 /// `"anthropic.so.latest"` aliases resolve to that provider's latest dated
 /// profile, so the exact dated ID never has to be typed for the common case.
-/// The dated IDs themselves (e.g. `"openai.so.2026-04-30"`) always keep working.
+/// The dated IDs themselves (e.g. `"openai.so.2026-04-30"`) always keep
+/// resolving.
+///
+/// The date names the **provider's** capability snapshot, not a schemalint
+/// release, and it is not a content freeze. A correction to what we believed
+/// that provider accepted on that date lands in the same file: the provider's
+/// behavior did not change, ours was wrong. `max_object_depth` in
+/// `profiles/openai.so.2026-04-30.toml` is one such correction, verified
+/// against the live API weeks after the file's own date.
+///
+/// A new dated profile is for a change on the provider's side — a raised
+/// limit, a newly supported keyword. Minting one for our own bug fix would
+/// assert a provider change that never happened, and would grow a set of
+/// profiles that differ by our mistakes rather than by provider behavior.
 pub fn resolve_profile(path_or_id: &str) -> Result<Vec<u8>, String> {
     if path_or_id.contains('/') || path_or_id.contains('\\') {
         fs::read(path_or_id).map_err(|e| format!("{e}"))

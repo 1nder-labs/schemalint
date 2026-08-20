@@ -1,5 +1,11 @@
-use schemalint::profiles::{ANTHROPIC_TRUTH, OPENAI_TRUTH};
-use schemalint_conformance::{evaluate, parse_truth};
+use schemalint::profile::load;
+use schemalint::profiles::{
+    ANTHROPIC_SO_2026_04_30, ANTHROPIC_TRUTH, OPENAI_SO_2026_04_30, OPENAI_TRUTH,
+};
+use schemalint_conformance::{
+    evaluate, evaluate_keyword_truth, evaluate_provider, evaluate_structural_truth, parse_truth,
+    InfrastructureFailureKind, LiveRefreshState,
+};
 
 #[test]
 fn openai_truth_parses() {
@@ -135,62 +141,98 @@ fn every_keyword_has_test_schema() {
 }
 
 #[test]
-fn truth_keywords_cover_profile_keywords() {
-    use std::collections::HashSet;
+fn truth_keywords_exactly_match_profile_keywords_and_restrictions() {
+    use std::collections::BTreeSet;
 
-    let truth = parse_truth(OPENAI_TRUTH).unwrap();
-    let truth_keywords: HashSet<&str> = truth.keywords.iter().map(|k| k.name.as_str()).collect();
-
-    // Every keyword in the profile should have a truth entry.
-    let profile_keywords: &[&str] = &[
-        "type",
-        "properties",
-        "required",
-        "additionalProperties",
-        "items",
-        "prefixItems",
-        "minItems",
-        "maxItems",
-        "uniqueItems",
-        "contains",
-        "minimum",
-        "maximum",
-        "exclusiveMinimum",
-        "exclusiveMaximum",
-        "multipleOf",
-        "minLength",
-        "maxLength",
-        "pattern",
-        "format",
-        "enum",
-        "const",
-        "patternProperties",
-        "unevaluatedProperties",
-        "propertyNames",
-        "minProperties",
-        "maxProperties",
-        "description",
-        "title",
-        "default",
-        "discriminator",
-        "$ref",
-        "$defs",
-        "definitions",
-        "anyOf",
-        "allOf",
-        "oneOf",
-        "not",
-        "if",
-        "then",
-        "else",
-        "dependentRequired",
-        "dependentSchemas",
-    ];
-
-    for kw in profile_keywords {
-        assert!(
-            truth_keywords.contains(kw),
-            "OpenAI truth file missing keyword: {kw}"
+    for (profile_source, truth_source) in [
+        (OPENAI_SO_2026_04_30, OPENAI_TRUTH),
+        (ANTHROPIC_SO_2026_04_30, ANTHROPIC_TRUTH),
+    ] {
+        let profile = load(profile_source.as_bytes()).unwrap();
+        let truth = parse_truth(truth_source).unwrap();
+        let truth_keywords: BTreeSet<&str> = truth
+            .keywords
+            .iter()
+            .map(|keyword| keyword.name.as_str())
+            .collect();
+        assert_eq!(
+            truth_keywords.len(),
+            truth.keywords.len(),
+            "{} truth file contains duplicate keywords",
+            profile.name
+        );
+        let profile_keywords: BTreeSet<&str> = profile
+            .keyword_map
+            .keys()
+            .chain(profile.restrictions.keys())
+            .map(|keyword| keyword.as_str())
+            .collect();
+        assert_eq!(
+            truth_keywords, profile_keywords,
+            "{} truth/profile keyword parity drift",
+            profile.name
         );
     }
+}
+
+#[test]
+fn every_structural_truth_case_matches_production_rules() {
+    for source in [OPENAI_TRUTH, ANTHROPIC_TRUTH] {
+        let truth = parse_truth(source).unwrap();
+        let outcomes = evaluate_structural_truth(&truth).unwrap();
+        assert!(!outcomes.is_empty());
+        for outcome in outcomes {
+            assert!(outcome.matches(), "structural truth drift: {outcome:?}");
+        }
+    }
+}
+
+#[test]
+fn every_keyword_truth_case_matches_production_rules() {
+    for source in [OPENAI_TRUTH, ANTHROPIC_TRUTH] {
+        let truth = parse_truth(source).unwrap();
+        let outcomes = evaluate_keyword_truth(&truth).unwrap();
+        assert_eq!(outcomes.len(), truth.keywords.len());
+        for outcome in outcomes {
+            assert!(outcome.matches(), "keyword truth drift: {outcome:?}");
+        }
+    }
+}
+
+#[test]
+fn known_provider_evaluation_uses_production_structural_rules() {
+    let truth = parse_truth(OPENAI_TRUTH).unwrap();
+    let invalid_root = serde_json::json!({ "type": "array", "items": { "type": "string" } });
+    let result = evaluate_provider(&truth, &invalid_root).unwrap();
+    assert!(result.is_rejected());
+}
+
+#[test]
+fn live_refresh_states_keep_infrastructure_and_lint_incompleteness_distinct() {
+    let states = [
+        LiveRefreshState::ProviderAccepted,
+        LiveRefreshState::ProviderRejected {
+            message: "schema rejected".into(),
+        },
+        LiveRefreshState::InfrastructureFailure {
+            kind: InfrastructureFailureKind::Authentication,
+            message: "bad credential".into(),
+        },
+        LiveRefreshState::IncompleteLintEvaluation {
+            message: "normalization failed".into(),
+        },
+    ];
+    let encoded: Vec<_> = states
+        .iter()
+        .map(|state| serde_json::to_value(state).unwrap()["state"].clone())
+        .collect();
+    assert_eq!(
+        encoded,
+        vec![
+            "provider_accepted",
+            "provider_rejected",
+            "infrastructure_failure",
+            "incomplete_lint_evaluation"
+        ]
+    );
 }

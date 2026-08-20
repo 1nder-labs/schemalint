@@ -1,9 +1,36 @@
 import type * as ts from 'typescript';
 
+import type {
+  EnvelopeField,
+  ProviderResolution,
+  TargetSpan,
+} from './sdk_adapters.js';
+import {
+  propertyFromExpression,
+  propertyName,
+  stringLiteralText,
+  stringPropertyFromExpression,
+} from './object_properties.js';
+import {
+  distinctExpressions,
+  staticAlternatives,
+  unambiguousExpression,
+  unwrapExpression,
+} from './static_expression.js';
+
+export interface TargetMetadata {
+  adapterModule: string;
+  canonicalKind: string;
+  provider: ProviderResolution;
+  envelope: Record<string, EnvelopeField>;
+  usageSpan: TargetSpan;
+}
+
 export interface TargetExpression {
   name: string;
   sourceFile: ts.SourceFile;
   expression: ts.Expression;
+  metadata: TargetMetadata;
 }
 
 export interface CarrierExpression {
@@ -16,6 +43,7 @@ export interface CarrierExpression {
    */
   propertyName?: string;
   explicitName?: string;
+  metadata: TargetMetadata;
 }
 
 interface CarrierParam {
@@ -31,20 +59,24 @@ export function pushExpressionOrCarrier(
   expression: ts.Expression,
   sourceFile: ts.SourceFile,
   tsModule: typeof ts,
-  explicitName?: string
+  explicitName: string | undefined,
+  metadata: TargetMetadata
 ): void {
   const carrier = carrierExpression(
     api,
     expression,
     tsModule,
-    explicitName
+    explicitName,
+    metadata
   );
   if (carrier) {
     carriers.push(carrier);
     return;
   }
 
-  targets.push(namedTarget(api, expression, sourceFile, tsModule, explicitName));
+  targets.push(
+    namedTarget(api, expression, sourceFile, tsModule, explicitName, metadata)
+  );
 }
 
 export function collectCarrierTargets(
@@ -88,96 +120,16 @@ export function collectCarrierTargets(
   return targets;
 }
 
-export function objectExpression(
-  expr: ts.Expression | undefined,
-  checker: ts.TypeChecker,
-  tsModule: typeof ts
-): ts.ObjectLiteralExpression | undefined {
-  if (!expr) return undefined;
-  const unwrapped = skipParens(expr, tsModule);
-  if (tsModule.isObjectLiteralExpression(unwrapped)) return unwrapped;
 
-  if (tsModule.isIdentifier(unwrapped)) {
-    const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
-    if (decl?.initializer) {
-      return objectExpression(decl.initializer, checker, tsModule);
-    }
-  }
-
-  if (tsModule.isConditionalExpression(unwrapped)) {
-    return (
-      objectExpression(unwrapped.whenTrue, checker, tsModule) ??
-      objectExpression(unwrapped.whenFalse, checker, tsModule)
-    );
-  }
-
-  return undefined;
-}
-
-export function propertyFromExpression(
-  expr: ts.Expression | undefined,
-  name: string,
-  checker: ts.TypeChecker,
-  tsModule: typeof ts
-): ts.Expression | undefined {
-  if (!expr) return undefined;
-  const unwrapped = skipParens(expr, tsModule);
-
-  if (tsModule.isObjectLiteralExpression(unwrapped)) {
-    return propertyFromObject(unwrapped, name, checker, tsModule);
-  }
-
-  if (tsModule.isIdentifier(unwrapped)) {
-    const decl = resolveVariableDeclaration(unwrapped, checker, tsModule);
-    return propertyFromExpression(decl?.initializer, name, checker, tsModule);
-  }
-
-  if (tsModule.isConditionalExpression(unwrapped)) {
-    return (
-      propertyFromExpression(unwrapped.whenTrue, name, checker, tsModule) ??
-      propertyFromExpression(unwrapped.whenFalse, name, checker, tsModule)
-    );
-  }
-
-  return undefined;
-}
-
-export function stringPropertyFromExpression(
-  expr: ts.Expression | undefined,
-  name: string,
-  checker: ts.TypeChecker,
-  tsModule: typeof ts
-): string | undefined {
-  const value = propertyFromExpression(expr, name, checker, tsModule);
-  return stringLiteralText(value, tsModule);
-}
-
-export function resolveVariableDeclaration(
-  id: ts.Identifier,
-  checker: ts.TypeChecker,
-  tsModule: typeof ts
-): ts.VariableDeclaration | undefined {
-  // In `{ schema }` the identifier's own symbol is the object literal's
-  // property, not the value it stands for — the checker exposes the value
-  // through a dedicated lookup.
-  const symbol = tsModule.isShorthandPropertyAssignment(id.parent)
-    ? checker.getShorthandAssignmentValueSymbol(id.parent)
-    : checker.getSymbolAtLocation(id);
-  const aliased =
-    symbol && (symbol.flags & tsModule.SymbolFlags.Alias)
-      ? checker.getAliasedSymbol(symbol)
-      : symbol;
-  const decl = aliased?.valueDeclaration ?? aliased?.declarations?.[0];
-  return decl && tsModule.isVariableDeclaration(decl) ? decl : undefined;
-}
 
 function carrierExpression(
   api: string,
   expression: ts.Expression,
   tsModule: typeof ts,
-  explicitName?: string
+  explicitName: string | undefined,
+  metadata: TargetMetadata
 ): CarrierExpression | undefined {
-  const expr = skipParens(expression, tsModule);
+  const expr = unwrapExpression(expression, tsModule);
 
   // `opts.schema` — the schema is a property of a whole parameter.
   if (
@@ -188,7 +140,13 @@ function carrierExpression(
     // A destructured binding is already a property read; `opts.schema` on top
     // of one would be a second hop this doesn't follow.
     if (!param || param.propertyName !== undefined) return undefined;
-    return { ...param, api, propertyName: expr.name.text, explicitName };
+    return {
+      ...param,
+      api,
+      propertyName: expr.name.text,
+      explicitName,
+      metadata,
+    };
   }
 
   // A bare `schema` — either the parameter itself (`f(schema)`) or destructured
@@ -196,7 +154,7 @@ function carrierExpression(
   // inside the same argument; `carrierParam` reports which read recovers it.
   if (tsModule.isIdentifier(expr)) {
     const param = carrierParam(expr, expr.text, tsModule);
-    return param && { ...param, api, explicitName };
+    return param && { ...param, api, explicitName, metadata };
   }
 
   return undefined;
@@ -280,7 +238,10 @@ function carrierTargetFromCall(
   const name =
     carrier.explicitName ??
     stringPropertyFromExpression(argument, 'name', checker, tsModule);
-  return namedTarget(carrier.api, schema, sourceFile, tsModule, name);
+  return namedTarget(carrier.api, schema, sourceFile, tsModule, name, {
+    ...carrier.metadata,
+    usageSpan: spanFor(call, sourceFile),
+  });
 }
 
 function callsCarrier(
@@ -335,48 +296,19 @@ function contextualSignatureDeclarations(
   return declarations;
 }
 
-function propertyFromObject(
-  obj: ts.ObjectLiteralExpression,
-  name: string,
-  checker: ts.TypeChecker,
-  tsModule: typeof ts
-): ts.Expression | undefined {
-  for (const prop of [...obj.properties].reverse()) {
-    if (tsModule.isPropertyAssignment(prop)) {
-      if (propertyName(prop.name, tsModule) === name) return prop.initializer;
-      continue;
-    }
-
-    // `{ schema }` — the value is the name itself.
-    if (tsModule.isShorthandPropertyAssignment(prop)) {
-      if (prop.name.text === name) return prop.name;
-      continue;
-    }
-
-    if (tsModule.isSpreadAssignment(prop)) {
-      const fromSpread = propertyFromExpression(
-        prop.expression,
-        name,
-        checker,
-        tsModule
-      );
-      if (fromSpread) return fromSpread;
-    }
-  }
-  return undefined;
-}
 
 function namedTarget(
   api: string,
   expression: ts.Expression,
   sourceFile: ts.SourceFile,
   tsModule: typeof ts,
-  explicitName?: string
+  explicitName: string | undefined,
+  metadata: TargetMetadata
 ): TargetExpression {
   const { line } = sourceFile.getLineAndCharacterOfPosition(
     expression.getStart(sourceFile)
   );
-  const expr = skipParens(expression, tsModule);
+  const expr = unwrapExpression(expression, tsModule);
   const suffix =
     explicitName ??
     (tsModule.isIdentifier(expr) ? expr.text : `inline:${line + 1}`);
@@ -384,27 +316,30 @@ function namedTarget(
     name: `${api}:${suffix}`,
     sourceFile,
     expression,
+    metadata,
   };
 }
 
-function stringLiteralText(
+export function spanFor(node: ts.Node, sourceFile: ts.SourceFile): TargetSpan {
+  const { line, character } = sourceFile.getLineAndCharacterOfPosition(
+    node.getStart(sourceFile)
+  );
+  return { file: sourceFile.fileName, line: line + 1, col: character + 1 };
+}
+
+export function stringValueFromExpression(
   expr: ts.Expression | undefined,
+  checker: ts.TypeChecker,
   tsModule: typeof ts
 ): string | undefined {
-  return expr && tsModule.isStringLiteralLike(expr) ? expr.text : undefined;
-}
-
-function propertyName(
-  name: ts.PropertyName,
-  tsModule: typeof ts
-): string | undefined {
-  if (tsModule.isIdentifier(name) || tsModule.isStringLiteral(name)) {
-    return name.text;
+  const values = staticAlternatives(expr, checker, tsModule).map((alternative) =>
+    stringLiteralText(alternative, tsModule)
+  );
+  if (values.length === 0 || values.some((value) => value === undefined)) {
+    return undefined;
   }
-  return undefined;
+  const distinct = new Set(values);
+  return distinct.size === 1 ? values[0] : undefined;
 }
 
-function skipParens(node: ts.Expression, tsModule: typeof ts): ts.Expression {
-  while (tsModule.isParenthesizedExpression(node)) node = node.expression;
-  return node;
-}
+

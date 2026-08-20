@@ -34,6 +34,8 @@
   },
   "files": [
     "index.cjs",
+    "launcher/*.cjs",
+    "native-manifest.json",
     "dist/",
     "bin/",
     "LICENSE-MIT",
@@ -41,30 +43,29 @@
   ],
   "dependencies": {
     "picomatch": "^4.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.5.0",
     "zod-to-json-schema": "^3.24.0"
   },
   "peerDependencies": {
-    "typescript": ">=4.9",
     "zod": ">=3.20"
   },
   "peerDependenciesMeta": {
-    "typescript": {
-      "optional": true
-    },
     "zod": {
       "optional": true
     }
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
-    "tsx": "^4.21.0",
-    "typescript": "^5.5.0",
     "vitest": "^2.0.0",
     "zod": "^3.23.0"
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "generate:native-manifest": "node scripts/generate-native-manifest.cjs",
+    "prepack": "node scripts/validate-native-manifest.cjs --release",
+    "test": "vitest run && npm run test:launcher",
+    "test:launcher": "node --test launcher/__tests__/*.test.cjs"
   },
   "publishConfig": {
     "access": "public"

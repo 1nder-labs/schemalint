@@ -14,8 +14,8 @@ fn check_node_no_sources_no_config_errors() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("no sources specified."));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no sources specified."));
 }
 
 /// Missing `--profile` no longer hard-errors with "no profiles specified." —
@@ -38,7 +38,7 @@ fn check_node_no_profiles_falls_through_to_discovery_failure_not_profile_error()
         "the old hard-error message must never appear, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("all 1 source(s) failed discovery"),
+        stderr.contains("discovery failed for source"),
         "expected discovery-failure framing (no tsconfig.json), got:\n{stderr}"
     );
 }

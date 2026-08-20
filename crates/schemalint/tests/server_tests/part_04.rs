@@ -49,10 +49,7 @@ export const Bad = z.object({ website: z.string().url() });
     assert_eq!(response["id"], 1);
 
     let result = &response["result"];
-    assert!(
-        result["success"].as_bool().unwrap_or(false),
-        "checkNode should succeed; got: {result}"
-    );
+    assert_eq!(result["success"].as_bool(), Some(false));
 
     // The url() format must fire at least one error under the openai profile.
     let total_errors = result["total_errors"].as_u64().unwrap_or(0);
@@ -78,6 +75,58 @@ export const Bad = z.object({ website: z.string().url() });
     let _ = send_request(&mut child, &shutdown.to_string());
     let status = child.wait().expect("should exit cleanly");
     assert!(status.success());
+}
+
+#[test]
+fn server_check_node_omitted_profiles_uses_per_target_provider() {
+    let tmp = TempDir::new().unwrap();
+    setup_ts_project(
+        tmp.path(),
+        &[(
+            "openai.ts",
+            r#"import { z } from "zod";
+import { zodResponseFormat } from "openai/helpers/zod";
+const Bad = z.object({ website: z.string().url() });
+zodResponseFormat(Bad, "response");
+"#,
+        )],
+    );
+
+    let mut child = cmd()
+        .current_dir(tmp.path())
+        .arg("server")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("should spawn server");
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "checkNode",
+        "params": {"sources": ["src/**/*.ts"], "format": "json"},
+        "id": 5
+    });
+
+    let response = send_request(&mut child, &request.to_string());
+    let result = &response["result"];
+    assert_eq!(result["success"], false, "{result}");
+    assert_eq!(result["report"]["coverage"]["status"], "complete");
+    assert_eq!(result["report"]["targets"][0]["provider"]["provider"], "openai");
+    assert_eq!(
+        result["report"]["targets"][0]["effective_profiles"][0],
+        "openai.so.2026-04-30"
+    );
+    let output: serde_json::Value =
+        serde_json::from_str(result["output"].as_str().unwrap()).unwrap();
+    assert!(output["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "OAI-K-format-restricted"));
+
+    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 6});
+    let _ = send_request(&mut child, &shutdown.to_string());
+    assert!(child.wait().unwrap().success());
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +238,7 @@ fn server_check_node_missing_sources_returns_error() {
 }
 
 #[test]
-fn server_check_node_missing_profiles_returns_error() {
+fn server_check_node_empty_profiles_returns_error() {
     let mut child = cmd()
         .arg("server")
         .stdin(Stdio::piped())
@@ -202,7 +251,8 @@ fn server_check_node_missing_profiles_returns_error() {
         "jsonrpc": "2.0",
         "method": "checkNode",
         "params": {
-            "sources": ["src/**/*.ts"]
+            "sources": ["src/**/*.ts"],
+            "profiles": []
         },
         "id": 22
     });
@@ -487,16 +537,15 @@ fn server_check_python_unknown_profile_returns_error() {
 }
 
 // ---------------------------------------------------------------------------
-// checkNode — partial discovery failure is surfaced in success response
+// checkNode — partial discovery failure is surfaced as incomplete
 //
 // Two sources are sent:
 //  - "src/**/*.ts": valid Zod file with z.string().url() → OAI-K-format-restricted
 //  - "": empty string; the Node sidecar treats a falsy source as invalid and
 //    returns a JSON-RPC error, which the server collects into discovery_errors.
 //
-// The response must be success:true (models were found from the first source),
-// contain at least one diagnostic (OAI-K-format-restricted), AND include a
-// non-empty "discovery_errors" array reporting the failed source.
+// The response checks the surviving model but remains success:false and carries
+// an authoritative partial report plus the legacy discovery_errors field.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -540,11 +589,12 @@ export const Bad = z.object({ website: z.string().url() });
 
     let result = &response["result"];
 
-    // Must remain success:true — models were found from "src/**/*.ts".
-    assert!(
-        result["success"].as_bool().unwrap_or(false),
-        "checkNode should succeed when at least one source produces models; got: {result}"
-    );
+    assert_eq!(result["success"].as_bool(), Some(false));
+    assert_eq!(result["report"]["coverage"]["status"], "partial");
+    assert!(result["report"]["coverage"]["failed"]
+        .as_u64()
+        .unwrap_or(0)
+        >= 1);
 
     // Diagnostics from the good source must be present.
     let total_errors = result["total_errors"].as_u64().unwrap_or(0);
@@ -635,7 +685,7 @@ export const Foo = z.object({ x: z.string() }).strict();
         "jsonrpc": "2.0",
         "method": "check",
         "params": {
-            "schema": {"type": "string"},
+            "schema": {"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"], "additionalProperties": false},
             "profiles": ["openai.so.2026-04-30"],
             "format": "json"
         },

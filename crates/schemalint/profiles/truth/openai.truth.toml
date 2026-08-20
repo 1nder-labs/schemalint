@@ -1,3 +1,19 @@
+structural_tests = [
+  { limit_name = "require_object_root", test_schema = '{"type":"object","properties":{"x":{"type":"string"}}}', expected_behavior = "accept" },
+  { limit_name = "require_additional_properties_false", test_schema = '{"type":"object","properties":{"x":{"type":"string"}},"additionalProperties":false}', expected_behavior = "accept" },
+  { limit_name = "require_all_properties_in_required", test_schema = '{"type":"object","properties":{"x":{"type":"string"}},"required":["x"]}', expected_behavior = "accept" },
+  { limit_name = "require_array_items", test_schema = '{"type":"array","items":{"type":"string"}}', expected_behavior = "accept" },
+  { limit_name = "forbid_root_any_of", test_schema = '{"type":"object","properties":{"x":{"type":"string"}}}', expected_behavior = "accept" },
+  { limit_name = "forbid_root_enum", test_schema = '{"type":"object","properties":{"x":{"type":"string"}}}', expected_behavior = "accept" },
+  { limit_name = "forbid_empty_object", test_schema = '{"type":"object","properties":{"x":{"type":"string"}},"additionalProperties":false}', expected_behavior = "accept" },
+  { limit_name = "max_object_depth", test_schema = '{"type":"object","properties":{"x":{"type":"string"}}}', expected_behavior = "accept" },
+  { limit_name = "max_total_properties", test_schema = '{"type":"object","properties":{"x":{"type":"string"}}}', expected_behavior = "accept" },
+  { limit_name = "max_total_enum_values", test_schema = '{"type":"string","enum":["x"]}', expected_behavior = "accept" },
+  { limit_name = "max_string_length_total", test_schema = '{"const":"x"}', expected_behavior = "accept" },
+  { limit_name = "enum_string_length_budget", test_schema = '{"type":"string","enum":["x"]}', expected_behavior = "accept" },
+  { limit_name = "external_refs", test_schema = '{"$ref":"#/$defs/X","$defs":{"X":{"type":"string"}}}', expected_behavior = "accept" },
+]
+
 [provider]
 name = "openai"
 version = "2026-04-30"
@@ -347,29 +363,3 @@ behavior = "accept"
 test_schema = '''
 { "type": "string", "format": "email" }
 '''
-
-# ============================================================================
-# Structural Tests
-# ============================================================================
-
-[[structural_tests]]
-limit_name = "require_object_root"
-test_schema = '''
-{ "type": "object", "properties": { "name": { "type": "string" } } }
-'''
-expected_behavior = "accept"
-
-[[structural_tests]]
-limit_name = "require_object_root__array_root"
-test_schema = '''
-{ "type": "array", "items": { "type": "string" } }
-'''
-expected_behavior = "reject"
-expected_error_path = "/"
-
-[[structural_tests]]
-limit_name = "additional_properties_false"
-test_schema = '''
-{ "type": "object", "additionalProperties": false, "properties": { "x": { "type": "string" } } }
-'''
-expected_behavior = "accept"

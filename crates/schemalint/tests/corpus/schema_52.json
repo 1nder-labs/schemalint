@@ -1,0 +1,28 @@
+{
+  "type": "object",
+  "$defs": {
+    "shared/config": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "string" }
+      },
+      "required": ["x"],
+      "additionalProperties": false,
+      "contains": {}
+    }
+  },
+  "properties": {
+    "a/b": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "c~d": {
+      "type": "array",
+      "items": { "type": "string" },
+      "contains": {}
+    }
+  },
+  "required": ["a/b", "c~d"],
+  "additionalProperties": false
+}

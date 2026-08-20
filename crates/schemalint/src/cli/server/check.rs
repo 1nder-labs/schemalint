@@ -1,0 +1,118 @@
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use serde_json::{json, Value};
+
+use crate::cache::hash_bytes;
+use crate::cli::pipeline::{build_report, check_rulesets, raw_check_result, render_output};
+use crate::cli::report::CoverageCounts;
+use crate::normalize::normalize;
+
+use super::policy::{load_profiles, output_format, required_string_array, rulesets};
+use super::ServerState;
+
+const MAX_CHECK_SECONDS: u64 = 30;
+const MAX_SCHEMA_BYTES: usize = 5 * 1024 * 1024;
+const MAX_SCHEMA_NODES: usize = 200_000;
+const MAX_SCHEMA_DEPTH: usize = 1_000;
+
+pub(super) fn handle(params: Value, state: &mut ServerState) -> Value {
+    let schema = match params.get("schema") {
+        Some(schema) => schema.clone(),
+        None => return json!({"success": false, "error": "Missing 'schema' parameter"}),
+    };
+    let profile_ids = match required_string_array(&params, "profiles") {
+        Ok(values) if !values.is_empty() => values,
+        Ok(_) => {
+            return json!({
+                "success": false,
+                "error": "Empty 'profiles' array; at least one profile is required"
+            })
+        }
+        Err(error) => return error,
+    };
+    let format = match output_format(&params) {
+        Ok(format) => format,
+        Err(error) => return error,
+    };
+    let loaded = match load_profiles(&profile_ids, &mut state.profiles) {
+        Ok(loaded) => loaded,
+        Err(error) => return error,
+    };
+    let rules = match rulesets(&loaded) {
+        Ok(rules) => rules,
+        Err(error) => return error,
+    };
+    let names: Vec<String> = loaded.iter().map(|profile| profile.name.clone()).collect();
+
+    let schema_bytes = serde_json::to_vec(&schema).unwrap_or_default();
+    if schema_bytes.len() > MAX_SCHEMA_BYTES {
+        return json!({
+            "success": false,
+            "error": format!("Schema serialized size ({} bytes) exceeds the {} byte limit", schema_bytes.len(), MAX_SCHEMA_BYTES)
+        });
+    }
+    let mut remaining = MAX_SCHEMA_NODES;
+    if !within_complexity_bounds(&schema, &mut remaining, 0) {
+        return json!({
+            "success": false,
+            "error": format!("Schema exceeds complexity limits (max depth {MAX_SCHEMA_DEPTH}, max nodes {MAX_SCHEMA_NODES}); rejected to prevent resource exhaustion")
+        });
+    }
+
+    let start = Instant::now();
+    let hash = hash_bytes(&schema_bytes);
+    let cached = state.schemas.get(hash, &schema_bytes).cloned();
+    let normalized = match cached {
+        Some(schema) => schema,
+        None => {
+            let normalized = match normalize(schema) {
+                Ok(normalized) => normalized,
+                Err(error) => {
+                    return json!({"success": false, "error": format!("Normalization failed: {error}")});
+                }
+            };
+            state.schemas.insert(hash, schema_bytes, normalized.clone());
+            normalized
+        }
+    };
+    let diagnostics = check_rulesets(&normalized.arena, &rules);
+    if start.elapsed() > Duration::from_secs(MAX_CHECK_SECONDS) {
+        return json!({"success": false, "error": "Check execution exceeded 30 second limit"});
+    }
+
+    let report = build_report(
+        CoverageCounts {
+            attempted: 1,
+            discovered: 1,
+            ..CoverageCounts::default()
+        },
+        vec![],
+        vec![],
+        vec![raw_check_result(
+            PathBuf::from("<inline>"),
+            String::new(),
+            Ok(diagnostics),
+            &names,
+        )],
+        names,
+        Some(start.elapsed().as_millis() as u64),
+    );
+    report.rpc_result(render_output(format, &report))
+}
+
+fn within_complexity_bounds(value: &Value, remaining: &mut usize, depth: usize) -> bool {
+    if depth > MAX_SCHEMA_DEPTH || *remaining == 0 {
+        return false;
+    }
+    *remaining -= 1;
+    match value {
+        Value::Array(values) => values
+            .iter()
+            .all(|value| within_complexity_bounds(value, remaining, depth + 1)),
+        Value::Object(values) => values
+            .values()
+            .all(|value| within_complexity_bounds(value, remaining, depth + 1)),
+        _ => true,
+    }
+}

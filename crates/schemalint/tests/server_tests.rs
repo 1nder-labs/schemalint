@@ -102,3 +102,4 @@ include!("server_tests/part_01.rs");
 include!("server_tests/part_02.rs");
 include!("server_tests/part_03.rs");
 include!("server_tests/part_04.rs");
+include!("server_tests/part_05.rs");

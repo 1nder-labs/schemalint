@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "item": { "$ref": "#/$defs/D" }
+  },
+  "additionalProperties": false,
+  "required": ["item"],
+  "$defs": {
+    "D": { "type": "string" }
+  },
+  "definitions": {
+    "D": { "oneOf": [{ "type": "string" }, { "type": "integer" }] }
+  }
+}

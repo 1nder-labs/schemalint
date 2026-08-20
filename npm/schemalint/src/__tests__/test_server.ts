@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, 'fixtures');
 const packageRoot = path.join(__dirname, '..', '..');
-const serverPath = path.join(packageRoot, 'dist', 'main.js');
+const serverPath = path.join(packageRoot, 'bin', 'schemalint-zod.js');
 
 function sendJsonRpc(
   child: ReturnType<typeof spawn>,

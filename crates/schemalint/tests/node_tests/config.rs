@@ -64,8 +64,8 @@ fn check_node_invalid_package_json_errors() {
     cmd.current_dir(tmp.path());
     let output = cmd.args(["check-node"]).output().unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("invalid JSON in"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("invalid JSON in"));
 }
 
 #[test]
@@ -79,8 +79,8 @@ fn check_node_missing_package_json_no_config_ok() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("no sources specified."));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no sources specified."));
 }
 
 // ---------------------------------------------------------------------------
@@ -114,10 +114,10 @@ fn check_node_package_json_schemalint_no_include_errors() {
         !output.status.success(),
         "exit code should be 1 when include is empty"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stderr.contains("no sources specified."),
-        "expected 'no sources specified.' in stderr, got:\n{stderr}"
+        stdout.contains("no sources specified."),
+        "expected 'no sources specified.' in JSON stdout, got:\n{stdout}"
     );
 }
 
@@ -151,16 +151,16 @@ fn check_node_explicit_config_invalid_json_errors() {
         !output.status.success(),
         "exit code should be 1 for malformed --config JSON"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stderr.contains("invalid JSON in"),
-        "expected 'invalid JSON in' in stderr, got:\n{stderr}"
+        stdout.contains("invalid JSON in"),
+        "expected 'invalid JSON in' in JSON stdout, got:\n{stdout}"
     );
     // The error message must include the explicit config filename so the user
     // knows which file caused the problem.
     assert!(
-        stderr.contains("custom-package.json"),
-        "expected config filename in error message, got:\n{stderr}"
+        stdout.contains("custom-package.json"),
+        "expected config filename in error message, got:\n{stdout}"
     );
 }
 
@@ -193,14 +193,14 @@ fn check_node_explicit_config_nonexistent_falls_through_to_no_sources() {
         !output.status.success(),
         "exit code should be 1 (no sources)"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     // load_node_config returns Ok(None) for missing files; next failure is "no sources".
     assert!(
-        stderr.contains("no sources specified."),
-        "expected 'no sources specified.' (not a read error), got:\n{stderr}"
+        stdout.contains("no sources specified."),
+        "expected 'no sources specified.' (not a read error), got:\n{stdout}"
     );
     assert!(
-        !stderr.contains("failed to read"),
-        "nonexistent --config should NOT produce a read error, got:\n{stderr}"
+        !stdout.contains("failed to read"),
+        "nonexistent --config should NOT produce a read error, got:\n{stdout}"
     );
 }

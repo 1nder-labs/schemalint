@@ -1,5 +1,5 @@
 use proptest::prelude::*;
-use schemalint::cache::{hash_bytes, Cache, DiskCache};
+use schemalint::cache::{hash_bytes, Cache};
 use schemalint::ir::parse_node;
 use schemalint::normalize::normalize;
 
@@ -153,32 +153,6 @@ proptest! {
         prop_assert_eq!(
             normalized.dialect, deserialized.dialect,
             "round-trip should preserve dialect"
-        );
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Property: DiskCache round-trip survives get after insert
-// ---------------------------------------------------------------------------
-
-proptest! {
-    #[test]
-    fn prop_disk_cache_roundtrip(schema in json_schema_strategy()) {
-        let bytes = serde_json::to_vec(&schema).unwrap();
-        let hash = hash_bytes(&bytes);
-        let normalized = normalize(schema).expect("normalization should succeed");
-
-        let cache = DiskCache::new();
-        cache.insert(hash, bytes.clone(), normalized.clone());
-
-        let cached = cache.get(hash, &bytes).expect("disk cache should return the entry");
-        prop_assert_eq!(
-            cached.arena.len(), normalized.arena.len(),
-            "disk cached result should have same node count"
-        );
-        prop_assert_eq!(
-            cached.root_id, normalized.root_id,
-            "disk cached result should have same root id"
         );
     }
 }

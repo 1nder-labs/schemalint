@@ -88,8 +88,8 @@ fn check_python_missing_required_package_flag() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("no packages specified."));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no packages specified."));
 }
 
 #[test]
@@ -108,8 +108,8 @@ fn check_python_invalid_profile_name() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("unknown built-in profile"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("unknown built-in profile"));
 }
 
 #[test]
@@ -162,10 +162,10 @@ profiles = ["openai.so.2026-04-30"]
         !output.status.success(),
         "exit code should be 1 when packages is empty"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stderr.contains("no packages specified."),
-        "expected 'no packages specified.' in stderr, got:\n{stderr}"
+        stdout.contains("no packages specified."),
+        "expected 'no packages specified.' in JSON stdout, got:\n{stdout}"
     );
 }
 
@@ -199,15 +199,15 @@ fn check_python_explicit_config_invalid_toml_errors() {
         !output.status.success(),
         "exit code should be 1 for malformed --config TOML"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stderr.contains("invalid TOML in"),
-        "expected 'invalid TOML in' in stderr, got:\n{stderr}"
+        stdout.contains("invalid TOML in"),
+        "expected 'invalid TOML in' in JSON stdout, got:\n{stdout}"
     );
     // The error message must include the explicit config filename.
     assert!(
-        stderr.contains("custom-pyproject.toml"),
-        "expected config filename in error message, got:\n{stderr}"
+        stdout.contains("custom-pyproject.toml"),
+        "expected config filename in error message, got:\n{stdout}"
     );
 }
 
@@ -241,13 +241,13 @@ fn check_python_explicit_config_nonexistent_falls_through() {
         !output.status.success(),
         "exit code should be 1 (no packages)"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stderr.contains("no packages specified."),
-        "expected 'no packages specified.' (not a read error), got:\n{stderr}"
+        stdout.contains("no packages specified."),
+        "expected 'no packages specified.' (not a read error), got:\n{stdout}"
     );
     assert!(
-        !stderr.contains("failed to read"),
-        "nonexistent --config should NOT produce a read error, got:\n{stderr}"
+        !stdout.contains("failed to read"),
+        "nonexistent --config should NOT produce a read error, got:\n{stdout}"
     );
 }
