@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1](https://github.com/1nder-labs/schemalint/compare/v1.1.0...v1.1.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* correct lint accuracy and provider-profile fidelity ([#13](https://github.com/1nder-labs/schemalint/issues/13)) ([09ef119](https://github.com/1nder-labs/schemalint/commit/09ef119a3b83be52bb324d18e41365afc4f56f9a))
+* discover schemas that reach a provider through a wrapper ([#14](https://github.com/1nder-labs/schemalint/issues/14)) ([114b96f](https://github.com/1nder-labs/schemalint/commit/114b96f40507b82264b7c4aed2c2f773bf5a1ac8))
+
 ## [1.1.0](https://github.com/1nder-labs/schemalint/compare/v1.0.1...v1.1.0) (2026-07-03)
 
 
