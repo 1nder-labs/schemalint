@@ -132,6 +132,33 @@ describe('discoverZodSchemas', () => {
     expect(properties).toEqual([['extracted'], ['inline']]);
   });
 
+  it('discovers schemas reaching a provider through a wrapper parameter', async () => {
+    // Regression: a wrapper that takes the schema as a parameter — bare,
+    // destructured, or renamed — and forwards it with shorthand property
+    // syntax. Every one of these resolved to nothing, silently and with no
+    // warning, so the schemas went unlinted while the run reported success.
+    // `injected` covers the dependency-injection shape, where the wrapper is
+    // only ever reached through a function-type annotation.
+    const result = await discoverZodSchemas('wrapper-calls.ts');
+
+    expect(result.warnings).toHaveLength(0);
+
+    const properties = result.models
+      .flatMap((m) => Object.keys(m.schema.properties as Record<string, unknown>))
+      .sort();
+    expect(properties).toEqual([
+      'bare',
+      'destructured',
+      'direct',
+      'injected',
+      'renamed',
+    ]);
+
+    // A schema never passed to a provider must remain undiscovered — carrier
+    // resolution must not widen into scanning every Zod schema in the repo.
+    expect(properties).not.toContain('unrelated');
+  });
+
   it('discovers imported and tsconfig path-aliased schemas', async () => {
     const result = await discoverZodSchemas('imported-calls.ts');
 

@@ -7,8 +7,12 @@ export interface TargetExpression {
 export interface CarrierExpression {
     api: string;
     fn: ts.FunctionLikeDeclaration;
-    paramName: string;
-    propertyName: string;
+    paramIndex: number;
+    /**
+     * Property to read off the call argument. Undefined when the parameter
+     * *is* the schema (`f(schema)`), in which case the argument is used whole.
+     */
+    propertyName?: string;
     explicitName?: string;
 }
 export declare function pushExpressionOrCarrier(targets: TargetExpression[], carriers: CarrierExpression[], api: string, expression: ts.Expression, sourceFile: ts.SourceFile, tsModule: typeof ts, explicitName?: string): void;

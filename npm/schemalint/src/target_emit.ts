@@ -28,7 +28,7 @@ export function resolveTarget(
   tsModule: typeof ts,
   compilerOptions: ts.CompilerOptions
 ): SchemaTarget {
-  const expr = skipParens(target.expression, tsModule);
+  const expr = unwrapLocalAlias(target.expression, checker, tsModule);
   const sourceFile = target.sourceFile;
   const sourceMap = sourceMapForTarget(expr, sourceFile, checker, tsModule);
 
@@ -58,6 +58,35 @@ export function resolveTarget(
       compilerOptions
     ),
   };
+}
+
+/**
+ * Follow a function-local `const schema = ...` to the expression it aliases.
+ *
+ * Only module-level declarations survive into the synthetic module (see
+ * `isReusableDeclaration`), so a name bound inside a function body would be
+ * emitted as an undefined reference. Its initializer is the real target, and
+ * that initializer is either an inline expression or a module-level name the
+ * synthetic module does hoist.
+ */
+function unwrapLocalAlias(
+  expression: ts.Expression,
+  checker: ts.TypeChecker,
+  tsModule: typeof ts
+): ts.Expression {
+  let current = skipParens(expression, tsModule);
+  // ponytail: bounded rather than cycle-tracked; `const a = b, b = a` is not
+  // valid code, so the only chains here are short alias hops.
+  for (let hop = 0; hop < 8 && tsModule.isIdentifier(current); hop++) {
+    const decl = resolveVariableDeclaration(current, checker, tsModule);
+    if (!decl?.initializer) break;
+    const stmt = decl.parent.parent;
+    const moduleLevel =
+      tsModule.isVariableStatement(stmt) && tsModule.isSourceFile(stmt.parent);
+    if (moduleLevel) break;
+    current = skipParens(decl.initializer, tsModule);
+  }
+  return current;
 }
 
 function resolveExportedIdentifier(
