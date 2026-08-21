@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0](https://github.com/1nder-labs/schemalint/compare/v1.1.1...v1.2.0) (2026-08-21)
+
+
+### Features
+
+* cite provider evidence for every rule ([#17](https://github.com/1nder-labs/schemalint/issues/17)) ([3392668](https://github.com/1nder-labs/schemalint/commit/33926688f44d786b02ca7a366ab22f129bf62f0e))
+
 ## [1.1.1](https://github.com/1nder-labs/schemalint/compare/v1.1.0...v1.1.1) (2026-08-20)
 
 
