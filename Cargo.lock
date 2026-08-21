@@ -962,7 +962,7 @@ dependencies = [
 
 [[package]]
 name = "schemalint"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -985,7 +985,7 @@ dependencies = [
 
 [[package]]
 name = "schemalint-conformance"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "clap",
  "ctrlc",
@@ -999,7 +999,7 @@ dependencies = [
 
 [[package]]
 name = "schemalint-docgen"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "clap",
  "schemalint",
@@ -1008,7 +1008,7 @@ dependencies = [
 
 [[package]]
 name = "schemalint-python"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "schemalint",
 ]

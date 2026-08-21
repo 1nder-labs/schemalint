@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2](https://github.com/1nder-labs/schemalint/compare/v1.2.1...v1.2.2) (2026-08-21)
+
+
+### Bug Fixes
+
+* **review:** restore callsCarrier rationale comments, rename contexts to carrierSignatures ([98e6c8f](https://github.com/1nder-labs/schemalint/commit/98e6c8f94bcb7545d81ca89f2f140b00050a65b6))
+
+
+### Performance Improvements
+
+* **node:** reuse carrier signature resolution ([d379ce6](https://github.com/1nder-labs/schemalint/commit/d379ce662fbafbd45d14468a681a9c652cd32e92))
+
 ## [1.2.1](https://github.com/1nder-labs/schemalint/compare/v1.2.0...v1.2.1) (2026-08-21)
 
 
