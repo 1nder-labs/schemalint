@@ -148,12 +148,12 @@ jobs:
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable action
         with:
           toolchain: '1.93.1'
-      - name: Install cached dist
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        with:
-          name: cargo-dist-cache
-          path: ~/.cargo/bin/
-      - run: chmod +x ~/.cargo/bin/dist
+      # Built on this runner rather than reused from the `cargo-dist-cache`
+      # artifact: that artifact is the x86_64 Linux binary produced by `plan`,
+      # so every other target in this matrix got a binary it could not execute.
+      # Same pinned version and `--locked` as `plan`, for the same reason.
+      - name: Install dist
+        run: cargo install cargo-dist --version 0.31.0 --locked
       # Get the dist-manifest
       - name: Fetch local artifacts
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
