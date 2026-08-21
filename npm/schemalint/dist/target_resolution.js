@@ -12,6 +12,10 @@ export function collectCarrierTargets(program, fileSet, checker, tsModule, carri
     if (carriers.length === 0)
         return [];
     const targets = [];
+    const contexts = carriers.map((carrier) => ({
+        carrier,
+        signatures: contextualSignatureDeclarations(carrier.fn, checker, tsModule),
+    }));
     for (const sourceFile of program.getSourceFiles()) {
         if (sourceFile.isDeclarationFile ||
             sourceFile.fileName.includes('node_modules') ||
@@ -20,8 +24,8 @@ export function collectCarrierTargets(program, fileSet, checker, tsModule, carri
         }
         function walk(node) {
             if (tsModule.isCallExpression(node)) {
-                for (const carrier of carriers) {
-                    const target = carrierTargetFromCall(node, sourceFile, checker, tsModule, carrier);
+                for (const { carrier, signatures } of contexts) {
+                    const target = carrierTargetFromCall(node, sourceFile, checker, tsModule, carrier, signatures);
                     if (target)
                         targets.push(target);
                 }
@@ -102,9 +106,10 @@ function carrierParam(node, name, tsModule) {
     }
     return undefined;
 }
-function carrierTargetFromCall(call, sourceFile, checker, tsModule, carrier) {
-    if (!callsCarrier(call, carrier.fn, checker, tsModule))
+function carrierTargetFromCall(call, sourceFile, checker, tsModule, carrier, contextualSignatures) {
+    if (!callsCarrier(call, carrier.fn, contextualSignatures, checker, tsModule)) {
         return undefined;
+    }
     const argument = call.arguments[carrier.paramIndex];
     if (!argument)
         return undefined;
@@ -120,19 +125,12 @@ function carrierTargetFromCall(call, sourceFile, checker, tsModule, carrier) {
         usageSpan: spanFor(call, sourceFile),
     });
 }
-function callsCarrier(call, fn, checker, tsModule) {
+function callsCarrier(call, fn, contextualSignatures, checker, tsModule) {
     const resolved = checker.getResolvedSignature(call)?.declaration;
     if (resolved) {
-        // Direct hit: the callee resolves to the wrapper itself. Signature
-        // resolution already follows variables and factory return values, so
-        // `wrap(...)` and `const w = wrap; w(...)` both land here.
         if (resolved === fn)
             return true;
-        // Indirect hit: the wrapper is passed around under a function *type*
-        // (`type Compile = (input: {schema: …}) => …`), so every call site resolves
-        // to that type's call signature and the wrapper's own node is never seen.
-        // Matching the annotation the wrapper was written against restores the link.
-        if (contextualSignatureDeclarations(fn, checker, tsModule).has(resolved)) {
+        if (contextualSignatures.has(resolved)) {
             return true;
         }
     }
