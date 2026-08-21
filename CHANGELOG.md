@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1](https://github.com/1nder-labs/schemalint/compare/v1.2.0...v1.2.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* **release:** install dist per runner instead of reusing the Linux binary ([#16](https://github.com/1nder-labs/schemalint/issues/16)) ([3cecac7](https://github.com/1nder-labs/schemalint/commit/3cecac7da1e5ef11e309b46012b89fe18d949a27))
+
 ## [1.2.0](https://github.com/1nder-labs/schemalint/compare/v1.1.1...v1.2.0) (2026-08-21)
 
 
