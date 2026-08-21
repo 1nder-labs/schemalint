@@ -12,7 +12,7 @@ export function collectCarrierTargets(program, fileSet, checker, tsModule, carri
     if (carriers.length === 0)
         return [];
     const targets = [];
-    const contexts = carriers.map((carrier) => ({
+    const carrierSignatures = carriers.map((carrier) => ({
         carrier,
         signatures: contextualSignatureDeclarations(carrier.fn, checker, tsModule),
     }));
@@ -24,7 +24,7 @@ export function collectCarrierTargets(program, fileSet, checker, tsModule, carri
         }
         function walk(node) {
             if (tsModule.isCallExpression(node)) {
-                for (const { carrier, signatures } of contexts) {
+                for (const { carrier, signatures } of carrierSignatures) {
                     const target = carrierTargetFromCall(node, sourceFile, checker, tsModule, carrier, signatures);
                     if (target)
                         targets.push(target);
@@ -128,8 +128,13 @@ function carrierTargetFromCall(call, sourceFile, checker, tsModule, carrier, con
 function callsCarrier(call, fn, contextualSignatures, checker, tsModule) {
     const resolved = checker.getResolvedSignature(call)?.declaration;
     if (resolved) {
+        // Direct hit: the callee resolves to the wrapper itself. Signature
+        // resolution already follows variables and factory return values.
         if (resolved === fn)
             return true;
+        // Indirect hit: the wrapper is called under a function *type* it was
+        // written against (`type Compile = ...`), so every call site resolves to
+        // that type's signature and the wrapper's own node is never seen.
         if (contextualSignatures.has(resolved)) {
             return true;
         }
