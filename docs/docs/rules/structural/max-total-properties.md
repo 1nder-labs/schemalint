@@ -4,13 +4,19 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-S-max-total-properties` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-S-max-total-properties` | Forbid |
 
 ## Description
 
 Total object properties must not exceed 5000
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| openai.so.2026-04-30 | `documented` | [OpenAI schema limits](https://developers.openai.com/api/docs/guides/structured-outputs#objects-have-limitations-on-nesting-depth-and-size) | — |
 
 ## Rationale
 

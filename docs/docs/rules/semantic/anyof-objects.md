@@ -4,14 +4,21 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-S-anyof-objects` |
-| anthropic.so.2026-04-30 | `ANT-S-anyof-objects` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-S-anyof-objects` | Warn |
+| anthropic.so.2026-04-30 | `ANT-S-anyof-objects` | Warn |
 
 ## Description
 
 anyOf with only object-typed branches may not be fully supported
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| anthropic.so.2026-04-30 | `inferred` | [Anthropic JSON Schema limitations](https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations) | Each anyOf branch must remain within Anthropic's supported subset. |
+| openai.so.2026-04-30 | `documented` | [OpenAI anyOf requirements](https://developers.openai.com/api/docs/guides/structured-outputs#for-anyof-the-nested-schemas-must-each-be-a-valid-json-schema-per-this-subset) | — |
 
 ## Rationale
 

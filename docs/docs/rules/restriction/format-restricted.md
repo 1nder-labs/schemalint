@@ -4,18 +4,25 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-K-format-restricted` |
-| anthropic.so.2026-04-30 | `ANT-K-format-restricted` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-K-format-restricted` | Forbid |
+| anthropic.so.2026-04-30 | `ANT-K-format-restricted` | Forbid |
 
 ## Description
 
-Restrict values of the 'format' keyword to those accepted by openai.so.2026-04-30
+Restrict 'format' values according to the active provider profile.
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| anthropic.so.2026-04-30 | `documented` | [Anthropic JSON Schema limitations](https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations) | — |
+| openai.so.2026-04-30 | `documented` | [OpenAI supported formats](https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas) | — |
 
 ## Rationale
 
-openai.so.2026-04-30 only supports specific values for the 'format' keyword. Using unsupported values will cause validation errors at the API level.
+Provider profiles may enforce different behavior and severity for this rule; use the table below for the selected profile.
 
 ## Bad Example
 

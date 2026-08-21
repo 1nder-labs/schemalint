@@ -330,7 +330,7 @@ export const Combo = z.intersection(Person, Employee);
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let out: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(out["schema_version"], "1.1");
+    assert_eq!(out["schema_version"], "1.2");
     assert_eq!(out["report"]["coverage"]["status"], "empty");
     assert_eq!(out["report"]["coverage"]["checked"], 0);
 }

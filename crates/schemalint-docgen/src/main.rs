@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use clap::Parser;
 use schemalint::profile;
+use schemalint::profile::{ProviderEvidence, RuleKey};
 use schemalint::profiles::{ANTHROPIC_SO_2026_04_30, OPENAI_SO_2026_04_30};
 use schemalint::rules::metadata::RuleCategory;
 use schemalint::rules::{RuleSet, RULES};
@@ -15,27 +16,21 @@ struct Args {
     output_dir: PathBuf,
 }
 
-/// Profile name + code prefix pair.
-struct ProfileInfo {
-    name: String,
-    code_prefix: String,
-}
-
 /// Deduplicated rule entry across profiles.
 #[derive(Debug, Clone)]
 struct DedupedRule {
     name: String,
     description: String,
     rationale: String,
-    severity: String,
     category: RuleCategory,
     bad_example: String,
     good_example: String,
     see_also: Vec<String>,
-    /// Per-profile code expansions.
-    profile_codes: Vec<(String, String)>,
+    /// Per-profile code expansions and severities.
+    profile_codes: Vec<(String, String, String)>,
     /// Profile names this rule is specific to (empty = universal).
     profiles: Vec<String>,
+    evidence: BTreeMap<String, ProviderEvidence>,
 }
 
 fn main() {
@@ -45,34 +40,44 @@ fn main() {
     let mut deduped: BTreeMap<String, DedupedRule> = BTreeMap::new();
 
     // Collect static rules from linkme slice.
-    for rule in RULES {
-        if let Some(metadata) = rule.metadata() {
-            let entry = DedupedRule {
-                name: metadata.name.clone(),
-                description: metadata.description.clone(),
-                rationale: metadata.rationale.clone(),
-                severity: format!("{:?}", metadata.severity),
-                category: metadata.category,
-                bad_example: metadata.bad_example.clone(),
-                good_example: metadata.good_example.clone(),
-                see_also: metadata.see_also.clone(),
-                profile_codes: profiles
-                    .iter()
-                    .map(|p| (p.name.clone(), expand_code(&metadata.code, &p.code_prefix)))
-                    .collect(),
-                profiles: Vec::new(),
-            };
-            deduped.insert(metadata.name.clone(), entry);
-        }
+    for metadata in RULES
+        .iter()
+        .filter_map(|rule| rule.metadata())
+        .chain(std::iter::once(schemalint::rules::envelope::metadata()))
+    {
+        let entry = DedupedRule {
+            name: metadata.name.clone(),
+            description: metadata.description.clone(),
+            rationale: metadata.rationale.clone(),
+            category: metadata.category,
+            bad_example: metadata.bad_example.clone(),
+            good_example: metadata.good_example.clone(),
+            see_also: metadata.see_also.clone(),
+            profile_codes: profiles
+                .iter()
+                .map(|p| {
+                    (
+                        p.name.clone(),
+                        expand_code(&metadata.code, &p.code_prefix),
+                        format!("{:?}", metadata.severity),
+                    )
+                })
+                .collect(),
+            profiles: Vec::new(),
+            evidence: profiles
+                .iter()
+                .filter_map(|profile| evidence_for(profile, &metadata.code))
+                .collect(),
+        };
+        deduped.insert(metadata.name.clone(), entry);
     }
 
     // Collect dynamic rules from each profile.
-    for profile_info in &profiles {
-        let profile = load_toml_profile(profile_info);
-        let rule_set = RuleSet::from_profile(&profile).unwrap_or_else(|error| {
+    for profile in &profiles {
+        let rule_set = RuleSet::from_profile(profile).unwrap_or_else(|error| {
             eprintln!(
                 "failed to construct rules for profile '{}': {error}",
-                profile_info.name
+                profile.name
             );
             std::process::exit(1);
         });
@@ -83,30 +88,70 @@ fn main() {
             deduped
                 .entry(metadata.name.clone())
                 .and_modify(|entry| {
+                    if entry.description != metadata.description {
+                        entry.description = match metadata.category {
+                            RuleCategory::Keyword => format!(
+                                "Flag usage of the '{}' keyword according to the active provider profile.",
+                                metadata.name
+                            ),
+                            RuleCategory::Restriction => format!(
+                                "Restrict '{}' values according to the active provider profile.",
+                                metadata.name.trim_end_matches("-restricted")
+                            ),
+                            _ => "Apply this rule according to the active provider profile.".into(),
+                        };
+                        entry.rationale = "Provider profiles may enforce different behavior and severity for this rule; use the table below for the selected profile.".into();
+                    }
+                    if metadata.profile.is_none() && entry.profiles.is_empty() {
+                        assert_eq!(
+                            entry.description, metadata.description,
+                            "conflicting description for {}",
+                            metadata.name
+                        );
+                        assert_eq!(
+                            entry.rationale, metadata.rationale,
+                            "conflicting rationale for {}",
+                            metadata.name
+                        );
+                        assert_eq!(
+                            entry.category, metadata.category,
+                            "conflicting category for {}",
+                            metadata.name
+                        );
+                    }
                     entry.profile_codes.push((
-                        profile_info.name.clone(),
-                        expand_code(&metadata.code, &profile_info.code_prefix),
+                        profile.name.clone(),
+                        expand_code(&metadata.code, &profile.code_prefix),
+                        format!("{:?}", metadata.severity),
                     ));
                     if let Some(p) = &metadata.profile {
                         if !entry.profiles.contains(p) {
                             entry.profiles.push(p.clone());
                         }
                     }
+                    if let Some((name, evidence)) = evidence_for(profile, &metadata.code) {
+                        entry.evidence.insert(name, evidence);
+                    }
                 })
                 .or_insert_with(|| DedupedRule {
                     name: metadata.name.clone(),
                     description: metadata.description.clone(),
                     rationale: metadata.rationale.clone(),
-                    severity: format!("{:?}", metadata.severity),
                     category: metadata.category,
                     bad_example: metadata.bad_example.clone(),
                     good_example: metadata.good_example.clone(),
                     see_also: metadata.see_also.clone(),
                     profile_codes: vec![(
-                        profile_info.name.clone(),
-                        expand_code(&metadata.code, &profile_info.code_prefix),
+                        profile.name.clone(),
+                        expand_code(&metadata.code, &profile.code_prefix),
+                        format!("{:?}", metadata.severity),
                     )],
                     profiles: metadata.profile.into_iter().collect(),
+                    evidence: {
+                        evidence_for(profile, &metadata.code)
+                            .map(|pair| BTreeMap::from([pair]))
+                            .unwrap_or_default()
+                    },
                 });
         }
     }
@@ -115,39 +160,34 @@ fn main() {
     create_output(&args.output_dir, &deduped, &profiles);
 }
 
-fn load_profiles() -> Vec<ProfileInfo> {
-    vec![
-        ProfileInfo {
-            name: "openai.so.2026-04-30".into(),
-            code_prefix: "OAI".into(),
-        },
-        ProfileInfo {
-            name: "anthropic.so.2026-04-30".into(),
-            code_prefix: "ANT".into(),
-        },
-    ]
-}
-
-fn load_toml_profile(info: &ProfileInfo) -> schemalint::Profile {
-    let toml_str = if info.name.starts_with("openai") {
-        OPENAI_SO_2026_04_30
-    } else if info.name.starts_with("anthropic") {
-        ANTHROPIC_SO_2026_04_30
-    } else {
-        ""
-    };
-    profile::load(toml_str.as_bytes())
-        .unwrap_or_else(|e| panic!("failed to load profile {}: {e}", info.name))
+fn load_profiles() -> Vec<schemalint::Profile> {
+    [OPENAI_SO_2026_04_30, ANTHROPIC_SO_2026_04_30]
+        .into_iter()
+        .map(|contents| profile::load(contents.as_bytes()).expect("built-in profile must load"))
+        .collect()
 }
 
 fn expand_code(template: &str, prefix: &str) -> String {
     template.replace("{prefix}", prefix)
 }
 
+fn evidence_for(
+    profile: &schemalint::Profile,
+    code_template: &str,
+) -> Option<(String, ProviderEvidence)> {
+    let code = expand_code(code_template, &profile.code_prefix);
+    let key = RuleKey::from_code(&code, &profile.code_prefix)?;
+    profile
+        .evidence
+        .get(&key)
+        .cloned()
+        .map(|evidence| (profile.name.clone(), evidence))
+}
+
 fn create_output(
     output_dir: &Path,
     rules: &BTreeMap<String, DedupedRule>,
-    profiles: &[ProfileInfo],
+    profiles: &[schemalint::Profile],
 ) {
     // Create category directories and _category_.json for Docusaurus.
     let categories = [
@@ -191,7 +231,7 @@ fn create_output(
     }
 }
 
-fn build_index(rules: &BTreeMap<String, DedupedRule>, profiles: &[ProfileInfo]) -> String {
+fn build_index(rules: &BTreeMap<String, DedupedRule>, profiles: &[schemalint::Profile]) -> String {
     let mut out = String::from("# Rule Reference\n\n");
     out.push_str("This page lists all lint rules grouped by category.\n\n");
 
@@ -206,20 +246,30 @@ fn build_index(rules: &BTreeMap<String, DedupedRule>, profiles: &[ProfileInfo]) 
     out.push('\n');
 
     for rule in rules.values() {
+        let severities = rule
+            .profile_codes
+            .iter()
+            .map(|(_, _, severity)| severity.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        let severity = if severities.len() == 1 {
+            severities.into_iter().next().unwrap_or("—")
+        } else {
+            "Varies by profile"
+        };
         out.push_str(&format!(
             "| [{}](./{}/{}.md) | {} | {}",
             rule.name,
             rule.category.as_str(),
             rule.name,
             rule.category.as_str(),
-            rule.severity
+            severity
         ));
         for p in profiles {
             let code = rule
                 .profile_codes
                 .iter()
-                .find(|(pn, _)| pn == &p.name)
-                .map(|(_, c)| c.as_str())
+                .find(|(pn, _, _)| pn == &p.name)
+                .map(|(_, c, _)| c.as_str())
                 .unwrap_or("—");
             out.push_str(&format!(" | `{code}`"));
         }
@@ -246,14 +296,34 @@ fn build_rule_page(rule: &DedupedRule) -> String {
     out.push('\n');
 
     out.push_str("\n## Error Codes\n\n");
-    out.push_str("| Profile | Code |\n|---------|------|\n");
-    for (profile_name, code) in &rule.profile_codes {
-        out.push_str(&format!("| {} | `{}` |\n", profile_name, code));
+    out.push_str("| Profile | Code | Severity |\n|---------|------|----------|\n");
+    for (profile_name, code, severity) in &rule.profile_codes {
+        out.push_str(&format!(
+            "| {} | `{}` | {} |\n",
+            profile_name, code, severity
+        ));
     }
 
     out.push_str("\n## Description\n\n");
     out.push_str(&rule.description);
     out.push_str("\n\n");
+
+    out.push_str("## Provider Evidence\n\n");
+    out.push_str("| Profile | Status | Source | Basis |\n|---|---|---|---|\n");
+    for (profile, evidence) in &rule.evidence {
+        let source = evidence.sources.first().map_or("—".to_string(), |source| {
+            format!("[{}]({})", source.title, source.url)
+        });
+        let basis = evidence.basis.as_deref().unwrap_or("—").replace('|', "\\|");
+        out.push_str(&format!(
+            "| {} | `{}` | {} | {} |\n",
+            profile,
+            evidence.status.as_str(),
+            source,
+            basis
+        ));
+    }
+    out.push('\n');
 
     out.push_str("## Rationale\n\n");
     out.push_str(&rule.rationale);

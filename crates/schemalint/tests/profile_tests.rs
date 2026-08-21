@@ -8,6 +8,8 @@ mod anthropic;
 mod core_errors;
 #[path = "profile_tests/duplicate_restrictions.rs"]
 mod duplicate_restrictions;
+#[path = "profile_tests/evidence.rs"]
+mod evidence;
 #[path = "profile_tests/happy.rs"]
 mod happy;
 #[path = "profile_tests/minimal.rs"]

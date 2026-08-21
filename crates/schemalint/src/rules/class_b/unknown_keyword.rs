@@ -39,6 +39,7 @@ impl Rule for UnknownKeywordRule {
                     pointer: node_ref.json_pointer.clone(),
                     source: None,
                     profile: self.profile_name.clone(),
+                    provider_evidence: None,
                     hint: Some(hint),
                 }
             })

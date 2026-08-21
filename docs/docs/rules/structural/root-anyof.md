@@ -4,13 +4,19 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-S-root-anyof` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-S-root-anyof` | Forbid |
 
 ## Description
 
 The root schema must not use anyOf
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| openai.so.2026-04-30 | `documented` | [OpenAI root object](https://developers.openai.com/api/docs/guides/structured-outputs#root-objects-must-not-be-anyof-and-must-be-an-object) | — |
 
 ## Rationale
 

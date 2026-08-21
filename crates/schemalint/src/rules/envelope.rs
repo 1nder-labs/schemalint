@@ -1,6 +1,8 @@
 use crate::ingest::{DiscoveredModel, EnvelopeField};
 use crate::profile::Profile;
-use crate::rules::registry::{Diagnostic, DiagnosticSeverity};
+use crate::profile::Severity;
+use crate::rules::metadata::{RuleCategory, RuleMetadata};
+use crate::rules::registry::{attach_provider_evidence, Diagnostic, DiagnosticSeverity};
 
 const MAX_PROVIDER_NAME_CHARS: usize = 64;
 
@@ -21,11 +23,28 @@ pub(crate) fn check_envelope_fields(
         return Vec::new();
     }
 
-    envelope
+    let mut diagnostics: Vec<_> = envelope
         .get("name")
         .and_then(|field| validate_name(field, profile))
         .into_iter()
-        .collect()
+        .collect();
+    attach_provider_evidence(&mut diagnostics, profile);
+    diagnostics
+}
+
+pub fn metadata() -> RuleMetadata {
+    RuleMetadata {
+        name: "envelope-name".into(),
+        code: "{prefix}-S-envelope-name".into(),
+        description: "Provider request names must use the supported format and length.".into(),
+        rationale: "Provider SDK request envelopes impose constraints outside JSON Schema.".into(),
+        severity: Severity::Forbid,
+        category: RuleCategory::Structural,
+        bad_example: r#"{"name":"bad name"}"#.into(),
+        good_example: r#"{"name":"safe_name"}"#.into(),
+        see_also: Vec::new(),
+        profile: None,
+    }
 }
 
 fn profile_has_provider_name_rules(profile: &Profile) -> bool {
@@ -65,6 +84,7 @@ fn validate_name(field: &EnvelopeField, profile: &Profile) -> Option<Diagnostic>
         pointer: String::new(),
         source: Some(field.span.clone()),
         profile: profile.name.clone(),
+        provider_evidence: None,
         hint: Some("Use a 1-64 character provider-safe name".into()),
     })
 }
@@ -118,5 +138,29 @@ mod tests {
         let diagnostics = check_envelope(&model("bad name"), &profile("openai.test"));
         assert_eq!(diagnostics[0].code, "T-S-envelope-name");
         assert_eq!(diagnostics[0].source.as_ref().unwrap().line, Some(7));
+    }
+
+    #[test]
+    fn attaches_profile_evidence() {
+        let profile = load(
+            br#"
+name = "openai.test"
+code_prefix = "T"
+[structural]
+[[evidence]]
+key = "S-envelope-name"
+status = "documented"
+sources = [{ title = "Provider docs", url = "https://example.com/provider" }]
+"#,
+        )
+        .unwrap();
+        let diagnostics = check_envelope(&model("bad name"), &profile);
+        assert_eq!(
+            diagnostics[0]
+                .provider_evidence
+                .as_ref()
+                .and_then(|evidence| evidence.primary_url()),
+            Some("https://example.com/provider")
+        );
     }
 }

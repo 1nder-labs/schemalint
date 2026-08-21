@@ -4,14 +4,21 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-S-object-root` |
-| anthropic.so.2026-04-30 | `ANT-S-object-root` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-S-object-root` | Forbid |
+| anthropic.so.2026-04-30 | `ANT-S-object-root` | Forbid |
 
 ## Description
 
 The root schema must be of type object
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| anthropic.so.2026-04-30 | `documented` | [Anthropic JSON Schema limitations](https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations) | — |
+| openai.so.2026-04-30 | `documented` | [OpenAI root object](https://developers.openai.com/api/docs/guides/structured-outputs#root-objects-must-not-be-anyof-and-must-be-an-object) | — |
 
 ## Rationale
 

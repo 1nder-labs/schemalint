@@ -15,10 +15,11 @@ This page lists all lint rules grouped by category.
 | [contains](./keyword/contains.md) | keyword | Forbid | `OAI-K-contains` | `ANT-K-contains` |
 | [dependentRequired](./keyword/dependentRequired.md) | keyword | Forbid | `OAI-K-dependentRequired` | `ANT-K-dependentRequired` |
 | [dependentSchemas](./keyword/dependentSchemas.md) | keyword | Forbid | `OAI-K-dependentSchemas` | `ANT-K-dependentSchemas` |
-| [discriminator](./keyword/discriminator.md) | keyword | Warn | `OAI-K-discriminator` | `ANT-K-discriminator` |
+| [discriminator](./keyword/discriminator.md) | keyword | Varies by profile | `OAI-K-discriminator` | `ANT-K-discriminator` |
 | [else](./keyword/else.md) | keyword | Forbid | `OAI-K-else` | `ANT-K-else` |
 | [empty-object](./semantic/empty-object.md) | semantic | Warn | `OAI-S-empty-object` | `ANT-S-empty-object` |
 | [enum-string-length-budget](./structural/enum-string-length-budget.md) | structural | Forbid | `OAI-S-enum-string-length-budget` | `—` |
+| [envelope-name](./structural/envelope-name.md) | structural | Forbid | `OAI-S-envelope-name` | `ANT-S-envelope-name` |
 | [exclusiveMaximum](./keyword/exclusiveMaximum.md) | keyword | Forbid | `—` | `ANT-K-exclusiveMaximum` |
 | [exclusiveMinimum](./keyword/exclusiveMinimum.md) | keyword | Forbid | `—` | `ANT-K-exclusiveMinimum` |
 | [external-refs](./structural/external-refs.md) | structural | Forbid | `OAI-S-external-refs` | `ANT-S-external-refs` |
@@ -28,11 +29,11 @@ This page lists all lint rules grouped by category.
 | [max-enum-values](./structural/max-enum-values.md) | structural | Forbid | `OAI-S-max-enum-values` | `—` |
 | [max-total-properties](./structural/max-total-properties.md) | structural | Forbid | `OAI-S-max-total-properties` | `—` |
 | [maxItems](./keyword/maxItems.md) | keyword | Forbid | `—` | `ANT-K-maxItems` |
-| [maxLength](./keyword/maxLength.md) | keyword | Warn | `OAI-K-maxLength` | `ANT-K-maxLength` |
+| [maxLength](./keyword/maxLength.md) | keyword | Varies by profile | `OAI-K-maxLength` | `ANT-K-maxLength` |
 | [maxProperties](./keyword/maxProperties.md) | keyword | Forbid | `OAI-K-maxProperties` | `—` |
 | [maximum](./keyword/maximum.md) | keyword | Forbid | `—` | `ANT-K-maximum` |
 | [minItems-restricted](./restriction/minItems-restricted.md) | restriction | Forbid | `—` | `ANT-K-minItems-restricted` |
-| [minLength](./keyword/minLength.md) | keyword | Warn | `OAI-K-minLength` | `ANT-K-minLength` |
+| [minLength](./keyword/minLength.md) | keyword | Varies by profile | `OAI-K-minLength` | `ANT-K-minLength` |
 | [minProperties](./keyword/minProperties.md) | keyword | Forbid | `OAI-K-minProperties` | `—` |
 | [minimum](./keyword/minimum.md) | keyword | Forbid | `—` | `ANT-K-minimum` |
 | [multipleOf](./keyword/multipleOf.md) | keyword | Forbid | `—` | `ANT-K-multipleOf` |
@@ -40,7 +41,7 @@ This page lists all lint rules grouped by category.
 | [object-root](./structural/object-root.md) | structural | Forbid | `OAI-S-object-root` | `ANT-S-object-root` |
 | [oneOf](./keyword/oneOf.md) | keyword | Forbid | `OAI-K-oneOf` | `—` |
 | [patternProperties](./keyword/patternProperties.md) | keyword | Warn | `OAI-K-patternProperties` | `—` |
-| [prefixItems](./keyword/prefixItems.md) | keyword | Warn | `OAI-K-prefixItems` | `ANT-K-prefixItems` |
+| [prefixItems](./keyword/prefixItems.md) | keyword | Varies by profile | `OAI-K-prefixItems` | `ANT-K-prefixItems` |
 | [propertyNames](./keyword/propertyNames.md) | keyword | Forbid | `OAI-K-propertyNames` | `—` |
 | [recursive-schema](./structural/recursive-schema.md) | structural | Forbid | `—` | `ANT-S-recursive-schema` |
 | [root-anyof](./structural/root-anyof.md) | structural | Forbid | `OAI-S-root-anyof` | `—` |

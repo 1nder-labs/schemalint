@@ -79,3 +79,203 @@ external_refs = true
 # errors: common, unrecognized keys such as $id or examples are not
 # documented as rejected by any provider.
 unknown_keyword_policy = "warn"
+
+# Provider evidence. Keys are diagnostic codes without the provider prefix.
+[[evidence]]
+key = "S-max-depth"
+status = "live_verified"
+basis = "Observed from the OpenAI API; the published nesting limit is stale for the tested target."
+verifiedAt = "2026-06-16"
+verificationTarget = "OpenAI Structured Outputs API"
+sources = [{ title = "OpenAI schema limits", url = "https://developers.openai.com/api/docs/guides/structured-outputs#objects-have-limitations-on-nesting-depth-and-size" }]
+
+[[evidence]]
+key = "K-discriminator"
+status = "inferred"
+basis = "OpenAPI-only keyword absent from OpenAI's supported JSON Schema subset."
+sources = [{ title = "OpenAI supported schemas", url = "https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas" }]
+
+[[evidence]]
+key = "K-minLength"
+status = "inferred"
+basis = "Absent from the documented supported string constraints."
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+
+[[evidence]]
+key = "K-maxLength"
+status = "inferred"
+basis = "Absent from the documented supported string constraints."
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+
+[[evidence]]
+key = "K-patternProperties"
+status = "inferred"
+basis = "Mentioned only as unavailable for fine-tuned models, not as supported for the standard subset."
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+
+[[evidence]]
+key = "S-external-refs"
+status = "inferred"
+basis = "OpenAI documents local definitions, but not external reference retrieval."
+sources = [{ title = "OpenAI definitions", url = "https://developers.openai.com/api/docs/guides/structured-outputs#definitions-are-supported" }]
+
+[[evidence]]
+key = "S-empty-object"
+status = "live_verified"
+basis = "Observed rejection of an object schema without properties."
+verifiedAt = "2026-06-16"
+verificationTarget = "OpenAI Structured Outputs API"
+sources = [{ title = "OpenAI object restrictions", url = "https://developers.openai.com/api/docs/guides/structured-outputs#additionalproperties-false-must-always-be-set-in-objects" }]
+
+[[evidence]]
+key = "S-additional-properties-object"
+status = "inferred"
+basis = "The documented subset requires additionalProperties to be false."
+sources = [{ title = "OpenAI additionalProperties", url = "https://developers.openai.com/api/docs/guides/structured-outputs#additionalproperties-false-must-always-be-set-in-objects" }]
+
+[[evidence]]
+key = "S-anyof-objects"
+status = "documented"
+sources = [{ title = "OpenAI anyOf requirements", url = "https://developers.openai.com/api/docs/guides/structured-outputs#for-anyof-the-nested-schemas-must-each-be-a-valid-json-schema-per-this-subset" }]
+
+[[evidence]]
+key = "S-unknown-keyword"
+status = "inferred"
+basis = "Unknown keywords are not covered by the documented supported subset."
+sources = [{ title = "OpenAI supported schemas", url = "https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas" }]
+
+# Directly documented OpenAI constraints sharing their canonical section.
+[[evidence]]
+key = "S-all-properties-required"
+status = "documented"
+sources = [{ title = "OpenAI required fields", url = "https://developers.openai.com/api/docs/guides/structured-outputs#all-fields-must-be-required" }]
+
+[[evidence]]
+key = "S-object-root"
+status = "documented"
+sources = [{ title = "OpenAI root object", url = "https://developers.openai.com/api/docs/guides/structured-outputs#root-objects-must-not-be-anyof-and-must-be-an-object" }]
+
+[[evidence]]
+key = "S-root-anyof"
+status = "documented"
+sources = [{ title = "OpenAI root object", url = "https://developers.openai.com/api/docs/guides/structured-outputs#root-objects-must-not-be-anyof-and-must-be-an-object" }]
+
+[[evidence]]
+key = "S-additional-properties-false"
+status = "documented"
+sources = [{ title = "OpenAI additionalProperties", url = "https://developers.openai.com/api/docs/guides/structured-outputs#additionalproperties-false-must-always-be-set-in-objects" }]
+
+[[evidence]]
+key = "K-additionalProperties-restricted"
+status = "documented"
+sources = [{ title = "OpenAI additionalProperties", url = "https://developers.openai.com/api/docs/guides/structured-outputs#additionalproperties-false-must-always-be-set-in-objects" }]
+
+[[evidence]]
+key = "S-max-total-properties"
+status = "documented"
+sources = [{ title = "OpenAI schema limits", url = "https://developers.openai.com/api/docs/guides/structured-outputs#objects-have-limitations-on-nesting-depth-and-size" }]
+
+[[evidence]]
+key = "S-max-enum-values"
+status = "documented"
+sources = [{ title = "OpenAI schema limits", url = "https://developers.openai.com/api/docs/guides/structured-outputs#objects-have-limitations-on-nesting-depth-and-size" }]
+
+[[evidence]]
+key = "S-string-length-budget"
+status = "documented"
+sources = [{ title = "OpenAI schema limits", url = "https://developers.openai.com/api/docs/guides/structured-outputs#objects-have-limitations-on-nesting-depth-and-size" }]
+
+[[evidence]]
+key = "S-enum-string-length-budget"
+status = "documented"
+sources = [{ title = "OpenAI schema limits", url = "https://developers.openai.com/api/docs/guides/structured-outputs#objects-have-limitations-on-nesting-depth-and-size" }]
+
+[[evidence]]
+key = "S-array-items"
+status = "documented"
+sources = [{ title = "OpenAI supported schemas", url = "https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas" }]
+
+[[evidence]]
+key = "S-root-enum"
+status = "inferred"
+basis = "The root schema is documented as an object; a root enum is therefore outside the subset."
+sources = [{ title = "OpenAI root object", url = "https://developers.openai.com/api/docs/guides/structured-outputs#root-objects-must-not-be-anyof-and-must-be-an-object" }]
+
+[[evidence]]
+key = "S-envelope-name"
+status = "inferred"
+basis = "Schemalint applies the documented function-name character and length constraints to Structured Outputs request names."
+
+# Explicitly unsupported keyword rules.
+[[evidence]]
+key = "K-allOf"
+status = "documented"
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-oneOf"
+status = "inferred"
+basis = "Absent from the documented supported schema subset."
+sources = [{ title = "OpenAI supported schemas", url = "https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas" }]
+[[evidence]]
+key = "K-not"
+status = "documented"
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-if"
+status = "documented"
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-then"
+status = "documented"
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-else"
+status = "documented"
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-dependentRequired"
+status = "documented"
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-dependentSchemas"
+status = "documented"
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-contains"
+status = "inferred"
+basis = "Absent from the documented supported array constraints."
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-prefixItems"
+status = "inferred"
+basis = "Absent from the documented supported array constraints."
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-uniqueItems"
+status = "inferred"
+basis = "Absent from the documented supported array constraints."
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-unevaluatedProperties"
+status = "inferred"
+basis = "Absent from the documented supported object constraints."
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-propertyNames"
+status = "inferred"
+basis = "Absent from the documented supported object constraints."
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-minProperties"
+status = "inferred"
+basis = "Absent from the documented supported object constraints."
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-maxProperties"
+status = "inferred"
+basis = "Absent from the documented supported object constraints."
+sources = [{ title = "OpenAI type-specific keywords", url = "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported" }]
+[[evidence]]
+key = "K-format-restricted"
+status = "documented"
+sources = [{ title = "OpenAI supported formats", url = "https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas" }]

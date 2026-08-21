@@ -4,18 +4,25 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-K-discriminator` |
-| anthropic.so.2026-04-30 | `ANT-K-discriminator` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-K-discriminator` | Warn |
+| anthropic.so.2026-04-30 | `ANT-K-discriminator` | Forbid |
 
 ## Description
 
-Flag usage of the 'discriminator' keyword, which is discouraged by openai.so.2026-04-30
+Flag usage of the 'discriminator' keyword according to the active provider profile.
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| anthropic.so.2026-04-30 | `unknown` | — | Anthropic does not document this OpenAPI keyword for Structured Outputs. |
+| openai.so.2026-04-30 | `inferred` | [OpenAI supported schemas](https://developers.openai.com/api/docs/guides/structured-outputs#supported-schemas) | OpenAPI-only keyword absent from OpenAI's supported JSON Schema subset. |
 
 ## Rationale
 
-The openai.so.2026-04-30 structured-output provider discourages use of the 'discriminator' keyword. Schemas using this keyword may be rejected or silently altered.
+Provider profiles may enforce different behavior and severity for this rule; use the table below for the selected profile.
 
 ## Bad Example
 

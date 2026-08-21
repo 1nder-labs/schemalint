@@ -4,13 +4,19 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-S-all-properties-required` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-S-all-properties-required` | Forbid |
 
 ## Description
 
 Every property must be listed in the required array
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| openai.so.2026-04-30 | `documented` | [OpenAI required fields](https://developers.openai.com/api/docs/guides/structured-outputs#all-fields-must-be-required) | — |
 
 ## Rationale
 

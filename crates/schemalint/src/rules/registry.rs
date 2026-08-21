@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
-
 use crate::ir::{Arena, NodeId};
-use crate::profile::{Keyword, Profile, Severity};
+use crate::profile::{Keyword, Profile, ProviderEvidence, RuleKey, Severity};
+use serde::{Deserialize, Serialize};
 
 pub use crate::profile::KeywordAccessor;
 
@@ -32,6 +31,7 @@ pub struct Diagnostic {
     pub source: Option<SourceSpan>,
     pub profile: String,
     pub hint: Option<String>,
+    pub provider_evidence: Option<ProviderEvidence>,
 }
 
 /// Trait implemented by all lint rules.
@@ -132,6 +132,7 @@ impl RuleSet {
         for rule in &self.dynamic_rules {
             diagnostics.extend(rule.check(node, arena, profile));
         }
+        attach_provider_evidence(&mut diagnostics, profile);
         diagnostics
     }
 
@@ -147,6 +148,13 @@ impl RuleSet {
     /// Iterate over all dynamic rules (profile-generated).
     pub fn dynamic_rules(&self) -> impl Iterator<Item = &dyn Rule> {
         self.dynamic_rules.iter().map(|r| r.as_ref())
+    }
+}
+
+pub(crate) fn attach_provider_evidence(diagnostics: &mut [Diagnostic], profile: &Profile) {
+    for diagnostic in diagnostics {
+        diagnostic.provider_evidence = RuleKey::from_code(&diagnostic.code, &profile.code_prefix)
+            .and_then(|key| profile.evidence.get(&key).cloned());
     }
 }
 

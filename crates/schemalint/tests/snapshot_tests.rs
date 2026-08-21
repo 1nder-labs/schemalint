@@ -98,6 +98,7 @@ fn diag(
         pointer: pointer.to_string(),
         source,
         profile: profile.to_string(),
+        provider_evidence: None,
         hint: hint.map(|s| s.to_string()),
     }
 }

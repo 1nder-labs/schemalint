@@ -41,6 +41,16 @@ fn cli_multi_profile_union_openai_error_only() {
         "expected OpenAI diagnostics, got: {:?}",
         diags
     );
+    let all_of = openai_diags
+        .iter()
+        .find(|diagnostic| diagnostic["code"] == "OAI-K-allOf")
+        .expect("OpenAI allOf diagnostic");
+    assert_eq!(all_of["providerEvidence"]["status"], "documented");
+    assert_eq!(
+        all_of["providerEvidence"]["sources"][0]["url"],
+        "https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported"
+    );
+    assert!(all_of["seeUrl"].as_str().unwrap().contains("1nder-labs.github.io"));
     assert!(
         anthropic_diags.is_empty(),
         "expected no Anthropic diagnostics, got: {:?}",

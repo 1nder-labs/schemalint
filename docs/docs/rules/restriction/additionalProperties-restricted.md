@@ -4,18 +4,25 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-K-additionalProperties-restricted` |
-| anthropic.so.2026-04-30 | `ANT-K-additionalProperties-restricted` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-K-additionalProperties-restricted` | Forbid |
+| anthropic.so.2026-04-30 | `ANT-K-additionalProperties-restricted` | Forbid |
 
 ## Description
 
-Restrict values of the 'additionalProperties' keyword to those accepted by openai.so.2026-04-30
+Restrict 'additionalProperties' values according to the active provider profile.
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| anthropic.so.2026-04-30 | `documented` | [Anthropic JSON Schema limitations](https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations) | — |
+| openai.so.2026-04-30 | `documented` | [OpenAI additionalProperties](https://developers.openai.com/api/docs/guides/structured-outputs#additionalproperties-false-must-always-be-set-in-objects) | — |
 
 ## Rationale
 
-openai.so.2026-04-30 only supports specific values for the 'additionalProperties' keyword. Using unsupported values will cause validation errors at the API level.
+Provider profiles may enforce different behavior and severity for this rule; use the table below for the selected profile.
 
 ## Bad Example
 

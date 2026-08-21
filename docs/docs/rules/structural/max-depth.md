@@ -4,13 +4,19 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-S-max-depth` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-S-max-depth` | Forbid |
 
 ## Description
 
 Object nesting depth must not exceed 10 levels
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| openai.so.2026-04-30 | `live_verified` | [OpenAI schema limits](https://developers.openai.com/api/docs/guides/structured-outputs#objects-have-limitations-on-nesting-depth-and-size) | Observed from the OpenAI API; the published nesting limit is stale for the tested target. |
 
 ## Rationale
 

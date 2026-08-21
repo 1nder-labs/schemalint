@@ -4,18 +4,25 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-K-prefixItems` |
-| anthropic.so.2026-04-30 | `ANT-K-prefixItems` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-K-prefixItems` | Warn |
+| anthropic.so.2026-04-30 | `ANT-K-prefixItems` | Forbid |
 
 ## Description
 
-Flag usage of the 'prefixItems' keyword, which is discouraged by openai.so.2026-04-30
+Flag usage of the 'prefixItems' keyword according to the active provider profile.
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| anthropic.so.2026-04-30 | `documented` | [Anthropic JSON Schema limitations](https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations) | — |
+| openai.so.2026-04-30 | `inferred` | [OpenAI type-specific keywords](https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported) | Absent from the documented supported array constraints. |
 
 ## Rationale
 
-The openai.so.2026-04-30 structured-output provider discourages use of the 'prefixItems' keyword. Schemas using this keyword may be rejected or silently altered.
+Provider profiles may enforce different behavior and severity for this rule; use the table below for the selected profile.
 
 ## Bad Example
 

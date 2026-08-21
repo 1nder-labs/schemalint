@@ -21,6 +21,7 @@ impl Rule for RootAnyOfRule {
             pointer: node_ref.json_pointer.clone(),
             source: None,
             profile: self.profile_name.clone(),
+            provider_evidence: None,
             hint: Some("Move anyOf under an object property or use a single root object".into()),
         }]
     }
@@ -62,6 +63,7 @@ impl Rule for RootEnumRule {
             pointer: node_ref.json_pointer.clone(),
             source: None,
             profile: self.profile_name.clone(),
+            provider_evidence: None,
             hint: Some("Use an object root with an enum-valued property".into()),
         }]
     }

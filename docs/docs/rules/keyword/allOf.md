@@ -4,13 +4,19 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-K-allOf` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-K-allOf` | Forbid |
 
 ## Description
 
 Flag usage of the 'allOf' keyword, which is not supported by openai.so.2026-04-30
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| openai.so.2026-04-30 | `documented` | [OpenAI type-specific keywords](https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported) | — |
 
 ## Rationale
 
