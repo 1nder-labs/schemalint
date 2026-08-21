@@ -4,18 +4,25 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-K-not` |
-| anthropic.so.2026-04-30 | `ANT-K-not` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-K-not` | Forbid |
+| anthropic.so.2026-04-30 | `ANT-K-not` | Forbid |
 
 ## Description
 
-Flag usage of the 'not' keyword, which is not supported by openai.so.2026-04-30
+Flag usage of the 'not' keyword according to the active provider profile.
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| anthropic.so.2026-04-30 | `inferred` | [Anthropic JSON Schema limitations](https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations) | Conditional applicator absent from the documented supported subset. |
+| openai.so.2026-04-30 | `documented` | [OpenAI type-specific keywords](https://developers.openai.com/api/docs/guides/structured-outputs#some-type-specific-keywords-are-not-yet-supported) | — |
 
 ## Rationale
 
-The openai.so.2026-04-30 structured-output provider rejects the 'not' keyword. Schemas using this keyword may be rejected or silently altered.
+Provider profiles may enforce different behavior and severity for this rule; use the table below for the selected profile.
 
 ## Bad Example
 

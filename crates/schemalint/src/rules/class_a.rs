@@ -40,6 +40,7 @@ impl Rule for KeywordRule {
                 pointer: arena[node].json_pointer.clone(),
                 source: None,
                 profile: self.profile_name.clone(),
+                provider_evidence: None,
                 hint: Some(hint),
             });
         }
@@ -133,6 +134,7 @@ impl Rule for RestrictionRule {
                     pointer: arena[node].json_pointer.clone(),
                     source: None,
                     profile: self.profile_name.clone(),
+                    provider_evidence: None,
                     hint: Some(hint),
                 });
             }

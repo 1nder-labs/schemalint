@@ -22,6 +22,7 @@ impl Rule for ArrayItemsRule {
             pointer: node_ref.json_pointer.clone(),
             source: None,
             profile: self.profile_name.clone(),
+            provider_evidence: None,
             hint: Some("Add an items schema for provider compatibility".to_string()),
         }]
     }

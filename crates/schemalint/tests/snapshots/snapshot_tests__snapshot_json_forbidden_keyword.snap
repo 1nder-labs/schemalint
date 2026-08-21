@@ -3,7 +3,7 @@ source: crates/schemalint/tests/snapshot_tests/part_01.rs
 expression: "normalize_temp_paths(&stdout, dir.path())"
 ---
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "tool": {
     "name": "schemalint",
     "version": "[version]"

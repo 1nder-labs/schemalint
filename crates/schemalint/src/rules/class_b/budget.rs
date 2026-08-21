@@ -31,6 +31,7 @@ impl Rule for MaxDepthRule {
             pointer: arena[node].json_pointer.clone(),
             source: None,
             profile: self.profile_name.clone(),
+            provider_evidence: None,
             hint: None,
         }]
     }
@@ -241,6 +242,7 @@ impl Rule for ConditionalEnumStringBudgetRule {
             pointer: format!("{}/enum", arena[node].json_pointer),
             source: None,
             profile: self.profile_name.clone(),
+            provider_evidence: None,
             hint: Some("Shorten enum strings or split the enum".into()),
         }]
     }
@@ -308,6 +310,7 @@ impl Rule for BudgetRule {
             pointer: String::new(),
             source: None,
             profile: self.profile_name.clone(),
+            provider_evidence: None,
             hint: d.hint.map(str::to_owned),
         }]
     }

@@ -4,13 +4,19 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| anthropic.so.2026-04-30 | `ANT-K-minimum` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| anthropic.so.2026-04-30 | `ANT-K-minimum` | Forbid |
 
 ## Description
 
 Flag usage of the 'minimum' keyword, which is not supported by anthropic.so.2026-04-30
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| anthropic.so.2026-04-30 | `documented` | [Anthropic JSON Schema limitations](https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations) | — |
 
 ## Rationale
 

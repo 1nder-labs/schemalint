@@ -4,13 +4,19 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| anthropic.so.2026-04-30 | `ANT-S-recursive-schema` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| anthropic.so.2026-04-30 | `ANT-S-recursive-schema` | Forbid |
 
 ## Description
 
 A schema must not contain a $ref cycle
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| anthropic.so.2026-04-30 | `documented` | [Anthropic JSON Schema limitations](https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations) | — |
 
 ## Rationale
 

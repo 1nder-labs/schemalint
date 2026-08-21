@@ -9,6 +9,7 @@ fn make_diag(pointer: &str) -> crate::rules::Diagnostic {
         pointer: pointer.to_string(),
         source: None,
         profile: "test".into(),
+        provider_evidence: None,
         hint: None,
     }
 }

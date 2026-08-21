@@ -23,6 +23,7 @@ impl Rule for ObjectRootRule {
             pointer: arena[node].json_pointer.clone(),
             source: None,
             profile: self.profile_name.clone(),
+            provider_evidence: None,
             hint: None,
         }]
     }
@@ -72,6 +73,7 @@ impl Rule for AdditionalPropertiesFalseRule {
                 pointer: node_ref.json_pointer.clone(),
                 source: None,
                 profile: self.profile_name.clone(),
+                provider_evidence: None,
                 hint: None,
             }],
         }
@@ -128,6 +130,7 @@ impl Rule for AllPropertiesRequiredRule {
             pointer: node_ref.json_pointer.clone(),
             source: None,
             profile: self.profile_name.clone(),
+            provider_evidence: None,
             hint: if missing.len() > 8 {
                 Some(format!(
                     "Add all object properties to required; first 8 shown, {} total missing",

@@ -183,7 +183,7 @@ fn cli_empty_directory() {
 
     assert!(!output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["schema_version"], "1.1");
+    assert_eq!(json["schema_version"], "1.2");
     assert_eq!(json["report"]["coverage"]["status"], "empty");
     assert_eq!(json["report"]["coverage"]["attempted"], 1);
     assert_eq!(json["report"]["coverage"]["discovered"], 0);
@@ -240,7 +240,7 @@ fn cli_json_output_structure() {
 
     assert!(!output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["schema_version"], "1.1");
+    assert_eq!(json["schema_version"], "1.2");
     assert_eq!(json["tool"]["name"], "schemalint");
     assert_eq!(json["report"]["coverage"]["status"], "complete");
     assert_eq!(json["report"]["coverage"]["attempted"], 1);
@@ -324,7 +324,7 @@ fn early_profile_failures_emit_json_1_1_for_every_check_command() {
             .unwrap();
         assert!(!output.status.success());
         let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(payload["schema_version"], "1.1");
+        assert_eq!(payload["schema_version"], "1.2");
         assert_eq!(payload["report"]["success"], false);
         assert_eq!(payload["report"]["coverage"]["status"], "failed");
         assert!(!payload["report"]["failures"].as_array().unwrap().is_empty());

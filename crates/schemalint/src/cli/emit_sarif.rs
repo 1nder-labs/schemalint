@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::BTreeMap;
 
 use crate::cli::docs_url::{rule_url, DOCS_BASE_URL};
 use crate::rules::registry::DiagnosticSeverity;
@@ -8,11 +8,18 @@ use crate::rules::Diagnostic;
 /// Emit diagnostics as SARIF v2.1.0 JSON.
 pub fn emit_sarif_to_string(diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)]) -> String {
     let mut results = Vec::new();
-    let mut rule_ids = HashSet::new();
+    let mut rule_ids: BTreeMap<String, Option<crate::profile::ProviderEvidence>> = BTreeMap::new();
 
     for (path, diags) in diagnostics {
         for d in diags {
-            rule_ids.insert(d.code.clone());
+            rule_ids
+                .entry(d.code.clone())
+                .and_modify(|evidence| {
+                    if evidence.is_none() {
+                        evidence.clone_from(&d.provider_evidence);
+                    }
+                })
+                .or_insert_with(|| d.provider_evidence.clone());
 
             let level = match d.severity {
                 DiagnosticSeverity::Error => "error",
@@ -61,15 +68,17 @@ pub fn emit_sarif_to_string(diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)
         }
     }
 
-    let mut rule_ids: Vec<_> = rule_ids.into_iter().collect();
-    rule_ids.sort();
     let rules: Vec<_> = rule_ids
         .into_iter()
-        .map(|id| {
-            json!({
+        .map(|(id, evidence)| {
+            let mut descriptor = json!({
                 "id": id,
                 "helpUri": rule_url(&id)
-            })
+            });
+            if let Some(evidence) = evidence {
+                descriptor["properties"] = json!({ "providerEvidence": evidence });
+            }
+            descriptor
         })
         .collect();
 

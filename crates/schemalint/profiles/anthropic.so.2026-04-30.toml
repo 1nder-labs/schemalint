@@ -97,3 +97,148 @@ forbid_recursive_schemas = true
 # errors: common, unrecognized keys such as $id or examples are not
 # documented as rejected by any provider.
 unknown_keyword_policy = "warn"
+
+# Provider evidence. The limitations section is direct only for features it names.
+[[evidence]]
+key = "S-unknown-keyword"
+status = "inferred"
+basis = "Unknown keywords are outside the documented supported subset."
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "S-external-refs"
+status = "inferred"
+basis = "Anthropic documents local references but not retrieval of external references."
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "S-anyof-objects"
+status = "inferred"
+basis = "Each anyOf branch must remain within Anthropic's supported subset."
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "S-additional-properties-object"
+status = "sdk_transform"
+basis = "Official SDK transformation sets additionalProperties to false for object schemas."
+sources = [{ title = "Anthropic SDK transformation", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#how-sdk-transformation-works" }]
+[[evidence]]
+key = "S-empty-object"
+status = "sdk_transform"
+basis = "Official SDK transformation operates on declared object properties."
+sources = [{ title = "Anthropic SDK transformation", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#how-sdk-transformation-works" }]
+
+[[evidence]]
+key = "S-envelope-name"
+status = "inferred"
+basis = "Schemalint applies Anthropic's documented tool-name character and length constraints to Structured Outputs request names."
+
+[[evidence]]
+key = "S-object-root"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "S-additional-properties-false"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-additionalProperties-restricted"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "S-allof-with-ref"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "S-recursive-schema"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-format-restricted"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-minItems-restricted"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+
+# Keywords explicitly named as unsupported.
+[[evidence]]
+key = "K-minimum"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-maximum"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-multipleOf"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-minLength"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-maxLength"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-maxItems"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-uniqueItems"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-contains"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-prefixItems"
+status = "documented"
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+
+# Conservative fail-closed inferences: the provider does not name these directly.
+[[evidence]]
+key = "K-exclusiveMinimum"
+status = "inferred"
+basis = "Same numeric-range shape as the documented unsupported minimum keyword."
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-exclusiveMaximum"
+status = "inferred"
+basis = "Same numeric-range shape as the documented unsupported maximum keyword."
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-not"
+status = "inferred"
+basis = "Conditional applicator absent from the documented supported subset."
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-if"
+status = "inferred"
+basis = "Conditional applicator absent from the documented supported subset."
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-then"
+status = "inferred"
+basis = "Conditional applicator absent from the documented supported subset."
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-else"
+status = "inferred"
+basis = "Conditional applicator absent from the documented supported subset."
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-dependentRequired"
+status = "inferred"
+basis = "Cross-field applicator absent from the documented supported subset."
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-dependentSchemas"
+status = "inferred"
+basis = "Cross-field applicator absent from the documented supported subset."
+sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]
+[[evidence]]
+key = "K-discriminator"
+status = "unknown"
+basis = "Anthropic does not document this OpenAPI keyword for Structured Outputs."

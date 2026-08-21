@@ -4,14 +4,21 @@
 
 ## Error Codes
 
-| Profile | Code |
-|---------|------|
-| openai.so.2026-04-30 | `OAI-S-additional-properties-false` |
-| anthropic.so.2026-04-30 | `ANT-S-additional-properties-false` |
+| Profile | Code | Severity |
+|---------|------|----------|
+| openai.so.2026-04-30 | `OAI-S-additional-properties-false` | Forbid |
+| anthropic.so.2026-04-30 | `ANT-S-additional-properties-false` | Forbid |
 
 ## Description
 
 Every object schema must declare additionalProperties: false
+
+## Provider Evidence
+
+| Profile | Status | Source | Basis |
+|---|---|---|---|
+| anthropic.so.2026-04-30 | `documented` | [Anthropic JSON Schema limitations](https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations) | — |
+| openai.so.2026-04-30 | `documented` | [OpenAI additionalProperties](https://developers.openai.com/api/docs/guides/structured-outputs#additionalproperties-false-must-always-be-set-in-objects) | — |
 
 ## Rationale
 

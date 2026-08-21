@@ -25,6 +25,7 @@ impl Rule for ExternalRefsRule {
             pointer: arena[node].json_pointer.clone(),
             source: None,
             profile: self.profile_name.clone(),
+            provider_evidence: None,
             hint: None,
         }]
     }
@@ -67,6 +68,7 @@ impl Rule for AllOfWithRefRule {
             pointer: node_ref.json_pointer.clone(),
             source: None,
             profile: self.profile_name.clone(),
+            provider_evidence: None,
             hint: None,
         }]
     }

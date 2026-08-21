@@ -108,7 +108,7 @@ fn test_emit_json_multi_diag() {
     ];
     let output = emit_json_to_string(&[(path, diags)], 1, 1, &["openai.so".into()], Some(100));
     let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
-    assert_eq!(parsed["schema_version"], "1.1");
+    assert_eq!(parsed["schema_version"], "1.2");
     assert_eq!(parsed["tool"]["name"], "schemalint");
     assert!(!parsed["tool"]["version"].as_str().unwrap().is_empty());
     assert_eq!(parsed["profiles"][0], "openai.so");
@@ -309,6 +309,71 @@ fn test_emit_sarif_source_variants() {
     ];
     let output = emit_sarif_to_string(&[(path, diags)]);
     assert_snapshot_stable!(output);
+}
+
+#[test]
+fn human_documented_evidence_without_source_does_not_panic() {
+    let path = std::path::PathBuf::from("schema.json");
+    let mut diagnostic = diag(
+        "T-K-example",
+        DiagnosticSeverity::Error,
+        "example",
+        "",
+        None,
+        "test",
+        None,
+    );
+    diagnostic.provider_evidence = Some(schemalint::profile::ProviderEvidence {
+        status: schemalint::profile::EvidenceStatus::Documented,
+        sources: Vec::new(),
+        basis: None,
+        verified_at: None,
+        verification_target: None,
+    });
+
+    let output = emit_human_to_string(&[(path, vec![diagnostic])], 1, 0, None);
+    assert!(output.contains("provider evidence (documented): no source known"));
+}
+
+#[test]
+fn sarif_upgrades_rule_evidence_when_first_diagnostic_has_none() {
+    let path = std::path::PathBuf::from("schema.json");
+    let first = diag(
+        "T-K-example",
+        DiagnosticSeverity::Error,
+        "first",
+        "",
+        None,
+        "test",
+        None,
+    );
+    let mut second = diag(
+        "T-K-example",
+        DiagnosticSeverity::Error,
+        "second",
+        "",
+        None,
+        "test",
+        None,
+    );
+    second.provider_evidence = Some(schemalint::profile::ProviderEvidence {
+        status: schemalint::profile::EvidenceStatus::Documented,
+        sources: vec![schemalint::profile::EvidenceSource {
+            title: "Provider docs".into(),
+            url: "https://example.com/provider".into(),
+        }],
+        basis: None,
+        verified_at: None,
+        verification_target: None,
+    });
+
+    let output: serde_json::Value =
+        serde_json::from_str(&emit_sarif_to_string(&[(path, vec![first, second])])).unwrap();
+    assert_eq!(
+        output["runs"][0]["tool"]["driver"]["rules"][0]["properties"]
+            ["providerEvidence"]["sources"][0]["url"],
+        "https://example.com/provider"
+    );
 }
 
 // ---------------------------------------------------------------------------

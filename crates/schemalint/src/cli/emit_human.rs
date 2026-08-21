@@ -42,6 +42,27 @@ pub fn emit_human_to_string(
                 out.push_str(&format!("     = hint: {}\n", hint));
             }
             out.push_str(&format!("     = see: {}\n", rule_url(&d.code)));
+            if let Some(evidence) = &d.provider_evidence {
+                if evidence.status == crate::profile::EvidenceStatus::Documented
+                    && evidence.primary_url().is_some()
+                {
+                    out.push_str(&format!(
+                        "     = provider evidence ({}): {}\n",
+                        evidence.status.as_str(),
+                        evidence.primary_url().unwrap_or_default()
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "     = provider evidence ({}): {}{}\n",
+                        evidence.status.as_str(),
+                        evidence.basis.as_deref().unwrap_or("no source known"),
+                        evidence
+                            .primary_url()
+                            .map(|url| format!("; context: {url}"))
+                            .unwrap_or_default()
+                    ));
+                }
+            }
             out.push('\n');
         }
     }

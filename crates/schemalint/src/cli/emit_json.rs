@@ -2,6 +2,7 @@ use serde::Serialize;
 
 use crate::cli::docs_url::rule_url;
 use crate::cli::report::{CheckReport, CoverageCounts};
+use crate::profile::ProviderEvidence;
 use crate::rules::registry::{DiagnosticSeverity, SourceSpan};
 use crate::rules::Diagnostic;
 
@@ -43,6 +44,8 @@ struct JsonDiagnostic {
     hint: Option<String>,
     #[serde(rename = "seeUrl")]
     see_url: String,
+    #[serde(rename = "providerEvidence", skip_serializing_if = "Option::is_none")]
+    provider_evidence: Option<ProviderEvidence>,
 }
 
 /// Emit diagnostics as structured JSON.
@@ -99,12 +102,13 @@ pub(crate) fn emit_report_to_string(report: &CheckReport) -> String {
                 profile: d.profile.clone(),
                 hint: d.hint.clone(),
                 see_url: rule_url(&d.code),
+                provider_evidence: d.provider_evidence.clone(),
             });
         }
     }
 
     let output = JsonOutput {
-        schema_version: "1.1".to_string(),
+        schema_version: "1.2".to_string(),
         tool: ToolMeta {
             name: "schemalint".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),

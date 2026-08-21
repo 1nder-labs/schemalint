@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use super::Keyword;
+use super::{evidence, Keyword, ProviderEvidence, RuleKey};
 
 /// Severity levels for keyword and structural rules in a profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -56,6 +56,7 @@ pub struct Profile {
     /// Keyword → allowed values mapping for restricted keywords.
     pub restrictions: IndexMap<Keyword, Restriction>,
     pub structural: StructuralLimits,
+    pub evidence: IndexMap<RuleKey, ProviderEvidence>,
 }
 
 /// Value restriction for a keyword.
@@ -124,6 +125,10 @@ pub enum ProfileError {
     InvalidRestriction(String),
     #[error("keyword '{0}' cannot define both a severity and a restriction")]
     ConflictingKeyword(String),
+    #[error("invalid provider evidence for '{0}': {1}")]
+    InvalidEvidence(String, String),
+    #[error("duplicate provider evidence for '{0}'")]
+    DuplicateEvidence(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +171,9 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
     // Walk top-level entries for keywords and restrictions.
     for (key, val) in table {
         match key.as_str() {
-            "name" | "version" | "code_prefix" | "structural" | "restrictions" => continue,
+            "name" | "version" | "code_prefix" | "structural" | "restrictions" | "evidence" => {
+                continue
+            }
             _ => {}
         }
 
@@ -214,6 +221,7 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
     }
 
     let structural = parse_structural(table.get("structural"))?;
+    let evidence = parse_evidence(table.get("evidence"))?;
 
     Ok(Profile {
         name,
@@ -222,7 +230,30 @@ pub fn load(bytes: &[u8]) -> Result<Profile, ProfileError> {
         keyword_map,
         restrictions,
         structural,
+        evidence,
     })
+}
+
+fn parse_evidence(
+    value: Option<&toml::Value>,
+) -> Result<IndexMap<RuleKey, ProviderEvidence>, ProfileError> {
+    let Some(value) = value else {
+        return Ok(IndexMap::new());
+    };
+    let records: Vec<evidence::RawEvidence> = value.clone().try_into()?;
+    let mut result = IndexMap::new();
+    for record in records {
+        let key = RuleKey::parse(&record.key)
+            .map_err(|error| ProfileError::InvalidEvidence(record.key.clone(), error))?;
+        record
+            .evidence
+            .validate()
+            .map_err(|error| ProfileError::InvalidEvidence(record.key.clone(), error))?;
+        if result.insert(key, record.evidence).is_some() {
+            return Err(ProfileError::DuplicateEvidence(record.key));
+        }
+    }
+    Ok(result)
 }
 
 fn parse_restriction(table: &toml::Table, keyword: &str) -> Result<Restriction, ProfileError> {

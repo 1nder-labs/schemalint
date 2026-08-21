@@ -49,6 +49,7 @@ impl Rule for EmptyObjectRule {
             pointer: node_ref.json_pointer.clone(),
             source: None,
             profile: profile.name.clone(),
+            provider_evidence: None,
             hint: Some(
                 "Consider adding properties or relaxing additionalProperties for provider compatibility"
                     .to_string(),
@@ -104,6 +105,7 @@ impl Rule for AdditionalPropertiesObjectRule {
                 pointer: node_ref.json_pointer.clone(),
                 source: None,
                 profile: profile.name.clone(),
+                provider_evidence: None,
                 hint: Some(
                     "Set additionalProperties to false for provider compatibility".to_string(),
                 ),
@@ -175,6 +177,7 @@ impl Rule for AnyOfObjectsHint {
             pointer: node_ref.json_pointer.clone(),
             source: None,
             profile: profile.name.clone(),
+            provider_evidence: None,
             hint: Some(
                 "Consider merging object branches into a single object schema for better provider compatibility"
                     .to_string(),
