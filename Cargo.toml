@@ -3,7 +3,7 @@ members = ["crates/schemalint", "crates/schemalint-docgen", "crates/schemalint-c
 resolver = "2"
 
 [workspace.package]
-version = "1.1.1"
+version = "1.2.0"
 edition = "2021"
 authors = ["Lahfir"]
 license = "MIT OR Apache-2.0"
