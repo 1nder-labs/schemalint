@@ -155,6 +155,11 @@ export function adapterFor(
   return byImport.get(`${module}:${exportPath}`);
 }
 
+/** Whether `module` is one of the provider SDK entry points the adapters cover. */
+export function isAdapterModule(module: string): boolean {
+  return adapters.some((adapter) => adapter.module === module);
+}
+
 export function hasAdapterPrefix(module: string, exportPath: string): boolean {
   const prefix = `${exportPath}.`;
   return adapters.some(

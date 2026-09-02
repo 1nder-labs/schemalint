@@ -1,6 +1,7 @@
 import { resolveTarget } from './target_emit.js';
-import { collectTargetImports, resolveTargetAdapter, } from './target_imports.js';
-import { collectCarrierTargets, pushExpressionOrCarrier, spanFor, stringValueFromExpression, } from './target_resolution.js';
+import { collectTargetImports, importsAdapterModule, resolveTargetAdapter, } from './target_imports.js';
+import { spanFor, stringValueFromExpression, } from './target_resolution.js';
+import { collectCarrierTargets, pushExpressionOrCarrier, } from './carrier.js';
 import { propertyFromExpression } from './object_properties.js';
 import { unambiguousExpression } from './static_expression.js';
 export function findSchemaTargets(program, fileSet, tsModule, compilerOptions) {
@@ -9,12 +10,15 @@ export function findSchemaTargets(program, fileSet, tsModule, compilerOptions) {
     const targets = [];
     const failures = [];
     const seen = new Set();
+    let sdkFiles = 0;
     for (const sourceFile of program.getSourceFiles()) {
         if (sourceFile.isDeclarationFile ||
             sourceFile.fileName.includes('node_modules') ||
             !fileSet.has(sourceFile.fileName)) {
             continue;
         }
+        if (importsAdapterModule(sourceFile, tsModule))
+            sdkFiles += 1;
         const found = collectTargetExpressions(sourceFile, checker, tsModule, carrierExpressions, failures);
         for (const target of found) {
             pushTarget(targets, seen, resolveTarget(target, checker, tsModule, compilerOptions));
@@ -23,7 +27,7 @@ export function findSchemaTargets(program, fileSet, tsModule, compilerOptions) {
     for (const target of collectCarrierTargets(program, fileSet, checker, tsModule, carrierExpressions)) {
         pushTarget(targets, seen, resolveTarget(target, checker, tsModule, compilerOptions));
     }
-    return { targets, failures };
+    return { targets, failures, sdkFiles };
 }
 function collectTargetExpressions(sourceFile, checker, tsModule, carrierExpressions, failures) {
     const targets = [];

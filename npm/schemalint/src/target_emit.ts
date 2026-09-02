@@ -1,5 +1,3 @@
-import { pathToFileURL } from 'node:url';
-
 import type * as ts from 'typescript';
 
 import type { SourceMapEntry } from './discover.js';
@@ -9,6 +7,7 @@ import {
   findZObjectCall,
   hasExportModifier,
 } from './discover_ast.js';
+import { buildSlicedModule, safeName } from './slice.js';
 import type { TargetExpression } from './target_resolution.js';
 import {
   resolveVariableDeclaration,
@@ -29,7 +28,17 @@ export interface SchemaTarget {
   provider: ProviderResolution;
   envelope: Record<string, EnvelopeField>;
   usageSpan: TargetSpan;
-  syntheticSource?: string;
+  syntheticSource: string;
+  /**
+   * `<file>#<name>` of the module-level declaration this target evaluates,
+   * when it is one. Lets explicit-scope discovery skip an exported schema
+   * already reached through a provider call site.
+   */
+  declaration?: string;
+}
+
+export function declarationKey(file: string, name: string): string {
+  return `${file}#${name}`;
 }
 
 export function resolveTarget(
@@ -45,15 +54,30 @@ export function resolveTarget(
   if (tsModule.isIdentifier(expr)) {
     const exported = resolveExportedIdentifier(expr, checker, tsModule);
     if (exported) {
+      const exportName = `__schemalint_target_${safeName(target.name)}`;
       return {
         name: target.name,
-        filePath: exported.filePath,
-        exportName: exported.exportName,
+        filePath: exported.sourceFile.fileName,
+        exportName,
         sourceMap,
         canonicalKind: target.metadata.canonicalKind,
         provider: target.metadata.provider,
         envelope: target.metadata.envelope,
         usageSpan: target.metadata.usageSpan,
+        declaration: declarationKey(
+          exported.sourceFile.fileName,
+          exported.identifier.text
+        ),
+        // Sliced in the DECLARING file's context (its imports, its
+        // declarations), not the call site's — `exported.identifier` is the
+        // declaration's own name node, physically part of that file.
+        syntheticSource: buildSlicedModule(
+          exported.sourceFile,
+          exported.identifier,
+          exportName,
+          tsModule,
+          compilerOptions
+        ),
       };
     }
   }
@@ -68,13 +92,12 @@ export function resolveTarget(
     provider: target.metadata.provider,
     envelope: target.metadata.envelope,
     usageSpan: target.metadata.usageSpan,
-    syntheticSource: buildSyntheticModule(
+    syntheticSource: buildSlicedModule(
       sourceFile,
       expr,
       exportName,
       tsModule,
-      compilerOptions,
-      target.metadata.adapterModule
+      compilerOptions
     ),
   };
 }
@@ -83,10 +106,10 @@ export function resolveTarget(
  * Follow a function-local `const schema = ...` to the expression it aliases.
  *
  * Only module-level declarations survive into the synthetic module (see
- * `isReusableDeclaration`), so a name bound inside a function body would be
- * emitted as an undefined reference. Its initializer is the real target, and
- * that initializer is either an inline expression or a module-level name the
- * synthetic module does hoist.
+ * `buildSlicedModule` in slice.ts), so a name bound inside a function body
+ * would be emitted as an undefined reference. Its initializer is the real
+ * target, and that initializer is either an inline expression or a
+ * module-level name the synthetic module does hoist.
  */
 function unwrapLocalAlias(
   expression: ts.Expression,
@@ -112,157 +135,38 @@ function resolveExportedIdentifier(
   id: ts.Identifier,
   checker: ts.TypeChecker,
   tsModule: typeof ts
-): { filePath: string; exportName: string } | undefined {
+): { sourceFile: ts.SourceFile; identifier: ts.Identifier } | undefined {
   const decl = resolveVariableDeclaration(id, checker, tsModule);
   if (!decl) return undefined;
 
   if (tsModule.isIdentifier(decl.name)) {
     const stmt = decl.parent.parent;
     if (tsModule.isVariableStatement(stmt) && hasExportModifier(stmt, tsModule)) {
-      return {
-        filePath: decl.getSourceFile().fileName,
-        exportName: decl.name.text,
-      };
+      return { sourceFile: decl.getSourceFile(), identifier: decl.name };
     }
   }
 
   return undefined;
 }
 
-function buildSyntheticModule(
-  sourceFile: ts.SourceFile,
-  expr: ts.Expression,
-  exportName: string,
-  tsModule: typeof ts,
-  compilerOptions: ts.CompilerOptions,
-  adapterModule: string
-): string {
-  const parts: string[] = [];
-  const adapterNames = importedNames(sourceFile, adapterModule, tsModule);
-
-  for (const stmt of sourceFile.statements) {
-    if (tsModule.isImportDeclaration(stmt)) {
-      if (
-        tsModule.isStringLiteral(stmt.moduleSpecifier) &&
-        stmt.moduleSpecifier.text === adapterModule
-      ) {
-        continue;
-      }
-      parts.push(rewriteImport(stmt, sourceFile, tsModule, compilerOptions));
-      continue;
-    }
-    // Keep every reusable declaration except those that use a name imported
-    // from the adapter module, since that import is stripped above and the
-    // statement could not run without it (and would call the provider SDK at
-    // import time if it could).
-    //
-    // This used to drop the statement *containing* the target instead, which
-    // is wrong whenever the target resolved into a declaration: a schema
-    // reached through `const First = z.object(...)` lost that binding while
-    // other retained declarations still referenced `First`, so the synthetic
-    // module died with a ReferenceError. Whether that happened depended on
-    // whether symbol resolution succeeded, which made it look intermittent.
-    if (isReusableDeclaration(stmt, tsModule) && !usesAny(stmt, adapterNames, tsModule)) {
-      parts.push(stmt.getText(sourceFile));
-    }
-  }
-  parts.push(`export const ${exportName} = ${expr.getText(sourceFile)};`);
-  return parts.join('\n\n');
-}
-
-/** Names this module imports from `moduleSpecifier`. */
-function importedNames(
-  sourceFile: ts.SourceFile,
-  moduleSpecifier: string,
-  tsModule: typeof ts
-): Set<string> {
-  const names = new Set<string>();
-  for (const stmt of sourceFile.statements) {
-    if (!tsModule.isImportDeclaration(stmt)) continue;
-    if (!tsModule.isStringLiteral(stmt.moduleSpecifier)) continue;
-    if (stmt.moduleSpecifier.text !== moduleSpecifier) continue;
-    const clause = stmt.importClause;
-    if (clause?.name) names.add(clause.name.text);
-    const bindings = clause?.namedBindings;
-    if (bindings && tsModule.isNamedImports(bindings)) {
-      for (const element of bindings.elements) names.add(element.name.text);
-    }
-    if (bindings && tsModule.isNamespaceImport(bindings)) {
-      names.add(bindings.name.text);
-    }
-  }
-  return names;
-}
-
-/** Whether `node` references any of `names`. */
-function usesAny(
-  node: ts.Node,
-  names: ReadonlySet<string>,
-  tsModule: typeof ts
-): boolean {
-  if (names.size === 0) return false;
-  let found = false;
-  const visit = (child: ts.Node): void => {
-    if (found) return;
-    if (tsModule.isIdentifier(child) && names.has(child.text)) {
-      found = true;
-      return;
-    }
-    tsModule.forEachChild(child, visit);
-  };
-  visit(node);
-  return found;
-}
-
-function isReusableDeclaration(stmt: ts.Statement, tsModule: typeof ts): boolean {
-  return (
-    tsModule.isVariableStatement(stmt) ||
-    tsModule.isFunctionDeclaration(stmt) ||
-    tsModule.isClassDeclaration(stmt) ||
-    tsModule.isEnumDeclaration(stmt) ||
-    tsModule.isInterfaceDeclaration(stmt) ||
-    tsModule.isTypeAliasDeclaration(stmt)
-  );
-}
-
-function rewriteImport(
-  stmt: ts.ImportDeclaration,
-  sourceFile: ts.SourceFile,
-  tsModule: typeof ts,
-  compilerOptions: ts.CompilerOptions
-): string {
-  const spec = stmt.moduleSpecifier;
-  if (!tsModule.isStringLiteral(spec)) {
-    return stmt.getText(sourceFile);
-  }
-  const resolved = tsModule.resolveModuleName(
-    spec.text,
-    sourceFile.fileName,
-    compilerOptions,
-    tsModule.sys
-  ).resolvedModule?.resolvedFileName;
-  if (!resolved) return stmt.getText(sourceFile);
-  if (resolved.includes('/node_modules/') || resolved.endsWith('.d.ts')) {
-    return stmt.getText(sourceFile);
-  }
-
-  const text = stmt.getText(sourceFile);
-  // pathToFileURL produces a forward-slash percent-encoded file:// URL (Windows-safe);
-  // JSON.stringify is the correct way to embed it as a JS string literal — not double-escaping.
-  return text.replace(
-    spec.getText(sourceFile),
-    JSON.stringify(pathToFileURL(resolved).href)
-  );
-}
-
+/**
+ * Merge the root ('') entry with any property-level entries so every model's
+ * source_map has a '' key pointing at the schema expression's own line, even
+ * when it resolves to a `z.object({...})` call whose property map would
+ * otherwise be the only content.
+ */
 function sourceMapForExpression(
   expr: ts.Expression,
   sourceFile: ts.SourceFile,
   tsModule: typeof ts
 ): Record<string, SourceMapEntry> {
+  const root = buildRootSourceMap(expr, sourceFile);
   const objectArg = findZObjectCall(expr, tsModule);
-  if (objectArg) return buildSourceMapFromObjectLiteral(objectArg, sourceFile, tsModule);
-  return buildRootSourceMap(expr, sourceFile);
+  if (!objectArg) return root;
+  return {
+    ...root,
+    ...buildSourceMapFromObjectLiteral(objectArg, sourceFile, tsModule),
+  };
 }
 
 function sourceMapForTarget(
@@ -283,8 +187,4 @@ function sourceMapForTarget(
   }
 
   return sourceMapForExpression(expr, sourceFile, tsModule);
-}
-
-function safeName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_]/g, '_');
 }

@@ -3,6 +3,7 @@ import type * as ts from 'typescript';
 import {
   adapterFor,
   hasAdapterPrefix,
+  isAdapterModule,
   type SdkAdapter,
 } from './sdk_adapters.js';
 
@@ -53,6 +54,19 @@ export function collectTargetImports(
     }
   }
   return imports;
+}
+
+/** Whether `sourceFile` imports anything from a known provider SDK module. */
+export function importsAdapterModule(
+  sourceFile: ts.SourceFile,
+  tsModule: typeof ts
+): boolean {
+  return sourceFile.statements.some(
+    (stmt) =>
+      tsModule.isImportDeclaration(stmt) &&
+      tsModule.isStringLiteral(stmt.moduleSpecifier) &&
+      isAdapterModule(stmt.moduleSpecifier.text)
+  );
 }
 
 export function resolveTargetAdapter(

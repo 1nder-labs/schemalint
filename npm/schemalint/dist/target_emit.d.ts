@@ -11,7 +11,14 @@ export interface SchemaTarget {
     provider: ProviderResolution;
     envelope: Record<string, EnvelopeField>;
     usageSpan: TargetSpan;
-    syntheticSource?: string;
+    syntheticSource: string;
+    /**
+     * `<file>#<name>` of the module-level declaration this target evaluates,
+     * when it is one. Lets explicit-scope discovery skip an exported schema
+     * already reached through a provider call site.
+     */
+    declaration?: string;
 }
+export declare function declarationKey(file: string, name: string): string;
 export declare function resolveTarget(target: TargetExpression, checker: ts.TypeChecker, tsModule: typeof ts, compilerOptions: ts.CompilerOptions): SchemaTarget;
 //# sourceMappingURL=target_emit.d.ts.map

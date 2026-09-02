@@ -1,4 +1,4 @@
-import { adapterFor, hasAdapterPrefix, } from './sdk_adapters.js';
+import { adapterFor, hasAdapterPrefix, isAdapterModule, } from './sdk_adapters.js';
 export function collectTargetImports(sourceFile, tsModule) {
     const imports = {
         functions: new Map(),
@@ -33,6 +33,12 @@ export function collectTargetImports(sourceFile, tsModule) {
         }
     }
     return imports;
+}
+/** Whether `sourceFile` imports anything from a known provider SDK module. */
+export function importsAdapterModule(sourceFile, tsModule) {
+    return sourceFile.statements.some((stmt) => tsModule.isImportDeclaration(stmt) &&
+        tsModule.isStringLiteral(stmt.moduleSpecifier) &&
+        isAdapterModule(stmt.moduleSpecifier.text));
 }
 export function resolveTargetAdapter(expression, imports, tsModule) {
     if (tsModule.isIdentifier(expression)) {

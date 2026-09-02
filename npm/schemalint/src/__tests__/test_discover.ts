@@ -231,7 +231,9 @@ describe('discoverZodSchemas', () => {
     // warning, so the schemas went unlinted while the run reported success.
     // `injected` covers the dependency-injection shape, where the wrapper is
     // only ever reached through a function-type annotation.
-    const result = await discoverZodSchemas('wrapper-calls.ts');
+    // A glob, not the file name: naming the file is explicit scope, which
+    // lints every exported schema in it by design.
+    const result = await discoverZodSchemas('wrapper-call*.ts');
 
     expect(result.warnings).toHaveLength(0);
 
@@ -251,20 +253,88 @@ describe('discoverZodSchemas', () => {
     expect(properties).not.toContain('unrelated');
   });
 
-  it('falls back to exported schemas when every call-site target fails to evaluate', async () => {
-    // Regression: the fallback used to key off resolved targets. Once a call
-    // site resolved to a target that could not be evaluated (here a
-    // class-held schema, unreachable at module scope), the gate stayed shut
-    // and the run linted nothing at all — worse than the noise it avoided.
+  it('discovers schemas reaching a provider through a chain of wrapper parameters', async () => {
+    // Regression: real wrappers layer more than one hop deep — a wrapper
+    // calling another wrapper, each only forwarding the schema through its
+    // own parameter. Carrier resolution used to stop after a single hop, so
+    // `params.schema` read inside an inner wrapper and then forwarded bare
+    // (or via `{ ...params }`) by an outer wrapper resolved to nothing.
+    const result = await discoverZodSchemas('multihop-*.ts');
+
+    expect(result.warnings).toHaveLength(0);
+
+    const byProperty = new Map(
+      result.models.map((m) => [
+        Object.keys(m.schema.properties as Record<string, unknown>)[0],
+        m,
+      ])
+    );
+    expect([...byProperty.keys()].sort()).toEqual([
+      'logged',
+      'onboard',
+      'spread',
+    ]);
+
+    // A schema never passed to a provider must remain undiscovered, same
+    // guard as the single-hop case.
+    expect(byProperty.has('unrelated')).toBe(false);
+
+    for (const [property, expectedName, expectedLine] of [
+      ['onboard', 'Output.object:OnboardSchema', 18],
+      ['spread', 'Output.object:SpreadSchema', 26],
+      ['logged', 'Output.object:LoggedSchema', 34],
+    ] as const) {
+      const model = byProperty.get(property);
+      expect(model, `expected a model for '${property}'`).toBeDefined();
+      expect(model!.canonical_kind).toBe('ai.Output.object');
+      expect(model!.name).toBe(expectedName);
+      // The finding must point at the outermost call site — where the real
+      // schema is supplied — not at any intermediate wrapper hop.
+      expect(model!.usage_span.file).toContain('multihop-calls.ts');
+      expect(model!.usage_span.line).toBe(expectedLine);
+    }
+  });
+
+  it('in glob scope, a project using a provider SDK never falls back to exported schemas', async () => {
+    // gate-callsite.ts imports the SDK but its schema is class-held and cannot
+    // be evaluated. Linting gate-exported.ts instead would flag a schema that
+    // never reaches a model, so the run reports the gap and checks nothing.
     const result = await discoverZodSchemas('gate-*.ts');
 
-    expect(result.models.map((m) => m.name)).toEqual(['fallbackSchema']);
-    // The unusable call-site target is still reported rather than swallowed.
+    expect(result.models).toEqual([]);
     const evaluationFailures = result.failures.filter(
       (failure) => failure.kind === 'evaluation'
     );
     expect(evaluationFailures).toHaveLength(1);
     expect(evaluationFailures[0].target).toBe('generateObject:schema');
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0].message).toContain('no schema could be traced');
+  });
+
+  it('in glob scope, a project without a provider SDK lints exported schemas', async () => {
+    const result = await discoverZodSchemas('simpl*.ts');
+
+    expect(result.models.map((m) => m.name)).toEqual(['UserSchema']);
+    expect(result.models[0].canonical_kind).toBe('zod.export');
+  });
+
+  it('a literal file path lints every exported schema in it', async () => {
+    const result = await discoverZodSchemas('wrapper-calls.ts');
+
+    const names = result.models.map((m) => m.name);
+    expect(names).toContain('unrelatedSchema');
+    // Schemas already traced to a provider call are not reported twice.
+    expect(names.filter((n) => n.endsWith('unrelatedSchema'))).toHaveLength(1);
+  });
+
+  it('a literal directory path lints every exported schema beneath it', async () => {
+    const result = await discoverZodSchemas('explicit-dir/');
+
+    expect(result.models.map((m) => m.name).sort()).toEqual([
+      'DeepSchema',
+      'TopSchema',
+    ]);
+    expect(result.warnings).toHaveLength(0);
   });
 
   it('discovers imported and tsconfig path-aliased schemas', async () => {
@@ -438,6 +508,55 @@ describe('discoverZodSchemas', () => {
     expect(result.models[0].schema).toHaveProperty('properties');
     const props = result.models[0].schema.properties as Record<string, unknown>;
     expect(Object.keys(props)).toContain('value');
+  });
+
+  it('slices a noisy declaring file down to what a cross-file exported schema needs', async () => {
+    // Regression: the target resolves to `NoisySchema`, exported from
+    // noisy-export.ts. That file also imports 'cloudflare:workflows' (a
+    // scheme Node's default ESM loader rejects) and throws unconditionally
+    // at module scope. Importing the whole declaring file — the old
+    // behavior for a cross-file exported identifier — would fail on either.
+    // Slicing must keep only `NoisySchema`'s own dependency graph.
+    const result = await discoverZodSchemas('noisy-export-callsite.ts');
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.failures).toEqual([]);
+    expect(result.models).toHaveLength(1);
+    expect(result.models[0].name).toBe('generateObject:NoisySchema');
+    expect(result.models[0].schema).toHaveProperty('type', 'object');
+    const props = result.models[0].schema.properties as Record<string, unknown>;
+    expect(Object.keys(props)).toEqual(['clean']);
+  });
+
+  it('slices a noisy file down to what an inline call-site schema needs, including a forward-referenced helper', async () => {
+    // Regression: the inline schema at the call site references `makeField`,
+    // declared later in the same file, while the file also imports
+    // 'cloudflare:workflows' and throws unconditionally at module scope.
+    // Slicing must keep `makeField` (a real dependency) while dropping the
+    // unrelated import and side effect (not tied to any kept declaration).
+    const result = await discoverZodSchemas('noisy-inline.ts');
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.failures).toEqual([]);
+    expect(result.models).toHaveLength(1);
+    expect(result.models[0].schema).toHaveProperty('type', 'object');
+    const props = result.models[0].schema.properties as Record<string, unknown>;
+    expect(Object.keys(props)).toEqual(['value']);
+  });
+
+  it('every model source_map carries a root entry pointing at the schema expression', async () => {
+    // Regression: buildSourceMapFromObjectLiteral never wrote the '' root
+    // entry, so root-level findings printed with no line. Both the call-site
+    // resolution path (forward-ref-helper.ts, target_emit.ts) and the
+    // exported-schema path (gate-exported.ts, discover.ts) must produce one.
+    const callSite = await discoverZodSchemas('forward-ref-helper.ts');
+    expect(callSite.models[0].source_map).toHaveProperty('');
+    expect(callSite.models[0].source_map['']?.line).toBeGreaterThan(0);
+
+    const fallback = await discoverZodSchemas('gate-exported.ts');
+    const fallbackModel = fallback.models.find((m) => m.name === 'fallbackSchema');
+    expect(fallbackModel?.source_map).toHaveProperty('');
+    expect(fallbackModel?.source_map['']?.line).toBeGreaterThan(0);
   });
 
   it('buildSourceMapFromObjectLiteral records spans for string-literal and computed-string-literal property names', async () => {

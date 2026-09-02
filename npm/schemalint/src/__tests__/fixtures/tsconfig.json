@@ -15,5 +15,5 @@
     "esModuleInterop": true,
     "skipLibCheck": true
   },
-  "include": ["*.ts"]
+  "include": ["*.ts", "explicit-dir/**/*.ts"]
 }

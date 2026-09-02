@@ -10,6 +10,8 @@ export interface TargetImports {
     namespaces: Map<string, string>;
 }
 export declare function collectTargetImports(sourceFile: ts.SourceFile, tsModule: typeof ts): TargetImports;
+/** Whether `sourceFile` imports anything from a known provider SDK module. */
+export declare function importsAdapterModule(sourceFile: ts.SourceFile, tsModule: typeof ts): boolean;
 export declare function resolveTargetAdapter(expression: ts.Expression, imports: TargetImports, tsModule: typeof ts): SdkAdapter | undefined;
 export {};
 //# sourceMappingURL=target_imports.d.ts.map

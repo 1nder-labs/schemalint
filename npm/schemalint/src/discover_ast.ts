@@ -5,6 +5,13 @@ import type { SourceMapEntry } from './discover.js';
 export interface ExportedSchemaCall {
   name: string;
   objectArg: ts.ObjectLiteralExpression;
+  /**
+   * Slicing seed: the declaration's own name (named export, so the closure
+   * walk in `buildSlicedModule` naturally keeps its statement) or the full
+   * initializer expression (`export default`, which binds no name to seed
+   * from).
+   */
+  seedExpr: ts.Expression;
 }
 
 /**
@@ -24,17 +31,16 @@ export function findExportedSchemaCalls(
       const decl = node.declarationList.declarations[0];
       if (
         tsModule.isIdentifier(decl.name) &&
-        decl.initializer
+        decl.initializer &&
+        hasExportModifier(node, tsModule)
       ) {
         const call = findZObjectCall(decl.initializer, tsModule);
         if (call) {
-          const entry: ExportedSchemaCall = {
+          results.push({
             name: decl.name.text,
             objectArg: call,
-          };
-          if (hasExportModifier(node, tsModule)) {
-            results.push(entry);
-          }
+            seedExpr: decl.name,
+          });
         }
       }
     }
@@ -47,11 +53,11 @@ export function findExportedSchemaCalls(
     ) {
       const call = findZObjectCall(node.expression, tsModule);
       if (call) {
-        const entry = {
+        results.push({
           name: 'default',
           objectArg: call,
-        };
-        results.push(entry);
+          seedExpr: node.expression,
+        });
       }
     }
 
