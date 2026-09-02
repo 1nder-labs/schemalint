@@ -25,3 +25,7 @@ export const Output = {
     return args;
   },
 };
+
+export function generateText(args: { prompt: string }): unknown {
+  return args;
+}

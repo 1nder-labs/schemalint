@@ -7,7 +7,9 @@ const SOURCE_EXTENSIONS = '{ts,tsx,mts,cts}';
  * existing file matches that file alone; anything else is a glob.
  */
 export function resolveSourceScope(source, matcher, projectRoot) {
-    const explicit = !hasGlobMagic(source) && existingKind(source, projectRoot);
+    // On disk decides: no real file is named `*.ts`, while a real directory
+    // can be named `(marketing)`, so a glob-syntax check would misread it.
+    const explicit = existingKind(source, projectRoot);
     const trimmed = source.replace(/\/+$/, '');
     const pattern = explicit === 'directory' ? `${trimmed}/**/*.${SOURCE_EXTENSIONS}` : source;
     return {
@@ -15,9 +17,6 @@ export function resolveSourceScope(source, matcher, projectRoot) {
         isMatch: matcher(pattern, { dot: true }),
         explicit: explicit !== false,
     };
-}
-function hasGlobMagic(source) {
-    return /[*?[\]{}()!]/.test(source);
 }
 function existingKind(source, projectRoot) {
     try {

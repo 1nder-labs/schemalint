@@ -27,7 +27,9 @@ export function resolveSourceScope(
   matcher: typeof picomatch,
   projectRoot: string
 ): SourceScope {
-  const explicit = !hasGlobMagic(source) && existingKind(source, projectRoot);
+  // On disk decides: no real file is named `*.ts`, while a real directory
+  // can be named `(marketing)`, so a glob-syntax check would misread it.
+  const explicit = existingKind(source, projectRoot);
   const trimmed = source.replace(/\/+$/, '');
   const pattern =
     explicit === 'directory' ? `${trimmed}/**/*.${SOURCE_EXTENSIONS}` : source;
@@ -36,10 +38,6 @@ export function resolveSourceScope(
     isMatch: matcher(pattern, { dot: true }) as (input: string) => boolean,
     explicit: explicit !== false,
   };
-}
-
-function hasGlobMagic(source: string): boolean {
-  return /[*?[\]{}()!]/.test(source);
 }
 
 function existingKind(

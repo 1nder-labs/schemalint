@@ -307,6 +307,15 @@ describe('discoverZodSchemas', () => {
     );
     expect(evaluationFailures).toHaveLength(1);
     expect(evaluationFailures[0].target).toBe('generateObject:schema');
+    // The failure already names the gap; no second message about it.
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('in glob scope, a project whose provider SDK use traces to nothing reports the gap', async () => {
+    const result = await discoverZodSchemas('sdk-untraced-*.ts');
+
+    expect(result.models).toEqual([]);
+    expect(result.failures).toEqual([]);
     expect(result.warnings).toHaveLength(1);
     expect(result.warnings[0].message).toContain('no schema could be traced');
   });
@@ -330,9 +339,11 @@ describe('discoverZodSchemas', () => {
   it('a literal directory path lints every exported schema beneath it', async () => {
     const result = await discoverZodSchemas('explicit-dir/');
 
+    // TopSchema is traced to the provider call in call.ts, so it is reported
+    // once under that call site, not a second time as a bare export.
     expect(result.models.map((m) => m.name).sort()).toEqual([
       'DeepSchema',
-      'TopSchema',
+      'generateObject:TopSchema',
     ]);
     expect(result.warnings).toHaveLength(0);
   });

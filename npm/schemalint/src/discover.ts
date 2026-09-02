@@ -346,7 +346,9 @@ export async function discoverZodSchemas(
     ).filter((target) => !traced.has(target.declaration));
     discoveredLocations.push(...exported);
     models.push(...(await evaluateTargets(exported, failures)));
-  } else if (models.length === 0) {
+  } else if (discoveredLocations.length === 0) {
+    // Traced-but-failed targets already surface as failures; this names the
+    // case where tracing itself found nothing.
     warnings.push({
       model: '',
       message:
