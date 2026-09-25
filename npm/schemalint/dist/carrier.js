@@ -1,6 +1,7 @@
 import { namedTarget, spanFor, } from './target_resolution.js';
 import { propertyFromExpression, propertyName as propertyNameOf, stringPropertyFromExpression, } from './object_properties.js';
 import { unwrapExpression } from './static_expression.js';
+import { calleeName, callsCarrier, carrierBaseNames, collectInvocationAliases, contextualSignatureDeclarations, expandCarrierNames, } from './carrier_calls.js';
 // ponytail: real wrapper chains don't nest this deep. A cycle between two
 // carriers (or a pathological chain) stops here instead of hanging.
 const CARRIER_HOP_LIMIT = 8;
@@ -38,6 +39,17 @@ export function collectCarrierTargets(program, fileSet, checker, tsModule, carri
             carrier,
             signatures: contextualSignatureDeclarations(carrier.fn, checker, tsModule),
         }));
+        // Syntactic pre-filter: `callsCarrier` resolves a signature per call per
+        // carrier, so every unremarkable call in every selected file pays for
+        // signature instantiation. Each carrier instead gets a superset of the
+        // names it can be invoked under (undefined when no such superset exists
+        // syntactically), and only calls matching arity plus a plausible name
+        // reach the checker.
+        const baseNames = carrierSignatures.map(({ carrier, signatures }) => carrierBaseNames(carrier.fn, signatures, tsModule));
+        const aliases = baseNames.some((names) => names !== undefined)
+            ? collectInvocationAliases(program, fileSet, tsModule)
+            : undefined;
+        const carrierNames = baseNames.map((names) => names && aliases ? expandCarrierNames(names, aliases) : undefined);
         for (const sourceFile of program.getSourceFiles()) {
             if (sourceFile.isDeclarationFile ||
                 sourceFile.fileName.includes('node_modules') ||
@@ -46,8 +58,9 @@ export function collectCarrierTargets(program, fileSet, checker, tsModule, carri
             }
             function walk(node) {
                 if (tsModule.isCallExpression(node)) {
-                    for (const { carrier, signatures } of carrierSignatures) {
-                        const result = carrierTargetFromCall(node, sourceFile, checker, tsModule, carrier, signatures);
+                    for (let index = 0; index < carrierSignatures.length; index++) {
+                        const { carrier, signatures } = carrierSignatures[index];
+                        const result = carrierTargetFromCall(node, sourceFile, checker, tsModule, carrier, signatures, carrierNames[index]);
                         if (!result)
                             continue;
                         if (result.kind === 'target') {
@@ -139,7 +152,19 @@ function carrierParam(node, name, tsModule) {
     }
     return undefined;
 }
-function carrierTargetFromCall(call, sourceFile, checker, tsModule, carrier, contextualSignatures) {
+function carrierTargetFromCall(call, sourceFile, checker, tsModule, carrier, contextualSignatures, names) {
+    // A missing argument is a guaranteed non-match — check before touching
+    // the checker.
+    if (call.arguments.length <= carrier.paramIndex)
+        return undefined;
+    // Name filter: `names` undefined means the carrier is invocable under
+    // anything (factory return, dynamic export, typed-alias injection); an
+    // undeterminable callee shape is likewise never filtered out.
+    if (names !== undefined) {
+        const name = calleeName(call, tsModule);
+        if (name !== undefined && !names.has(name))
+            return undefined;
+    }
     if (!callsCarrier(call, carrier.fn, contextualSignatures, checker, tsModule)) {
         return undefined;
     }
@@ -217,44 +242,5 @@ function spreadSource(expr, tsModule) {
             return prop.expression;
     }
     return undefined;
-}
-function callsCarrier(call, fn, contextualSignatures, checker, tsModule) {
-    const resolved = checker.getResolvedSignature(call)?.declaration;
-    if (resolved) {
-        // Direct hit: the callee resolves to the wrapper itself. Signature
-        // resolution already follows variables and factory return values.
-        if (resolved === fn)
-            return true;
-        // Indirect hit: the wrapper is called under a function *type* it was
-        // written against (`type Compile = ...`), so every call site resolves to
-        // that type's signature and the wrapper's own node is never seen.
-        if (contextualSignatures.has(resolved)) {
-            return true;
-        }
-    }
-    const symbol = checker.getSymbolAtLocation(call.expression);
-    const aliased = symbol && (symbol.flags & tsModule.SymbolFlags.Alias)
-        ? checker.getAliasedSymbol(symbol)
-        : symbol;
-    return aliased?.declarations?.some((decl) => decl === fn) ?? false;
-}
-/**
- * Call-signature declarations of the function type `fn` was written against —
- * its contextual type at the point it is defined (a return-type annotation, a
- * typed variable, a typed property).
- */
-function contextualSignatureDeclarations(fn, checker, tsModule) {
-    const declarations = new Set();
-    if (!tsModule.isArrowFunction(fn) && !tsModule.isFunctionExpression(fn)) {
-        return declarations;
-    }
-    const contextual = checker.getContextualType(fn);
-    if (!contextual)
-        return declarations;
-    for (const signature of contextual.getCallSignatures()) {
-        if (signature.declaration)
-            declarations.add(signature.declaration);
-    }
-    return declarations;
 }
 //# sourceMappingURL=carrier.js.map
