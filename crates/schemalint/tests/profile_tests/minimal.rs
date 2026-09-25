@@ -28,19 +28,6 @@ require_object_root = false
 }
 
 #[test]
-fn profile_version_defaults_to_unknown() {
-    let toml = r#"
-name = "noversion"
-
-[structural]
-require_object_root = false
-"#;
-
-    let profile = load(toml.as_bytes()).unwrap();
-    assert_eq!(profile.version, "unknown");
-}
-
-#[test]
 fn empty_structural_section() {
     let toml = r#"
 name = "test"

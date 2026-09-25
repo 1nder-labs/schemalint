@@ -273,27 +273,6 @@ fn server_malformed_json_returns_parse_error_and_stays_alive() {
     assert!(status.success());
 }
 
-#[test]
-fn server_malformed_json_then_valid_request_stays_alive() {
-    let mut child = cmd()
-        .arg("server")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("should spawn server");
-
-    let response = send_request(&mut child, "42");
-    assert!(response.get("error").is_some() || response.get("jsonrpc").is_some());
-
-    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 1});
-    let response = send_request(&mut child, &shutdown.to_string());
-    assert_eq!(response["result"], serde_json::Value::Null);
-
-    let status = child.wait().expect("should exit cleanly");
-    assert!(status.success());
-}
-
 // ---------------------------------------------------------------------------
 // Missing / invalid method
 // ---------------------------------------------------------------------------

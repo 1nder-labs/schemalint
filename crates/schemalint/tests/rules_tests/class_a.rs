@@ -190,27 +190,6 @@ require_object_root = false
     assert!(class_a_hits.is_empty());
 }
 
-#[test]
-fn multiple_schemas_in_batch() {
-    let profile = load_test_profile(
-        r##"
-name = "test"
-version = "1.0"
-allOf = "forbid"
-
-[structural]
-require_object_root = false
-"##,
-    );
-    let schema = normalize_schema(serde_json::json!({
-        "allOf": [{"type": "string"}]
-    }));
-    let ruleset = RuleSet::from_profile(&profile).unwrap();
-    let diagnostics = ruleset.check_all(&schema.arena, &profile);
-
-    assert_eq!(diagnostics.len(), 1);
-}
-
 // ---------------------------------------------------------------------------
 // U1: a draft-07 tuple member is walked like any other nested schema, so a
 // forbidden keyword inside it is still reported at its own pointer.

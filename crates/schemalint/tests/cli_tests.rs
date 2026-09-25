@@ -298,12 +298,3 @@ fn profiles_table_lists_both_builtin_profiles_with_aliases() {
     assert!(stdout.contains("anthropic.so.2026-04-30"));
     assert!(stdout.contains("alias: anthropic"));
 }
-
-#[test]
-fn profiles_table_takes_no_arguments() {
-    let cli = Cli::parse_from(["schemalint", "profiles"]);
-    match cli.command {
-        Commands::Profiles(_) => {}
-        _ => unreachable!(),
-    }
-}

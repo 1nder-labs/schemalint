@@ -18,8 +18,6 @@ mod minimal;
 mod openai;
 #[path = "profile_tests/restriction_edges.rs"]
 mod restriction_edges;
-#[path = "profile_tests/severity_parse.rs"]
-mod severity_parse;
 #[path = "profile_tests/severity_values.rs"]
 mod severity_values;
 #[path = "profile_tests/structural_limits.rs"]

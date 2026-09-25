@@ -95,3 +95,23 @@ pub(super) fn spawn_stdout_reader(stdout: ChildStdout) -> mpsc::Receiver<Option<
     });
     receiver
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stderr_cap_evicts_oldest_entry() {
+        let lines = Mutex::new(VecDeque::new());
+        for index in 0..=STDERR_CAP {
+            push_stderr(&lines, format!("line-{index}"));
+        }
+        let lines = lines.lock().unwrap();
+        assert_eq!(lines.len(), STDERR_CAP);
+        assert_eq!(lines.front().map(String::as_str), Some("line-1"));
+        assert_eq!(
+            lines.back().map(String::as_str),
+            Some(format!("line-{STDERR_CAP}").as_str())
+        );
+    }
+}
