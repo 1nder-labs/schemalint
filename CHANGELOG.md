@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0](https://github.com/1nder-labs/schemalint/compare/v1.2.2...v1.3.0) (2026-09-25)
+
+
+### Features
+
+* **node:** trace schemas through wrapper chains ([#22](https://github.com/1nder-labs/schemalint/issues/22)) ([7fca21e](https://github.com/1nder-labs/schemalint/commit/7fca21ef3fe6dd6f05c39b8f693aaddf262cf210))
+
+
+### Performance Improvements
+
+* **node:** pre-filter carrier call sites, enable V8 compile cache ([#23](https://github.com/1nder-labs/schemalint/issues/23)) ([08f8e5f](https://github.com/1nder-labs/schemalint/commit/08f8e5f8be51d37262c6669e134dc1e380989b35))
+
 ## [1.2.2](https://github.com/1nder-labs/schemalint/compare/v1.2.1...v1.2.2) (2026-08-21)
 
 
