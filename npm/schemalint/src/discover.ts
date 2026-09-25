@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import type * as ts from 'typescript';
 
-import { evaluateSchema, evaluateSyntheticSchema } from './evaluate.js';
+import { evaluateSyntheticSchema } from './evaluate.js';
 
 /**
  * Normalize a file-system path to forward slashes.
@@ -19,9 +19,13 @@ export function toPosixPath(p: string, sep: string = path.sep): string {
   return sep === '/' ? p : p.split(sep).join('/');
 }
 import {
+  buildRootSourceMap,
   buildSourceMapFromObjectLiteral,
   findExportedSchemaCalls,
 } from './discover_ast.js';
+import { buildSlicedModule, safeName } from './slice.js';
+import { resolveSourceScope } from './source_scope.js';
+import { declarationKey } from './target_emit.js';
 import { findSchemaTargets, type SchemaTarget } from './targets.js';
 import type {
   EnvelopeField,
@@ -115,13 +119,11 @@ async function evaluateTargets(
   const models: DiscoveredModel[] = [];
   for (const loc of locations) {
     try {
-      const schemaJson = loc.syntheticSource
-        ? await evaluateSyntheticSchema(
-            loc.syntheticSource,
-            loc.exportName,
-            loc.filePath
-          )
-        : await evaluateSchema(loc.filePath, loc.exportName);
+      const schemaJson = await evaluateSyntheticSchema(
+        loc.syntheticSource,
+        loc.exportName,
+        loc.filePath
+      );
       models.push({
         name: loc.name,
         module_path: loc.filePath,
@@ -147,29 +149,38 @@ async function evaluateTargets(
 /** Every top-level exported `z.object({...})`, the fallback discovery source. */
 function exportedSchemaTargets(
   sourceFiles: readonly ts.SourceFile[],
-  tsModule: typeof ts
+  tsModule: typeof ts,
+  compilerOptions: ts.CompilerOptions
 ): SchemaTarget[] {
   const targets: SchemaTarget[] = [];
   for (const sourceFile of sourceFiles) {
     for (const exp of findExportedSchemaCalls(sourceFile, tsModule)) {
-      const sourceMap = buildSourceMapFromObjectLiteral(
-        exp.objectArg,
-        sourceFile,
-        tsModule
-      );
+      const sourceMap = {
+        ...buildRootSourceMap(exp.seedExpr, sourceFile),
+        ...buildSourceMapFromObjectLiteral(exp.objectArg, sourceFile, tsModule),
+      };
+      const exportName = `__schemalint_target_${safeName(exp.name)}`;
       targets.push({
         name: exp.name,
         filePath: sourceFile.fileName,
-        exportName: exp.name,
+        exportName,
         sourceMap,
         canonicalKind: 'zod.export',
         provider: { certainty: 'ambiguous' },
         envelope: {},
+        declaration: declarationKey(sourceFile.fileName, exp.name),
         usageSpan: {
           file: sourceFile.fileName,
           line: sourceMap['']?.line ?? 1,
           col: 1,
         },
+        syntheticSource: buildSlicedModule(
+          sourceFile,
+          exp.seedExpr,
+          exportName,
+          tsModule,
+          compilerOptions
+        ),
       });
     }
   }
@@ -243,10 +254,9 @@ export async function discoverZodSchemas(
         '. Check that picomatch is correctly installed.'
     );
   }
-  const isMatch = picomatch(sourceGlob, { dot: true }) as (
-    input: string
-  ) => boolean;
   const projectRoot = process.cwd();
+  const scope = resolveSourceScope(sourceGlob, picomatch, projectRoot);
+  const isMatch = scope.isMatch;
   fileNames = fileNames.filter((f) => {
     // Use path.relative so that:
     //  1. Files exactly under projectRoot get a clean relative path ("src/foo.ts")
@@ -280,7 +290,7 @@ export async function discoverZodSchemas(
     // not one of the three causes this unit distinguishes.
     const warnings: DiscoveryWarning[] =
       matchedFiles === 0
-        ? [emptyDiscoveryWarning(tsModule, projectRoot, sourceGlob)]
+        ? [emptyDiscoveryWarning(tsModule, projectRoot, scope.pattern)]
         : [];
     return {
       models: [],
@@ -300,10 +310,8 @@ export async function discoverZodSchemas(
       fileSet.has(sourceFile.fileName)
   );
 
-  // Step 1: Prefer provider-facing call sites. This catches schemas passed to
-  // AI SDK, OpenAI helpers, and Anthropic helper APIs. Legacy exported-schema
-  // discovery remains as a fallback for simple projects and explicit schema
-  // modules that are not wired to a provider call in the selected source glob.
+  // Step 1: schemas traced to a provider call site — AI SDK, OpenAI helpers,
+  // Anthropic helpers — through any number of wrapper functions.
   const callsiteDiscovery = findSchemaTargets(
     program,
     fileSet,
@@ -319,27 +327,52 @@ export async function discoverZodSchemas(
 
   const models = await evaluateTargets(discoveredLocations, failures);
 
-  // Legacy exported-schema discovery, for projects with no provider call site
-  // in the source glob. It keys off evaluated models rather than resolved
-  // targets: a target that resolves but then fails to evaluate would otherwise
-  // hold this gate shut and leave the run linting nothing at all.
-  if (models.length === 0) {
-    const exported = exportedSchemaTargets(selectedSourceFiles, tsModule);
+  // Step 2: exported schemas. In explicit scope (the source named a file or
+  // directory) the user pointed at these files, so every exported schema in
+  // them is linted alongside the traced ones. In glob scope only traced
+  // schemas count, and exported schemas are a fallback solely for projects
+  // that use no known provider SDK at all: when the SDK is present but
+  // nothing traced, linting every export would flag schemas that never reach
+  // a model, so the run reports the gap instead.
+  const warnings: DiscoveryWarning[] = [];
+  if (scope.explicit || callsiteDiscovery.sdkFiles === 0) {
+    const traced = new Set(
+      discoveredLocations.map((target) => target.declaration)
+    );
+    const exported = exportedSchemaTargets(
+      selectedSourceFiles,
+      tsModule,
+      compilerOptions
+    ).filter((target) => !traced.has(target.declaration));
     discoveredLocations.push(...exported);
     models.push(...(await evaluateTargets(exported, failures)));
+  } else if (discoveredLocations.length === 0) {
+    // Traced-but-failed targets already surface as failures; this names the
+    // case where tracing itself found nothing.
+    warnings.push({
+      model: '',
+      message:
+        `${callsiteDiscovery.sdkFiles} file(s) matched by source glob ` +
+        `'${sourceGlob}' import a provider SDK, but no schema could be ` +
+        'traced to a provider call site, so nothing was checked. Name a ' +
+        'file or directory instead of a glob to lint every exported schema in it.',
+    });
   }
 
   if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
     return {
       models: [],
-      warnings: [
-        {
-          model: '',
-          message:
-            `Checked ${fileNames.length} file(s) matched by source glob ` +
-            `'${sourceGlob}' for Zod schemas but found none.`,
-        },
-      ],
+      warnings:
+        warnings.length > 0
+          ? warnings
+          : [
+              {
+                model: '',
+                message:
+                  `Checked ${fileNames.length} file(s) matched by source glob ` +
+                  `'${sourceGlob}' for Zod schemas but found none.`,
+              },
+            ],
       failures: [],
       counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
     };
@@ -347,7 +380,7 @@ export async function discoverZodSchemas(
 
   const response: DiscoverResponse = {
     models,
-    warnings: [],
+    warnings,
     failures,
     counts: {
       attempted: discoveredLocations.length + discoveryFailures.length,

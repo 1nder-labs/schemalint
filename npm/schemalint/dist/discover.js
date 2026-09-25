@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { evaluateSchema, evaluateSyntheticSchema } from './evaluate.js';
+import { evaluateSyntheticSchema } from './evaluate.js';
 /**
  * Normalize a file-system path to forward slashes.
  *
@@ -14,7 +14,10 @@ import { evaluateSchema, evaluateSyntheticSchema } from './evaluate.js';
 export function toPosixPath(p, sep = path.sep) {
     return sep === '/' ? p : p.split(sep).join('/');
 }
-import { buildSourceMapFromObjectLiteral, findExportedSchemaCalls, } from './discover_ast.js';
+import { buildRootSourceMap, buildSourceMapFromObjectLiteral, findExportedSchemaCalls, } from './discover_ast.js';
+import { buildSlicedModule, safeName } from './slice.js';
+import { resolveSourceScope } from './source_scope.js';
+import { declarationKey } from './target_emit.js';
 import { findSchemaTargets } from './targets.js';
 /**
  * Name the cause of an empty discovery result when the source glob matched
@@ -47,9 +50,7 @@ async function evaluateTargets(locations, failures) {
     const models = [];
     for (const loc of locations) {
         try {
-            const schemaJson = loc.syntheticSource
-                ? await evaluateSyntheticSchema(loc.syntheticSource, loc.exportName, loc.filePath)
-                : await evaluateSchema(loc.filePath, loc.exportName);
+            const schemaJson = await evaluateSyntheticSchema(loc.syntheticSource, loc.exportName, loc.filePath);
             models.push({
                 name: loc.name,
                 module_path: loc.filePath,
@@ -73,24 +74,30 @@ async function evaluateTargets(locations, failures) {
     return models;
 }
 /** Every top-level exported `z.object({...})`, the fallback discovery source. */
-function exportedSchemaTargets(sourceFiles, tsModule) {
+function exportedSchemaTargets(sourceFiles, tsModule, compilerOptions) {
     const targets = [];
     for (const sourceFile of sourceFiles) {
         for (const exp of findExportedSchemaCalls(sourceFile, tsModule)) {
-            const sourceMap = buildSourceMapFromObjectLiteral(exp.objectArg, sourceFile, tsModule);
+            const sourceMap = {
+                ...buildRootSourceMap(exp.seedExpr, sourceFile),
+                ...buildSourceMapFromObjectLiteral(exp.objectArg, sourceFile, tsModule),
+            };
+            const exportName = `__schemalint_target_${safeName(exp.name)}`;
             targets.push({
                 name: exp.name,
                 filePath: sourceFile.fileName,
-                exportName: exp.name,
+                exportName,
                 sourceMap,
                 canonicalKind: 'zod.export',
                 provider: { certainty: 'ambiguous' },
                 envelope: {},
+                declaration: declarationKey(sourceFile.fileName, exp.name),
                 usageSpan: {
                     file: sourceFile.fileName,
                     line: sourceMap['']?.line ?? 1,
                     col: 1,
                 },
+                syntheticSource: buildSlicedModule(sourceFile, exp.seedExpr, exportName, tsModule, compilerOptions),
             });
         }
     }
@@ -135,8 +142,9 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
             typeof picomatch +
             '. Check that picomatch is correctly installed.');
     }
-    const isMatch = picomatch(sourceGlob, { dot: true });
     const projectRoot = process.cwd();
+    const scope = resolveSourceScope(sourceGlob, picomatch, projectRoot);
+    const isMatch = scope.isMatch;
     fileNames = fileNames.filter((f) => {
         // Use path.relative so that:
         //  1. Files exactly under projectRoot get a clean relative path ("src/foo.ts")
@@ -165,7 +173,7 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
         // then all removed by --exclude, that is ordinary exclusion behavior,
         // not one of the three causes this unit distinguishes.
         const warnings = matchedFiles === 0
-            ? [emptyDiscoveryWarning(tsModule, projectRoot, sourceGlob)]
+            ? [emptyDiscoveryWarning(tsModule, projectRoot, scope.pattern)]
             : [];
         return {
             models: [],
@@ -180,10 +188,8 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     const selectedSourceFiles = program.getSourceFiles().filter((sourceFile) => !sourceFile.isDeclarationFile &&
         !sourceFile.fileName.includes('node_modules') &&
         fileSet.has(sourceFile.fileName));
-    // Step 1: Prefer provider-facing call sites. This catches schemas passed to
-    // AI SDK, OpenAI helpers, and Anthropic helper APIs. Legacy exported-schema
-    // discovery remains as a fallback for simple projects and explicit schema
-    // modules that are not wired to a provider call in the selected source glob.
+    // Step 1: schemas traced to a provider call site — AI SDK, OpenAI helpers,
+    // Anthropic helpers — through any number of wrapper functions.
     const callsiteDiscovery = findSchemaTargets(program, fileSet, tsModule, compilerOptions);
     const discoveredLocations = [...callsiteDiscovery.targets];
     const discoveryFailures = [...callsiteDiscovery.failures];
@@ -192,32 +198,50 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     // count and trip the caller's coverage accounting check.
     const failures = [...discoveryFailures];
     const models = await evaluateTargets(discoveredLocations, failures);
-    // Legacy exported-schema discovery, for projects with no provider call site
-    // in the source glob. It keys off evaluated models rather than resolved
-    // targets: a target that resolves but then fails to evaluate would otherwise
-    // hold this gate shut and leave the run linting nothing at all.
-    if (models.length === 0) {
-        const exported = exportedSchemaTargets(selectedSourceFiles, tsModule);
+    // Step 2: exported schemas. In explicit scope (the source named a file or
+    // directory) the user pointed at these files, so every exported schema in
+    // them is linted alongside the traced ones. In glob scope only traced
+    // schemas count, and exported schemas are a fallback solely for projects
+    // that use no known provider SDK at all: when the SDK is present but
+    // nothing traced, linting every export would flag schemas that never reach
+    // a model, so the run reports the gap instead.
+    const warnings = [];
+    if (scope.explicit || callsiteDiscovery.sdkFiles === 0) {
+        const traced = new Set(discoveredLocations.map((target) => target.declaration));
+        const exported = exportedSchemaTargets(selectedSourceFiles, tsModule, compilerOptions).filter((target) => !traced.has(target.declaration));
         discoveredLocations.push(...exported);
         models.push(...(await evaluateTargets(exported, failures)));
+    }
+    else if (discoveredLocations.length === 0) {
+        // Traced-but-failed targets already surface as failures; this names the
+        // case where tracing itself found nothing.
+        warnings.push({
+            model: '',
+            message: `${callsiteDiscovery.sdkFiles} file(s) matched by source glob ` +
+                `'${sourceGlob}' import a provider SDK, but no schema could be ` +
+                'traced to a provider call site, so nothing was checked. Name a ' +
+                'file or directory instead of a glob to lint every exported schema in it.',
+        });
     }
     if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
         return {
             models: [],
-            warnings: [
-                {
-                    model: '',
-                    message: `Checked ${fileNames.length} file(s) matched by source glob ` +
-                        `'${sourceGlob}' for Zod schemas but found none.`,
-                },
-            ],
+            warnings: warnings.length > 0
+                ? warnings
+                : [
+                    {
+                        model: '',
+                        message: `Checked ${fileNames.length} file(s) matched by source glob ` +
+                            `'${sourceGlob}' for Zod schemas but found none.`,
+                    },
+                ],
             failures: [],
             counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
         };
     }
     const response = {
         models,
-        warnings: [],
+        warnings,
         failures,
         counts: {
             attempted: discoveredLocations.length + discoveryFailures.length,

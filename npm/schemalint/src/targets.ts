@@ -3,18 +3,21 @@ import type * as ts from 'typescript';
 import { resolveTarget, type SchemaTarget } from './target_emit.js';
 import {
   collectTargetImports,
+  importsAdapterModule,
   resolveTargetAdapter,
   type TargetImports,
 } from './target_imports.js';
 import {
-  collectCarrierTargets,
-  pushExpressionOrCarrier,
   spanFor,
   stringValueFromExpression,
-  type CarrierExpression,
   type TargetExpression,
   type TargetMetadata,
 } from './target_resolution.js';
+import {
+  collectCarrierTargets,
+  pushExpressionOrCarrier,
+  type CarrierExpression,
+} from './carrier.js';
 import { propertyFromExpression } from './object_properties.js';
 import { unambiguousExpression } from './static_expression.js';
 import type { EnvelopeField, SdkAdapter } from './sdk_adapters.js';
@@ -30,6 +33,8 @@ export interface TargetFailure {
 export interface TargetDiscovery {
   targets: SchemaTarget[];
   failures: TargetFailure[];
+  /** Selected files that import a known provider SDK module. */
+  sdkFiles: number;
 }
 
 export function findSchemaTargets(
@@ -43,6 +48,7 @@ export function findSchemaTargets(
   const targets: SchemaTarget[] = [];
   const failures: TargetFailure[] = [];
   const seen = new Set<string>();
+  let sdkFiles = 0;
 
   for (const sourceFile of program.getSourceFiles()) {
     if (
@@ -52,6 +58,7 @@ export function findSchemaTargets(
     ) {
       continue;
     }
+    if (importsAdapterModule(sourceFile, tsModule)) sdkFiles += 1;
 
     const found = collectTargetExpressions(
       sourceFile,
@@ -83,7 +90,7 @@ export function findSchemaTargets(
     );
   }
 
-  return { targets, failures };
+  return { targets, failures, sdkFiles };
 }
 
 function collectTargetExpressions(

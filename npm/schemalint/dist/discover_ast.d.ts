@@ -3,6 +3,13 @@ import type { SourceMapEntry } from './discover.js';
 export interface ExportedSchemaCall {
     name: string;
     objectArg: ts.ObjectLiteralExpression;
+    /**
+     * Slicing seed: the declaration's own name (named export, so the closure
+     * walk in `buildSlicedModule` naturally keeps its statement) or the full
+     * initializer expression (`export default`, which binds no name to seed
+     * from).
+     */
+    seedExpr: ts.Expression;
 }
 /**
  * Find top-level `const` declarations that are `z.object({...})` calls.

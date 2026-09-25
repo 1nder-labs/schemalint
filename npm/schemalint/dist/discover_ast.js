@@ -8,16 +8,15 @@ export function findExportedSchemaCalls(sourceFile, tsModule) {
             node.declarationList.declarations.length === 1) {
             const decl = node.declarationList.declarations[0];
             if (tsModule.isIdentifier(decl.name) &&
-                decl.initializer) {
+                decl.initializer &&
+                hasExportModifier(node, tsModule)) {
                 const call = findZObjectCall(decl.initializer, tsModule);
                 if (call) {
-                    const entry = {
+                    results.push({
                         name: decl.name.text,
                         objectArg: call,
-                    };
-                    if (hasExportModifier(node, tsModule)) {
-                        results.push(entry);
-                    }
+                        seedExpr: decl.name,
+                    });
                 }
             }
         }
@@ -27,11 +26,11 @@ export function findExportedSchemaCalls(sourceFile, tsModule) {
             tsModule.isCallExpression(node.expression)) {
             const call = findZObjectCall(node.expression, tsModule);
             if (call) {
-                const entry = {
+                results.push({
                     name: 'default',
                     objectArg: call,
-                };
-                results.push(entry);
+                    seedExpr: node.expression,
+                });
             }
         }
         tsModule.forEachChild(node, walk);

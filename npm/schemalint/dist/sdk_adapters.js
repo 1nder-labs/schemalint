@@ -103,6 +103,10 @@ const byImport = new Map(adapters.map((adapter) => [`${adapter.module}:${adapter
 export function adapterFor(module, exportPath) {
     return byImport.get(`${module}:${exportPath}`);
 }
+/** Whether `module` is one of the provider SDK entry points the adapters cover. */
+export function isAdapterModule(module) {
+    return adapters.some((adapter) => adapter.module === module);
+}
 export function hasAdapterPrefix(module, exportPath) {
     const prefix = `${exportPath}.`;
     return adapters.some((adapter) => adapter.module === module && adapter.exportPath.startsWith(prefix));

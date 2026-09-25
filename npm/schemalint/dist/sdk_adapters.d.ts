@@ -39,6 +39,8 @@ export interface SdkAdapter {
     deprecatedRemoval?: '2.0';
 }
 export declare function adapterFor(module: string, exportPath: string): SdkAdapter | undefined;
+/** Whether `module` is one of the provider SDK entry points the adapters cover. */
+export declare function isAdapterModule(module: string): boolean;
 export declare function hasAdapterPrefix(module: string, exportPath: string): boolean;
 export {};
 //# sourceMappingURL=sdk_adapters.d.ts.map

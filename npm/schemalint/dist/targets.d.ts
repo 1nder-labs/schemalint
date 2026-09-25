@@ -9,6 +9,8 @@ export interface TargetFailure {
 export interface TargetDiscovery {
     targets: SchemaTarget[];
     failures: TargetFailure[];
+    /** Selected files that import a known provider SDK module. */
+    sdkFiles: number;
 }
 export declare function findSchemaTargets(program: ts.Program, fileSet: ReadonlySet<string>, tsModule: typeof ts, compilerOptions: ts.CompilerOptions): TargetDiscovery;
 //# sourceMappingURL=targets.d.ts.map
