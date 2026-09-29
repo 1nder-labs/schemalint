@@ -15,6 +15,7 @@ impl Rule for RootAnyOfRule {
             return Vec::new();
         }
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-root-anyof", profile.code_prefix),
             severity: DiagnosticSeverity::Error,
             message: "root schema must not use anyOf".to_string(),
@@ -57,6 +58,7 @@ impl Rule for RootEnumRule {
             return Vec::new();
         }
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-root-enum", profile.code_prefix),
             severity: DiagnosticSeverity::Error,
             message: "root schema must not use enum".to_string(),

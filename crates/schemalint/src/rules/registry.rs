@@ -24,6 +24,9 @@ pub struct SourceSpan {
 /// A lint diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
+    /// Name of the schema (export/model) that produced this diagnostic.
+    /// `None` for raw JSON files, where the file path already identifies it.
+    pub target: Option<String>,
     pub code: String,
     pub severity: DiagnosticSeverity,
     pub message: String,

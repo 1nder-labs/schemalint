@@ -277,6 +277,11 @@ fn profile_names(profile_rulesets: &[(&Profile, RuleSet)], indices: &[usize]) ->
 }
 
 impl TargetIdentity {
+    /// The schema name, or `None` when the target is identified by path alone.
+    pub(super) fn name(&self) -> Option<&str> {
+        (!self.name.is_empty()).then_some(self.name.as_str())
+    }
+
     pub(super) fn failure_label(&self) -> String {
         if self.name.is_empty() {
             self.path.display().to_string()

@@ -16,7 +16,7 @@ pub struct KeywordRule {
 }
 
 impl Rule for KeywordRule {
-    fn check(&self, node: NodeId, arena: &Arena, _profile: &Profile) -> Vec<Diagnostic> {
+    fn check(&self, node: NodeId, arena: &Arena, profile: &Profile) -> Vec<Diagnostic> {
         let mut diagnostics = Vec::new();
         if (self.accessor)(&arena[node]).is_some() {
             let message = format!(
@@ -24,16 +24,24 @@ impl Rule for KeywordRule {
                 self.keyword, self.profile_name
             );
             let hint = match self.severity {
-                DiagnosticSeverity::Error => format!(
-                    "remove '{}' from the schema. If you need the constraint, check it in your own code after the model responds.",
-                    self.keyword
-                ),
+                DiagnosticSeverity::Error => rewrite_hint(
+                    self.keyword,
+                    profile,
+                    arena[node].json_pointer.is_empty(),
+                )
+                .unwrap_or_else(|| {
+                    format!(
+                        "remove '{}' from the schema. If you need the constraint, check it in your own code after the model responds.",
+                        self.keyword
+                    )
+                }),
                 DiagnosticSeverity::Warning => format!(
                     "{} may ignore or strip '{}'. Do not rely on it; check the constraint in your own code after the model responds.",
                     self.profile_name, self.keyword
                 ),
             };
             diagnostics.push(Diagnostic {
+                target: None,
                 code: self.code.clone(),
                 severity: self.severity,
                 message,
@@ -95,6 +103,55 @@ impl Rule for KeywordRule {
     }
 }
 
+fn is_allowed(profile: &Profile, keyword: Keyword) -> bool {
+    profile.keyword_map.get(&keyword) == Some(&Severity::Allow)
+}
+
+/// A keyword-specific rewrite for an unsupported keyword, or `None` to fall
+/// back to the generic hint. Every suggested keyword is checked against the
+/// profile so a hint never recommends something the profile also rejects.
+fn rewrite_hint(keyword: Keyword, profile: &Profile, at_root: bool) -> Option<String> {
+    match keyword {
+        Keyword::OneOf if is_allowed(profile, Keyword::AnyOf) => {
+            let root_note = if at_root && profile.structural.forbid_root_any_of {
+                " anyOf is not allowed at the schema root either; wrap the union in an object property."
+            } else {
+                ""
+            };
+            Some(format!(
+                "replace 'oneOf' with 'anyOf'. anyOf does not enforce that exactly one branch matches, so keep the branches mutually exclusive in practice.{root_note}"
+            ))
+        }
+        Keyword::AllOf => Some(
+            "merge the 'allOf' branches into one object schema: combine their 'properties' and 'required' lists and drop the 'allOf'."
+                .to_string(),
+        ),
+        Keyword::Const if is_allowed(profile, Keyword::Enum) => Some(
+            "replace 'const': <value> with 'enum': [<value>], a single-value enum.".to_string(),
+        ),
+        Keyword::Pattern
+        | Keyword::MinLength
+        | Keyword::MaxLength
+        | Keyword::Minimum
+        | Keyword::Maximum
+        | Keyword::ExclusiveMinimum
+        | Keyword::ExclusiveMaximum
+        | Keyword::MultipleOf
+        | Keyword::MinItems
+        | Keyword::MaxItems
+        | Keyword::UniqueItems
+        | Keyword::MinProperties
+        | Keyword::MaxProperties
+            if is_allowed(profile, Keyword::Description) =>
+        {
+            Some(format!(
+                "remove '{keyword}' from the schema and state the constraint in the field's 'description' so the model sees it. The provider will not enforce it, so validate the response in your own code."
+            ))
+        }
+        _ => None,
+    }
+}
+
 /// Class A auto-generated restriction rule.
 ///
 /// Fires when a keyword is present and its value is not in the allowed set.
@@ -125,6 +182,7 @@ impl Rule for RestrictionRule {
                     self.keyword, allowed, value, self.keyword
                 );
                 diagnostics.push(Diagnostic {
+                    target: None,
                     code: self.code.clone(),
                     severity: DiagnosticSeverity::Error,
                     message: format!(

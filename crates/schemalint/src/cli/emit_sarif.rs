@@ -55,7 +55,10 @@ pub fn emit_sarif_to_string(diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)
                 "ruleId": d.code,
                 "level": level,
                 "message": {
-                    "text": d.message
+                    "text": match &d.target {
+                        Some(name) => format!("{} (schema: {name})", d.message),
+                        None => d.message.clone(),
+                    }
                 },
                 "locations": [
                     {

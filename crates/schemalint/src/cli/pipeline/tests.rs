@@ -3,6 +3,7 @@ use crate::rules::registry::{DiagnosticSeverity, SourceSpan};
 
 fn make_diag(pointer: &str) -> crate::rules::Diagnostic {
     crate::rules::Diagnostic {
+        target: None,
         code: "TEST-001".into(),
         severity: DiagnosticSeverity::Error,
         message: "test diagnostic".into(),

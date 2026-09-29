@@ -17,6 +17,7 @@ impl Rule for ObjectRootRule {
             return Vec::new();
         }
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-object-root", profile.code_prefix),
             severity: DiagnosticSeverity::Error,
             message: "root schema must be an object".to_string(),
@@ -67,6 +68,7 @@ impl Rule for AdditionalPropertiesFalseRule {
         match &node_ref.annotations.additional_properties {
             Some(Value::Bool(false)) => Vec::new(),
             _ => vec![Diagnostic {
+                target: None,
                 code: format!("{}-S-additional-properties-false", profile.code_prefix),
                 severity: DiagnosticSeverity::Error,
                 message: "object must declare additionalProperties: false".to_string(),
@@ -114,6 +116,7 @@ impl Rule for AllPropertiesRequiredRule {
         }
 
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-all-properties-required", profile.code_prefix),
             severity: DiagnosticSeverity::Error,
             message: format!(

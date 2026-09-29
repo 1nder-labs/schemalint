@@ -38,7 +38,10 @@ pub fn emit_junit_to_string(diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)
             ));
         } else {
             for d in diags {
-                let test_name = format!("{} - {}", d.code, d.message);
+                let test_name = match &d.target {
+                    Some(name) => format!("{} - {} [schema: {name}]", d.code, d.message),
+                    None => format!("{} - {}", d.code, d.message),
+                };
                 let source_attrs = if let Some(span) = &d.source {
                     let file_attr = format!(" file=\"{}\"", escape_xml(&span.file));
                     let line_attr = span

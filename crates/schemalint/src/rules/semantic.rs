@@ -43,6 +43,7 @@ impl Rule for EmptyObjectRule {
             DiagnosticSeverity::Warning
         };
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-empty-object", profile.code_prefix),
             severity,
             message: "object schema with additionalProperties: false has no properties".to_string(),
@@ -99,6 +100,7 @@ impl Rule for AdditionalPropertiesObjectRule {
         }
         match &node_ref.annotations.additional_properties {
             Some(Value::Object(_)) => vec![Diagnostic {
+                target: None,
                 code: format!("{}-S-additional-properties-object", profile.code_prefix),
                 severity: DiagnosticSeverity::Error,
                 message: "additionalProperties must be false, not an object schema".to_string(),
@@ -171,6 +173,7 @@ impl Rule for AnyOfObjectsHint {
             return Vec::new();
         }
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-anyof-objects", profile.code_prefix),
             severity: DiagnosticSeverity::Warning,
             message: "anyOf with only object-typed branches may not be fully supported".to_string(),

@@ -16,6 +16,7 @@ impl Rule for ArrayItemsRule {
             return Vec::new();
         }
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-array-items", profile.code_prefix),
             severity: DiagnosticSeverity::Error,
             message: "array schema must declare items".to_string(),

@@ -34,6 +34,8 @@ struct Summary {
 
 #[derive(Serialize)]
 struct JsonDiagnostic {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target: Option<String>,
     code: String,
     severity: String,
     message: String,
@@ -85,6 +87,7 @@ pub(crate) fn emit_report_to_string(report: &CheckReport) -> String {
                 s
             });
             json_diags.push(JsonDiagnostic {
+                target: d.target.clone(),
                 code: d.code.clone(),
                 severity: match d.severity {
                     DiagnosticSeverity::Error => "error".to_string(),
@@ -108,7 +111,7 @@ pub(crate) fn emit_report_to_string(report: &CheckReport) -> String {
     }
 
     let output = JsonOutput {
-        schema_version: "1.2".to_string(),
+        schema_version: "1.3".to_string(),
         tool: ToolMeta {
             name: "schemalint".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),

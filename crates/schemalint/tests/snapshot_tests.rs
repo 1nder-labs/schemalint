@@ -92,6 +92,7 @@ fn diag(
     hint: Option<&str>,
 ) -> Diagnostic {
     Diagnostic {
+        target: None,
         code: code.to_string(),
         severity,
         message: message.to_string(),

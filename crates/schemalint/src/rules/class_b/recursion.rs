@@ -23,6 +23,7 @@ impl Rule for RecursiveSchemaRule {
             return Vec::new();
         }
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-recursive-schema", profile.code_prefix),
             severity: DiagnosticSeverity::Error,
             message: "recursive schemas are not supported".to_string(),

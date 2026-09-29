@@ -27,7 +27,12 @@ pub fn emit_gha_to_string(diagnostics: &[(std::path::PathBuf, Vec<Diagnostic>)])
                 None => encode_gha_value(&path.display().to_string()),
             };
             let code = encode_gha_value(&d.code);
-            let message = encode_gha_value(&format!("{} [profile: {}]", d.message, d.profile));
+            let schema = d
+                .target
+                .as_ref()
+                .map_or(String::new(), |name| format!(", schema: {name}"));
+            let message =
+                encode_gha_value(&format!("{} [profile: {}{}]", d.message, d.profile, schema));
 
             let mut params = format!("file={file},title={code}");
             if let Some(span) = &d.source {

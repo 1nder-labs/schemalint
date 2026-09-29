@@ -33,6 +33,7 @@ impl Rule for UnknownKeywordRule {
                     ),
                 };
                 Diagnostic {
+                    target: None,
                     code: format!("{}-S-unknown-keyword", profile.code_prefix),
                     severity: self.severity,
                     message: format!("keyword '{}' is not recognized by schemalint", key),

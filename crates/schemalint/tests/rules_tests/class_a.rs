@@ -221,3 +221,27 @@ require_object_root = false
     assert_eq!(diagnostics[0].code, "TEST-K-allOf");
     assert_eq!(diagnostics[0].pointer, "/items/1");
 }
+
+fn hint_for(profile_toml: &str, schema: serde_json::Value) -> String {
+    let profile = load_test_profile(profile_toml);
+    let schema = normalize_schema(schema);
+    let ruleset = RuleSet::from_profile(&profile).unwrap();
+    let diagnostics = ruleset.check_all(&schema.arena, &profile);
+    diagnostics[0].hint.clone().unwrap()
+}
+
+#[test]
+fn one_of_hint_suggests_any_of_only_when_profile_allows_it() {
+    let schema = serde_json::json!({ "oneOf": [{ "type": "string" }] });
+    let with_any_of = hint_for(
+        "name = \"test\"\nversion = \"1.0\"\noneOf = \"forbid\"\nanyOf = \"allow\"\n[structural]\nrequire_object_root = false\n",
+        schema.clone(),
+    );
+    assert!(with_any_of.contains("replace 'oneOf' with 'anyOf'"));
+
+    let without_any_of = hint_for(
+        "name = \"test\"\nversion = \"1.0\"\noneOf = \"forbid\"\nanyOf = \"forbid\"\n[structural]\nrequire_object_root = false\n",
+        schema,
+    );
+    assert!(!without_any_of.contains("anyOf"));
+}

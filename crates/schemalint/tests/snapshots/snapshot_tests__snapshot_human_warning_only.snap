@@ -6,7 +6,7 @@ warning[TEST-K-uniqueItems]: keyword 'uniqueItems' is not supported by test
    --> [TEMP_DIR]/schema.json
      |
      = profile: test
-     = schema path: 
+     = schema path: (root)
      = hint: test may ignore or strip 'uniqueItems'. Do not rely on it; check the constraint in your own code after the model responds.
      = see: https://1nder-labs.github.io/schemalint/rules/keyword/uniqueItems
 

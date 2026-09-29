@@ -42,11 +42,13 @@ pub(crate) fn aggregate_results(results: Vec<TargetEvaluation>) -> AggregateResu
         };
         let path = result.target.path.clone();
         let failure_target = result.target.failure_label();
+        let target_name = result.target.name().map(str::to_owned);
         targets.push(result.target.into_report(status));
         match result.outcome {
-            Ok(diags) => {
+            Ok(mut diags) => {
                 checked += 1;
-                for d in &diags {
+                for d in &mut diags {
+                    d.target.clone_from(&target_name);
                     match d.severity {
                         DiagnosticSeverity::Error => total_errors += 1,
                         DiagnosticSeverity::Warning => total_warnings += 1,

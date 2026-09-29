@@ -22,6 +22,7 @@ impl Rule for MaxDepthRule {
             return Vec::new();
         }
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-max-depth", profile.code_prefix),
             severity: DiagnosticSeverity::Error,
             message: format!(
@@ -233,6 +234,7 @@ impl Rule for ConditionalEnumStringBudgetRule {
             return Vec::new();
         }
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-enum-string-length-budget", profile.code_prefix),
             severity: DiagnosticSeverity::Error,
             message: format!(
@@ -301,6 +303,7 @@ impl Rule for BudgetRule {
             return Vec::new();
         }
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-{}", profile.code_prefix, d.code_suffix),
             severity: DiagnosticSeverity::Error,
             message: format!(

@@ -19,6 +19,7 @@ impl Rule for ExternalRefsRule {
             return Vec::new();
         }
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-external-refs", profile.code_prefix),
             severity: DiagnosticSeverity::Error,
             message: format!("external $ref '{}' is not supported", ref_str),
@@ -61,6 +62,7 @@ impl Rule for AllOfWithRefRule {
             return Vec::new();
         }
         vec![Diagnostic {
+            target: None,
             code: format!("{}-S-allof-with-ref", profile.code_prefix),
             severity: DiagnosticSeverity::Error,
             message: "Anthropic Structured Outputs does not support allOf combined with $ref"

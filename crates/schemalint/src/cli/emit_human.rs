@@ -11,7 +11,7 @@ use crate::rules::Diagnostic;
 /// Format per diagnostic:
 /// ```text
 /// error[OAI-K-allOf]: keyword 'allOf' is not supported by OpenAI Structured Outputs
-///    --> schema.json:42:8
+///    --> Pet.ts:42:8 Pet
 ///      |
 ///      = profile: openai.so.2026-04-30
 ///      = schema path: /properties/items
@@ -32,12 +32,22 @@ pub fn emit_human_to_string(
             };
             out.push_str(&format!("{}[{}]: {}\n", severity_label, d.code, d.message));
             out.push_str(&format!(
-                "   --> {}\n",
-                format_source_location(path, &d.source)
+                "   --> {}{}\n",
+                format_source_location(path, &d.source),
+                d.target
+                    .as_ref()
+                    .map_or(String::new(), |name| format!(" {name}"))
             ));
             out.push_str("     |\n");
             out.push_str(&format!("     = profile: {}\n", d.profile));
-            out.push_str(&format!("     = schema path: {}\n", d.pointer));
+            out.push_str(&format!(
+                "     = schema path: {}\n",
+                if d.pointer.is_empty() {
+                    "(root)"
+                } else {
+                    &d.pointer
+                }
+            ));
             if let Some(hint) = &d.hint {
                 out.push_str(&format!("     = hint: {}\n", hint));
             }

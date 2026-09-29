@@ -6,8 +6,8 @@ error[TEST-K-allOf]: keyword 'allOf' is not supported by test
    --> [TEMP_DIR]/schema.json
      |
      = profile: test
-     = schema path: 
-     = hint: remove 'allOf' from the schema. If you need the constraint, check it in your own code after the model responds.
+     = schema path: (root)
+     = hint: merge the 'allOf' branches into one object schema: combine their 'properties' and 'required' lists and drop the 'allOf'.
      = see: https://1nder-labs.github.io/schemalint/rules/keyword/allOf
 
 1 issue found (1 error, 0 warnings) across 1 schema in [DURATION]ms

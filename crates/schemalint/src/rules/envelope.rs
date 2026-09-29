@@ -78,6 +78,7 @@ fn validate_name(field: &EnvelopeField, profile: &Profile) -> Option<Diagnostic>
     };
 
     issue.map(|message| Diagnostic {
+        target: None,
         code: format!("{}-S-envelope-name", profile.code_prefix),
         severity: DiagnosticSeverity::Error,
         message,
