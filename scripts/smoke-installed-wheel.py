@@ -65,7 +65,7 @@ def json_report(
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as error:
-        raise AssertionError(f"command did not emit JSON 1.2:\n{context}") from error
+        raise AssertionError(f"command did not emit JSON 1.3:\n{context}") from error
 
     assert payload["schema_version"] == "1.3", payload
     report = payload["report"]
@@ -131,7 +131,7 @@ def exercise_installed_wheel(root: Path) -> str:
     )
     empty_payload = json_report(
         empty_result,
-        returncode=1,
+        returncode=3,
         status="empty",
         success=False,
         counts=SCENARIO_COUNTS["empty"],
