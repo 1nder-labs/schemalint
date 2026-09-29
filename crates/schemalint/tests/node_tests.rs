@@ -129,5 +129,7 @@ mod e2e;
 mod errors;
 #[path = "node_tests/node_error_display.rs"]
 mod node_error_display;
+#[path = "node_tests/provider_fallback.rs"]
+mod provider_fallback;
 #[path = "node_tests/sidecar_errors.rs"]
 mod sidecar_errors;

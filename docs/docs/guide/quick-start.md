@@ -64,9 +64,9 @@ failed targets plus a status of `complete`, `empty`, `partial`, or `failed`.
 ## Strict Completeness
 
 Exit `0` means every discovered in-scope schema was evaluated and checked and
-there were no error diagnostics. An empty match, import/evaluation/conversion
+there were no error diagnostics. An import/evaluation/conversion
 failure, unresolved required SDK envelope field, or partially checked batch
-exits `1`. `--continue-on-discovery-error` only controls whether later sources
+exits `1`. An empty match (nothing discovered, nothing checked) exits `3`. `--continue-on-discovery-error` only controls whether later sources
 are attempted; it never hides incomplete coverage.
 
 ## Check All JSON Schemas in a Directory

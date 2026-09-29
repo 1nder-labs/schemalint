@@ -20,8 +20,9 @@ jobs:
 For GHA annotations to appear inline in pull requests, use `--format gha`.
 
 The gate succeeds only when coverage is `complete` and no error diagnostic was
-produced. Empty globs, import failures, schema conversion failures, unresolved
-required SDK metadata, and partial batches exit `1`. For machine processing,
+produced. Import failures, schema conversion failures, unresolved
+required SDK metadata, and partial batches exit `1`. Empty globs (nothing
+discovered) exit `3`, and failing to write the `--output` file exits `2`. For machine processing,
 `--format json` emits schema version `1.1` and exposes the authoritative status
 at `report.coverage.status`.
 

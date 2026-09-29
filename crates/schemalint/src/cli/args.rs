@@ -7,6 +7,9 @@ use std::path::PathBuf;
     about = "Static analysis tool for JSON Schema compatibility with LLM structured-output providers"
 )]
 #[command(version)]
+#[command(
+    after_help = "Exit codes:\n  0  complete coverage, no errors\n  1  error diagnostics, or partial/failed coverage\n  2  could not write the output file\n  3  empty coverage: nothing was checked"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

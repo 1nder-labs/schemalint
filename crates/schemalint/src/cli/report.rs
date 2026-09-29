@@ -86,6 +86,30 @@ pub struct TargetReport {
     pub status: TargetStatus,
 }
 
+/// Process exit codes shared by every `check*` command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitStatus {
+    /// Complete coverage and no error diagnostics.
+    Success,
+    /// Error diagnostics, or partial/failed coverage.
+    Failure,
+    /// The output file could not be written.
+    OutputWriteFailed,
+    /// Nothing was discovered, so nothing was checked.
+    EmptyCoverage,
+}
+
+impl ExitStatus {
+    pub fn code(self) -> i32 {
+        match self {
+            Self::Success => 0,
+            Self::Failure => 1,
+            Self::OutputWriteFailed => 2,
+            Self::EmptyCoverage => 3,
+        }
+    }
+}
+
 pub struct CheckReport {
     pub coverage: CoverageCounts,
     pub failures: Vec<ReportMessage>,
@@ -104,10 +128,16 @@ impl CheckReport {
     }
 
     pub fn exit_code(&self) -> i32 {
+        self.exit_status().code()
+    }
+
+    pub fn exit_status(&self) -> ExitStatus {
         if self.success() {
-            0
+            ExitStatus::Success
+        } else if self.coverage.status() == CoverageStatus::Empty {
+            ExitStatus::EmptyCoverage
         } else {
-            1
+            ExitStatus::Failure
         }
     }
 

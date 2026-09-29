@@ -66,8 +66,9 @@ npm run lint:schemas
 ```
 
 Exit `0` means every discovered in-scope target was evaluated and checked and
-there were no error diagnostics. Empty discovery, import/evaluation/conversion
-failures, unresolved required SDK metadata, and partial batches exit `1`.
+there were no error diagnostics. Import/evaluation/conversion
+failures, unresolved required SDK metadata, and partial batches exit `1`; empty
+discovery (nothing checked) exits `3`.
 `--continue-on-discovery-error` collects later targets but never hides partial
 coverage. JSON output uses schema version `1.1` and reports the authoritative
 status in `report.coverage`.

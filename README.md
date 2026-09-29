@@ -84,9 +84,11 @@ schemalint check-python     # Pydantic → check-python
 ### Success means complete coverage
 
 Exit `0` is a completeness guarantee: every discovered in-scope target was
-evaluated and checked, and no error diagnostic was produced. No matches,
-import failures, schema-conversion failures, unresolved required SDK metadata,
-and partially checked batches exit `1`; `--continue-on-discovery-error` keeps
+evaluated and checked, and no error diagnostic was produced. Import
+failures, schema-conversion failures, unresolved required SDK metadata, and
+partially checked batches exit `1`. A run that discovers nothing (no matches)
+exits `3` and its human output starts with `checked 0 schemas: nothing was
+discovered`; `--continue-on-discovery-error` keeps
 collecting results but never converts partial coverage into success.
 
 Machine-readable output uses schema version `1.1`. Its additive `report` object
@@ -139,8 +141,9 @@ schemalint check --format gha    --profile openai.so.2026-04-30 schema.json   # 
 | Exit code | Meaning |
 | --- | --- |
 | `0` | Complete coverage and no errors |
-| `1` | Error diagnostic or empty, partial, or failed coverage |
+| `1` | Error diagnostic, or partial or failed coverage |
 | `2` | Could not write the output file |
+| `3` | Empty coverage: nothing was discovered, so nothing was checked |
 
 ## Documentation
 

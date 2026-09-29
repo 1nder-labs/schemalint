@@ -4,7 +4,10 @@ use std::path::Path;
 use crate::cli::args::{CheckNodeArgs, OutputFormat};
 use crate::cli::discovery_policy::discover_batch;
 use crate::cli::node_config;
-use crate::cli::node_policy::{automatic_profile_ids, automatic_target_inputs};
+use crate::cli::node_policy::{
+    automatic_profile_ids, automatic_target_inputs, needs_provider_fallback,
+    provider_of_profile_ids,
+};
 use crate::cli::pipeline::{
     build_report, build_rulesets, emit_failure, emit_output, evaluate_targets,
     explicit_model_inputs, EnvelopePolicy,
@@ -127,8 +130,11 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
             failure.target, failure.message
         );
     }
-    for warning in &discovery.warnings {
-        eprintln!("warning: {}: {}", warning.target, warning.message);
+    // The human report already prints warnings after its summary.
+    if format != OutputFormat::Human {
+        for warning in &discovery.warnings {
+            eprintln!("warning: {}: {}", warning.target, warning.message);
+        }
     }
 
     let total_discovered = discovery.models.len();
@@ -159,6 +165,18 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
                 "info: auto-selected per-target profile(s): {}",
                 profile_args.join(", ")
             );
+        }
+    }
+    // Models whose provider the source cannot settle fall back to the
+    // package.json-detected profile(s), which themselves default to openai.
+    let mut fallback_provider = None;
+    if explicit_profiles.is_none() && needs_provider_fallback(&discovery.models) {
+        let fallback_ids = super::default_profile_ids(config_path);
+        fallback_provider = provider_of_profile_ids(&fallback_ids);
+        for id in fallback_ids {
+            if !profile_args.contains(&id) {
+                profile_args.push(id);
+            }
         }
     }
     let uses_explicit_profiles = explicit_profiles.is_some();
@@ -209,7 +227,7 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
             EnvelopePolicy::Validate,
         )
     } else {
-        automatic_target_inputs(&discovery.models, &profile_rulesets)
+        automatic_target_inputs(&discovery.models, &profile_rulesets, fallback_provider)
     };
     let results = evaluate_targets(inputs, &profile_rulesets);
 

@@ -21,12 +21,34 @@ pub(crate) fn automatic_profile_ids(models: &[DiscoveredModel]) -> Vec<String> {
     .collect()
 }
 
+/// True when some model has no provider signal and no model in the source
+/// names one, so a package.json-derived default is needed. Sources that
+/// already mix providers stay ambiguous rather than guessing.
+pub(crate) fn needs_provider_fallback(models: &[DiscoveredModel]) -> bool {
+    models
+        .iter()
+        .any(|model| model.provider.provider().is_none())
+        && models
+            .iter()
+            .all(|model| model.provider.provider().is_none())
+}
+
+/// The provider a fallback profile list unambiguously names, if any.
+pub(crate) fn provider_of_profile_ids(ids: &[String]) -> Option<Provider> {
+    match ids {
+        [id] if id == OPENAI_PROFILE_ID => Some(Provider::Openai),
+        [id] if id == ANTHROPIC_PROFILE_ID => Some(Provider::Anthropic),
+        _ => None,
+    }
+}
+
 pub(crate) fn automatic_target_inputs(
     models: &[DiscoveredModel],
     profile_rulesets: &[(&crate::profile::Profile, RuleSet)],
+    fallback_provider: Option<Provider>,
 ) -> Vec<TargetInput> {
     let mut targets = Vec::with_capacity(models.len());
-    let inferred_provider = single_owned_provider(models);
+    let inferred_provider = single_owned_provider(models).or(fallback_provider);
     for model in models {
         let Some((profile_id, provider)) = effective_provider(model, inferred_provider) else {
             targets.push(model_target_input(

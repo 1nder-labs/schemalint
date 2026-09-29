@@ -57,7 +57,7 @@ pub(super) fn handle_node(params: Value, state: &mut ServerState) -> Value {
         Err(error) => return error,
     };
     let inputs = if automatic {
-        automatic_target_inputs(&discovery.models, &rules)
+        automatic_target_inputs(&discovery.models, &rules, None)
     } else {
         explicit_model_inputs(&discovery.models, &rules, EnvelopePolicy::Validate)
     };

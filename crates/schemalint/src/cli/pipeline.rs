@@ -1,7 +1,10 @@
 use std::path::{Path, PathBuf};
 
 use crate::cli::args::OutputFormat;
-use crate::cli::report::{CheckReport, CoverageCounts, ReportMessage, TargetReport, TargetStatus};
+use crate::cli::report::{
+    CheckReport, CoverageCounts, CoverageStatus, ExitStatus, ReportMessage, TargetReport,
+    TargetStatus,
+};
 use crate::cli::{emit_gha, emit_human, emit_json, emit_junit, emit_sarif};
 use crate::profile::Profile;
 use crate::rules::registry::{DiagnosticSeverity, RuleSet, RuleSetError};
@@ -122,6 +125,9 @@ pub fn render_output(format: OutputFormat, report: &CheckReport) -> String {
     };
 
     if format == OutputFormat::Human {
+        if report.coverage.status() == CoverageStatus::Empty {
+            output.insert_str(0, "checked 0 schemas: nothing was discovered\n");
+        }
         output.push_str(&format!(
             "coverage {} ({} attempted, {} excluded, {} discovered, {} checked, {} failed)\n",
             report.coverage.status().as_str(),
@@ -158,7 +164,7 @@ pub(crate) fn emit_output(
                 out_path.display(),
                 e
             );
-            return Err(1);
+            return Err(ExitStatus::OutputWriteFailed.code());
         }
     } else {
         print!("{}", output_text);
@@ -193,7 +199,7 @@ pub(crate) fn emit_failure(
         duration_ms: Some(duration_ms),
     };
     let _ = emit_output(format, &report, output);
-    1
+    ExitStatus::Failure.code()
 }
 
 // ---------------------------------------------------------------------------
