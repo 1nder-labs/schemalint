@@ -701,6 +701,11 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # release-please creates the release with no assets; fill it rather than refuse.
+          if [ "$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets | length')" = "0" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           mkdir existing-release
           gh release download "$GITHUB_REF_NAME" --dir existing-release
           test "$(find release-artifacts -maxdepth 1 -type f | wc -l)" = \
