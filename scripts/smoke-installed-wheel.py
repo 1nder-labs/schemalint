@@ -67,7 +67,7 @@ def json_report(
     except json.JSONDecodeError as error:
         raise AssertionError(f"command did not emit JSON 1.2:\n{context}") from error
 
-    assert payload["schema_version"] == "1.2", payload
+    assert payload["schema_version"] == "1.3", payload
     report = payload["report"]
     coverage = report["coverage"]
     assert report["success"] is success, report
