@@ -21,48 +21,6 @@ fn fixture(name: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Real-sidecar DiscoverFailed: augment_error with no stderr
-//
-// When the Node sidecar cannot find a tsconfig.json it returns a JSON-RPC
-// DiscoverFailed error without writing to stderr.  That exercises the
-// `lines.is_empty() → return err` early-return branch in `augment_error`.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn check_node_real_sidecar_discover_failed_no_tsconfig() {
-    // Run from a temp dir that has no tsconfig.json.
-    let tmp = TempDir::new().unwrap();
-
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    let output = cmd
-        .args([
-            "check-node",
-            "--source",
-            "src/**/*.ts",
-            "--profile",
-            "openai.so.2026-04-30",
-        ])
-        .output()
-        .unwrap();
-
-    assert!(
-        !output.status.success(),
-        "exit code should be 1 on discovery failure"
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    // The sidecar returns a DiscoverFailed error when no tsconfig.json found.
-    assert!(
-        stderr.contains("discovery failed") || stderr.contains("discovery failed for source"),
-        "expected discovery failure in stderr, got:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("tsconfig.json") || stderr.contains("failed discovery"),
-        "expected tsconfig.json mention or 'failed discovery', got:\n{stderr}"
-    );
-}
-
-// ---------------------------------------------------------------------------
 // Fake-sidecar: DiscoverFailed with ≤10 stderr lines
 //
 // This exercises `node/mod.rs` augment_error arms:

@@ -19,11 +19,11 @@ fn check_node_no_sources_no_config_errors() {
 }
 
 /// Missing `--profile` no longer hard-errors with "no profiles specified." —
-/// schemalint now always resolves a default profile. In this case discovery
-/// itself still fails (no tsconfig.json in the empty tmp dir), so the run
-/// exits 1 via the discovery-failure path, not a profile error.
+/// schemalint now always resolves a default profile. In this case the empty
+/// tmp dir matches no source file, so the run fails on empty coverage, not
+/// on a profile error.
 #[test]
-fn check_node_no_profiles_falls_through_to_discovery_failure_not_profile_error() {
+fn check_node_no_profiles_falls_through_to_empty_coverage_not_profile_error() {
     let tmp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("schemalint").unwrap();
     cmd.current_dir(tmp.path());
@@ -38,8 +38,8 @@ fn check_node_no_profiles_falls_through_to_discovery_failure_not_profile_error()
         "the old hard-error message must never appear, got:\n{stderr}"
     );
     assert!(
-        stderr.contains("discovery failed for source"),
-        "expected discovery-failure framing (no tsconfig.json), got:\n{stderr}"
+        stderr.contains("No file on disk matched"),
+        "expected the empty-discovery warning, got:\n{stderr}"
     );
 }
 

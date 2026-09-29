@@ -1,3 +1,10 @@
+/** Methods that keep a `z.object` schema an object schema when chained. */
+export const OBJECT_CHAIN_METHODS = new Set([
+    'extend',
+    'merge',
+    'pick',
+    'omit',
+]);
 /**
  * Find top-level `const` declarations that are `z.object({...})` calls.
  */
@@ -74,11 +81,7 @@ export function findZObjectCall(node, tsModule) {
         }
         // Check for .extend() / .merge() / .pick() / .omit() chaining on z.object()
         if (tsModule.isIdentifier(node.expression.name)) {
-            const methodName = node.expression.name.text;
-            if (methodName === 'extend' ||
-                methodName === 'merge' ||
-                methodName === 'pick' ||
-                methodName === 'omit') {
+            if (OBJECT_CHAIN_METHODS.has(node.expression.name.text)) {
                 return findZObjectCall(node.expression.expression, tsModule);
             }
         }

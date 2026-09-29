@@ -49,11 +49,13 @@ export interface DiscoverResponse {
 /**
  * Discover Zod schemas by walking TypeScript ASTs.
  *
- * 1. Reads tsconfig.json to resolve the project file list.
- * 2. Filters files against the user-supplied source glob.
- * 3. Walks each source file's AST looking for `z.object({...})` calls.
+ * 1. Lists the TypeScript files the source scope names, from disk.
+ * 2. Groups them by nearest tsconfig.json and builds one program per group;
+ *    files with no tsconfig above them share a default program.
+ * 3. Walks each program's ASTs looking for schemas reaching a provider call
+ *    or exported `z.object({...})` calls, following re-exports and aliases.
  * 4. Extracts property source locations for source map.
- * 5. Dynamically imports each file and evaluates schemas at runtime.
+ * 5. Dynamically imports each schema and evaluates it at runtime.
  * 6. Converts schemas to JSON Schema via zod-to-json-schema or native.
  */
 export declare function discoverZodSchemas(sourceGlob: string, exclusions?: string[]): Promise<DiscoverResponse>;

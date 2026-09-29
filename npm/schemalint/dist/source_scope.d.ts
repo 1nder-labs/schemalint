@@ -9,6 +9,11 @@ export interface SourceScope {
      * scope, not only the ones traced to a provider call.
      */
     explicit: boolean;
+    /** Real path of the literal file or directory when `explicit`. */
+    target?: {
+        kind: 'file' | 'directory';
+        absolute: string;
+    };
 }
 /**
  * Turn a `--source` value into a file matcher. A literal path to an existing

@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import type picomatch from 'picomatch';
@@ -13,6 +13,8 @@ export interface SourceScope {
    * scope, not only the ones traced to a provider call.
    */
   explicit: boolean;
+  /** Real path of the literal file or directory when `explicit`. */
+  target?: { kind: 'file' | 'directory'; absolute: string };
 }
 
 const SOURCE_EXTENSIONS = '{ts,tsx,mts,cts}';
@@ -37,6 +39,12 @@ export function resolveSourceScope(
     pattern,
     isMatch: matcher(pattern, { dot: true }) as (input: string) => boolean,
     explicit: explicit !== false,
+    ...(explicit && {
+      target: {
+        kind: explicit,
+        absolute: realpathSync(path.resolve(projectRoot, source)),
+      },
+    }),
   };
 }
 

@@ -114,22 +114,13 @@ describe('discoverZodSchemas', () => {
     });
   });
 
-  it('names cause 2: files on disk but outside the TypeScript program', async () => {
+  it('checks files outside the tsconfig include list with a default program', async () => {
     const result = await discoverZodSchemas('outside-include/*.ts');
 
     expect(result.models).toHaveLength(0);
     expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0].message).toContain('1 file(s)');
-    expect(result.warnings[0].message).toContain('outside-include/*.ts');
-    expect(result.warnings[0].message).toContain('outside the TypeScript program');
-    expect(result.warnings[0].message).toContain('include');
-    expect(result.warnings[0].message).toContain('tsconfig.json');
-    expect(result.counts).toEqual({
-      attempted: 0,
-      excluded: 0,
-      discovered: 0,
-      failed: 0,
-    });
+    expect(result.warnings[0].message).toContain('Checked 1 file(s)');
+    expect(result.warnings[0].message).not.toContain('outside the TypeScript program');
   });
 
   it('names cause 3: files checked but no schema found', async () => {

@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 const SOURCE_EXTENSIONS = '{ts,tsx,mts,cts}';
 /**
@@ -16,6 +16,12 @@ export function resolveSourceScope(source, matcher, projectRoot) {
         pattern,
         isMatch: matcher(pattern, { dot: true }),
         explicit: explicit !== false,
+        ...(explicit && {
+            target: {
+                kind: explicit,
+                absolute: realpathSync(path.resolve(projectRoot, source)),
+            },
+        }),
     };
 }
 function existingKind(source, projectRoot) {

@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { evaluateSyntheticSchema } from './evaluate.js';
 /**
@@ -14,35 +15,18 @@ import { evaluateSyntheticSchema } from './evaluate.js';
 export function toPosixPath(p, sep = path.sep) {
     return sep === '/' ? p : p.split(sep).join('/');
 }
-import { buildRootSourceMap, buildSourceMapFromObjectLiteral, findExportedSchemaCalls, } from './discover_ast.js';
-import { buildSlicedModule, safeName } from './slice.js';
+import { exportedSchemaTargets } from './exported_targets.js';
+import { groupByProject, listScopeFiles, } from './projects.js';
 import { resolveSourceScope } from './source_scope.js';
-import { declarationKey } from './target_emit.js';
 import { findSchemaTargets } from './targets.js';
 /**
- * Name the cause of an empty discovery result when the source glob matched
- * no file in the TypeScript program.
- *
- * `matchedFiles === 0` reads the same way for two different causes: no file
- * exists on disk at all, or files exist but the tsconfig `include` list does
- * not reach them. Tell them apart by checking the glob directly against disk
- * with `tsModule.sys.readDirectory` — the same file-listing primitive
- * tsconfig's own `include` resolution uses, so no new dependency is needed
- * and the glob syntax matches what the user already writes in `include`.
+ * Name the cause of an empty discovery result: the source scope matched no
+ * TypeScript file on disk.
  */
-function emptyDiscoveryWarning(tsModule, projectRoot, sourceGlob) {
-    const diskMatches = tsModule.sys.readDirectory(projectRoot, undefined, undefined, [sourceGlob]);
-    if (diskMatches.length === 0) {
-        return {
-            model: '',
-            message: `No file on disk matched source glob '${sourceGlob}'.`,
-        };
-    }
+function emptyDiscoveryWarning(sourceGlob) {
     return {
         model: '',
-        message: `${diskMatches.length} file(s) on disk matched source glob '${sourceGlob}' ` +
-            'but are outside the TypeScript program. Add them to the "include" ' +
-            'list in tsconfig.json.',
+        message: `No file on disk matched source glob '${sourceGlob}'.`,
     };
 }
 /** Import each target and convert it to JSON Schema, recording per-target failures. */
@@ -73,93 +57,71 @@ async function evaluateTargets(locations, failures) {
     }
     return models;
 }
-/** Every top-level exported `z.object({...})`, the fallback discovery source. */
-function exportedSchemaTargets(sourceFiles, tsModule, compilerOptions) {
-    const targets = [];
-    for (const sourceFile of sourceFiles) {
-        for (const exp of findExportedSchemaCalls(sourceFile, tsModule)) {
-            const sourceMap = {
-                ...buildRootSourceMap(exp.seedExpr, sourceFile),
-                ...buildSourceMapFromObjectLiteral(exp.objectArg, sourceFile, tsModule),
-            };
-            const exportName = `__schemalint_target_${safeName(exp.name)}`;
-            targets.push({
-                name: exp.name,
-                filePath: sourceFile.fileName,
-                exportName,
-                sourceMap,
-                canonicalKind: 'zod.export',
-                provider: { certainty: 'ambiguous' },
-                envelope: {},
-                declaration: declarationKey(sourceFile.fileName, exp.name),
-                usageSpan: {
-                    file: sourceFile.fileName,
-                    line: sourceMap['']?.line ?? 1,
-                    col: 1,
-                },
-                syntheticSource: buildSlicedModule(sourceFile, exp.seedExpr, exportName, tsModule, compilerOptions),
-            });
-        }
+/** Build one program for a tsconfig group and discover its schemas. */
+async function discoverInProject(group, scope, tsModule, acc) {
+    const program = tsModule.createProgram(group.files, group.compilerOptions);
+    const fileSet = new Set(group.files);
+    const selectedSourceFiles = program.getSourceFiles().filter((sourceFile) => !sourceFile.isDeclarationFile &&
+        !sourceFile.fileName.includes('node_modules') &&
+        fileSet.has(sourceFile.fileName));
+    // Step 1: schemas traced to a provider call site — AI SDK, OpenAI helpers,
+    // Anthropic helpers — through any number of wrapper functions.
+    const callsiteDiscovery = findSchemaTargets(program, fileSet, tsModule, group.compilerOptions);
+    const traced = callsiteDiscovery.targets.filter((target) => !target.declaration || !acc.reported.has(target.declaration));
+    for (const target of traced) {
+        if (target.declaration)
+            acc.reported.add(target.declaration);
     }
-    return targets;
+    acc.locations += traced.length;
+    acc.discoveryFailures += callsiteDiscovery.failures.length;
+    acc.failures.push(...callsiteDiscovery.failures);
+    acc.models.push(...(await evaluateTargets(traced, acc.failures)));
+    // Step 2: exported schemas. In explicit scope (the source named a file or
+    // directory) the user pointed at these files, so every exported schema in
+    // them is linted alongside the traced ones. In glob scope only traced
+    // schemas count, and exported schemas are a fallback solely for projects
+    // that use no known provider SDK at all: when the SDK is present but
+    // nothing traced, linting every export would flag schemas that never reach
+    // a model, so the run reports the gap instead.
+    if (scope.explicit || callsiteDiscovery.sdkFiles === 0) {
+        const tracedDeclarations = new Set(callsiteDiscovery.targets.map((target) => target.declaration));
+        const exported = exportedSchemaTargets(selectedSourceFiles, program.getTypeChecker(), tsModule, group.compilerOptions).filter((target) => !tracedDeclarations.has(target.declaration) &&
+            !acc.reported.has(target.declaration ?? ''));
+        for (const target of exported)
+            acc.reported.add(target.declaration ?? '');
+        acc.locations += exported.length;
+        acc.models.push(...(await evaluateTargets(exported, acc.failures)));
+    }
+    else {
+        acc.sdkFiles += callsiteDiscovery.sdkFiles;
+    }
 }
 /**
  * Discover Zod schemas by walking TypeScript ASTs.
  *
- * 1. Reads tsconfig.json to resolve the project file list.
- * 2. Filters files against the user-supplied source glob.
- * 3. Walks each source file's AST looking for `z.object({...})` calls.
+ * 1. Lists the TypeScript files the source scope names, from disk.
+ * 2. Groups them by nearest tsconfig.json and builds one program per group;
+ *    files with no tsconfig above them share a default program.
+ * 3. Walks each program's ASTs looking for schemas reaching a provider call
+ *    or exported `z.object({...})` calls, following re-exports and aliases.
  * 4. Extracts property source locations for source map.
- * 5. Dynamically imports each file and evaluates schemas at runtime.
+ * 5. Dynamically imports each schema and evaluates it at runtime.
  * 6. Converts schemas to JSON Schema via zod-to-json-schema or native.
  */
 export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     const tsModule = await import('typescript');
     const pm = await import('picomatch');
-    // Resolve tsconfig.json
-    const configPath = tsModule.findConfigFile(process.cwd(), tsModule.sys.fileExists, 'tsconfig.json');
-    if (!configPath) {
-        throw new Error('No tsconfig.json found in the current project. ' +
-            'Run this tool from a TypeScript project root.');
-    }
-    const configFile = tsModule.readConfigFile(configPath, tsModule.sys.readFile);
-    if (configFile.error) {
-        throw new Error(`Failed to read tsconfig.json: ${tsModule.flattenDiagnosticMessageText(configFile.error.messageText, '\n')}`);
-    }
-    const parsedConfig = tsModule.parseJsonConfigFileContent(configFile.config, tsModule.sys, process.cwd());
-    const compilerOptions = parsedConfig.options;
-    // Resolve the full file list from tsconfig
-    let fileNames = parsedConfig.fileNames;
-    if (fileNames.length === 0) {
-        throw new Error('No source files found in tsconfig.json. Ensure "include" patterns match your project files.');
-    }
-    // Filter files against the source glob.
-    // tsconfig resolves absolute paths, but glob patterns match relative paths.
-    // Convert each file to a path relative to the project root before matching.
     const picomatch = typeof pm.default === 'function' ? pm.default : pm;
     if (typeof picomatch !== 'function') {
         throw new Error('Failed to load picomatch: expected a function but got ' +
             typeof picomatch +
             '. Check that picomatch is correctly installed.');
     }
-    const projectRoot = process.cwd();
+    // Real path on both sides: files are listed and compared as real paths, so
+    // a symlinked working directory (macOS /tmp) still matches its own files.
+    const projectRoot = realpathSync(process.cwd());
     const scope = resolveSourceScope(sourceGlob, picomatch, projectRoot);
-    const isMatch = scope.isMatch;
-    fileNames = fileNames.filter((f) => {
-        // Use path.relative so that:
-        //  1. Files exactly under projectRoot get a clean relative path ("src/foo.ts")
-        //     without the boundary bug where startsWith("/repo/app") also matches
-        //     "/repo/application/foo.ts".
-        //  2. Files outside projectRoot (monorepo tsconfig referencing "../shared/…")
-        //     get a "../"-prefixed path that the caller's glob can match if desired.
-        //
-        // Normalize to forward slashes before matching: on Windows, path.relative()
-        // returns backslash-separated paths (e.g. "src\\foo.ts") but picomatch
-        // globs use forward slashes, causing every file to fail to match.
-        // toPosixPath() is a no-op on POSIX (path.sep === '/') and correct on Windows.
-        const relPath = toPosixPath(path.relative(projectRoot, f));
-        return isMatch(relPath);
-    });
+    let fileNames = listScopeFiles(scope, projectRoot, tsModule, picomatch);
     const matchedFiles = fileNames.length;
     const excludeMatchers = exclusions.map((pattern) => picomatch(pattern, { dot: true }));
     fileNames = fileNames.filter((file) => {
@@ -168,62 +130,56 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     });
     const excluded = matchedFiles - fileNames.length;
     if (fileNames.length === 0) {
-        // Only diagnose a cause when the glob itself matched nothing in the
-        // TypeScript program (matchedFiles === 0). When files matched but were
-        // then all removed by --exclude, that is ordinary exclusion behavior,
-        // not one of the three causes this unit distinguishes.
-        const warnings = matchedFiles === 0
-            ? [emptyDiscoveryWarning(tsModule, projectRoot, scope.pattern)]
-            : [];
+        // Only diagnose a cause when the scope itself matched nothing. When
+        // files matched but were then all removed by --exclude, that is ordinary
+        // exclusion behavior, not a discovery problem.
         return {
             models: [],
-            warnings,
+            warnings: matchedFiles === 0 ? [emptyDiscoveryWarning(scope.pattern)] : [],
             failures: [],
             counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
         };
     }
-    // Create program and walk ASTs to discover schemas
-    const program = tsModule.createProgram(fileNames, compilerOptions);
-    const fileSet = new Set(fileNames);
-    const selectedSourceFiles = program.getSourceFiles().filter((sourceFile) => !sourceFile.isDeclarationFile &&
-        !sourceFile.fileName.includes('node_modules') &&
-        fileSet.has(sourceFile.fileName));
-    // Step 1: schemas traced to a provider call site — AI SDK, OpenAI helpers,
-    // Anthropic helpers — through any number of wrapper functions.
-    const callsiteDiscovery = findSchemaTargets(program, fileSet, tsModule, compilerOptions);
-    const discoveredLocations = [...callsiteDiscovery.targets];
-    const discoveryFailures = [...callsiteDiscovery.failures];
-    // Copy, do not alias: `attempted` below reads `discoveryFailures.length`, so
-    // pushing evaluation failures into the same array would inflate the attempt
-    // count and trip the caller's coverage accounting check.
-    const failures = [...discoveryFailures];
-    const models = await evaluateTargets(discoveredLocations, failures);
-    // Step 2: exported schemas. In explicit scope (the source named a file or
-    // directory) the user pointed at these files, so every exported schema in
-    // them is linted alongside the traced ones. In glob scope only traced
-    // schemas count, and exported schemas are a fallback solely for projects
-    // that use no known provider SDK at all: when the SDK is present but
-    // nothing traced, linting every export would flag schemas that never reach
-    // a model, so the run reports the gap instead.
-    const warnings = [];
-    if (scope.explicit || callsiteDiscovery.sdkFiles === 0) {
-        const traced = new Set(discoveredLocations.map((target) => target.declaration));
-        const exported = exportedSchemaTargets(selectedSourceFiles, tsModule, compilerOptions).filter((target) => !traced.has(target.declaration));
-        discoveredLocations.push(...exported);
-        models.push(...(await evaluateTargets(exported, failures)));
+    const acc = {
+        models: [],
+        failures: [],
+        discoveryFailures: 0,
+        locations: 0,
+        sdkFiles: 0,
+        reported: new Set(),
+    };
+    // A named file bypasses tsconfig include/exclude; a directory or glob does not.
+    const groups = groupByProject(fileNames, tsModule, scope.target?.kind !== 'file');
+    if (groups.length === 0) {
+        return {
+            models: [],
+            warnings: [
+                {
+                    model: '',
+                    message: `${fileNames.length} file(s) matched source glob '${sourceGlob}' ` +
+                        'but all are excluded by tsconfig.json. Name a file directly to check it.',
+                },
+            ],
+            failures: [],
+            counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
+        };
     }
-    else if (discoveredLocations.length === 0) {
+    for (const group of groups) {
+        await discoverInProject(group, scope, tsModule, acc);
+    }
+    const warnings = [];
+    if (acc.locations === 0 && acc.sdkFiles > 0) {
         // Traced-but-failed targets already surface as failures; this names the
         // case where tracing itself found nothing.
         warnings.push({
             model: '',
-            message: `${callsiteDiscovery.sdkFiles} file(s) matched by source glob ` +
+            message: `${acc.sdkFiles} file(s) matched by source glob ` +
                 `'${sourceGlob}' import a provider SDK, but no schema could be ` +
                 'traced to a provider call site, so nothing was checked. Name a ' +
                 'file or directory instead of a glob to lint every exported schema in it.',
         });
     }
-    if (discoveredLocations.length === 0 && discoveryFailures.length === 0) {
+    if (acc.locations === 0 && acc.discoveryFailures === 0) {
         return {
             models: [],
             warnings: warnings.length > 0
@@ -239,17 +195,16 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
             counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
         };
     }
-    const response = {
-        models,
+    return {
+        models: acc.models,
         warnings,
-        failures,
+        failures: acc.failures,
         counts: {
-            attempted: discoveredLocations.length + discoveryFailures.length,
+            attempted: acc.locations + acc.discoveryFailures,
             excluded,
-            discovered: models.length,
-            failed: failures.length,
+            discovered: acc.models.length,
+            failed: acc.failures.length,
         },
     };
-    return response;
 }
 //# sourceMappingURL=discover.js.map

@@ -11,6 +11,8 @@ export interface ExportedSchemaCall {
      */
     seedExpr: ts.Expression;
 }
+/** Methods that keep a `z.object` schema an object schema when chained. */
+export declare const OBJECT_CHAIN_METHODS: ReadonlySet<string>;
 /**
  * Find top-level `const` declarations that are `z.object({...})` calls.
  */
