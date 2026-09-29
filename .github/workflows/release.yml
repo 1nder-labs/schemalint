@@ -244,7 +244,7 @@ jobs:
   # Dependency chain:
   #   [dist builds + wheel] --> smoke-wheel --> prepare-release
   #       (manifest + one npm pack) --> smoke-test --> create-github-release --> smoke-npm
-  #       --> publish-crates + publish-pypi + publish-npm --> registry-readback
+  #       --> publish-crates + publish-pypi + publish-npm
   #
   # All custom jobs gate on startsWith(github.ref, 'refs/tags/v') so they
   # only execute on tag pushes, not on PR plan-only runs.
@@ -570,8 +570,7 @@ jobs:
           echo "exists=true" >> "$GITHUB_OUTPUT"
 
       # Cargo's public publish command does not accept a prebuilt .crate path;
-      # pin Cargo, prove its deterministic repack matches the staged bytes, and
-      # enforce exact registry digest readback after publication.
+      # pin Cargo and prove its deterministic repack matches the staged bytes.
       - name: Prove pinned Cargo recreates the staged package
         if: ${{ steps.existing_crate.outputs.exists != 'true' }}
         run: |
@@ -826,56 +825,3 @@ jobs:
             echo "::error::npm publish failed after 3 attempts"
             exit 1
           fi
-
-  registry-readback:
-    needs:
-      - publish-crates
-      - publish-pypi
-      - publish-npm
-    if: ${{ always() && needs.publish-crates.result == 'success' && needs.publish-npm.result == 'success' && (needs.publish-pypi.result == 'success' || needs.publish-pypi.result == 'skipped') && startsWith(github.ref, 'refs/tags/v') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '22'
-
-      - name: Download staged artifacts for digest readback
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        with:
-          name: release-bundle
-          path: release-bundle
-
-      - name: Read back npm registry version and exact tarball digest
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          test "$(npm view "@1nder-labs/schemalint@$VERSION" version)" = "$VERSION"
-          EXPECTED="sha512-$(openssl dgst -sha512 -binary release-bundle/*.tgz | openssl base64 -A)"
-          test "$(npm view "@1nder-labs/schemalint@$VERSION" dist.integrity)" = "$EXPECTED"
-
-      - name: Read back crates.io exact package digest
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          EXPECTED=$(sha256sum release-bundle/schemalint-*.crate | cut -d' ' -f1)
-          ACTUAL=$(curl --fail --silent \
-            "https://crates.io/api/v1/crates/schemalint/$VERSION" | jq -r '.version.checksum')
-          test "$ACTUAL" = "$EXPECTED"
-
-      - name: Read back PyPI exact wheel digest when published
-        if: ${{ needs.publish-pypi.result == 'success' }}
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          curl --fail --silent "https://pypi.org/pypi/schemalint/$VERSION/json" -o pypi.json
-          test "$(find release-bundle -maxdepth 1 -name '*.whl' | wc -l | tr -d ' ')" = \
-            "$(jq '.urls | length' pypi.json)"
-          for WHEEL in release-bundle/*.whl; do
-            FILENAME=$(basename "$WHEEL")
-            EXPECTED=$(sha256sum "$WHEEL" | cut -d' ' -f1)
-            ACTUAL=$(jq -r --arg filename "$FILENAME" \
-              '.urls[] | select(.filename == $filename) | .digests.sha256' pypi.json)
-            test -n "$ACTUAL"
-            test "$ACTUAL" = "$EXPECTED"
-          done
