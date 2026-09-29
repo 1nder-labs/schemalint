@@ -761,7 +761,7 @@ jobs:
 
       - name: Install packed package globally
         shell: bash
-        run: npm install -g release-bundle/*.tgz
+        run: npm install -g ./release-bundle/*.tgz
 
       - name: Smoke-test installed CLI
         shell: bash
@@ -813,7 +813,7 @@ jobs:
         run: |
           published=false
           for i in 1 2 3; do
-            out=$(npm publish release-bundle/*.tgz --access public 2>&1) && { published=true; echo "$out"; break; }
+            out=$(npm publish ./release-bundle/*.tgz --access public 2>&1) && { published=true; echo "$out"; break; }
             echo "$out"
             if echo "$out" | grep -qiE "previously published|cannot publish over|You cannot publish over|already exists"; then
               echo "package version already published; treating as success"
