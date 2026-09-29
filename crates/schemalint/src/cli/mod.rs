@@ -57,6 +57,7 @@ mod node_policy;
 mod pipeline;
 mod profiles_cmd;
 mod report;
+mod skills;
 
 /// CLI entry point.
 pub fn run() {
@@ -80,6 +81,10 @@ pub fn run() {
         }
         Commands::Server(_args) => {
             server::run_server();
+        }
+        Commands::Skills(args) => {
+            let exit_code = skills::run_skills(args.action);
+            process::exit(exit_code);
         }
     }
 }

@@ -145,6 +145,15 @@ schemalint check --format gha    --profile openai.so.2026-04-30 schema.json   # 
 | `2` | Could not write the output file |
 | `3` | Empty coverage: nothing was discovered, so nothing was checked |
 
+## For AI agents
+
+Coding agents (Claude Code, Codex, Cursor, ...) should start with the usage guide that ships inside the binary, so it always matches the installed version:
+
+```bash
+schemalint skills get core          # workflow, monorepo usage, exit codes, common fixes
+schemalint skills get core --full   # plus the full command reference
+```
+
 ## Documentation
 
 - [Installation](https://1nder-labs.github.io/schemalint/guide/installation) · [Quick start](https://1nder-labs.github.io/schemalint/guide/quick-start)

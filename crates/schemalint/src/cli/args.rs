@@ -8,6 +8,9 @@ use std::path::PathBuf;
 )]
 #[command(version)]
 #[command(
+    before_help = "Start here (for AI agents):\n  schemalint skills get core --full\n\n  Skills ship inside the binary (always version-matched) and cover the\n  check -> fix -> re-run loop, monorepo usage, profiles, output formats, exit\n  codes, and troubleshooting. Prefer this over guessing from flag docs alone.\n\n  skills [list]           List available skills\n  skills get core         Core usage guide\n  skills get core --full  Also include the full command reference\n\nQuickstart:\n  schemalint check --profile openai schema.json\n  schemalint check-node --profile openai --source packages/shared/contracts/src\n  schemalint check-python --profile anthropic --package my_app.models"
+)]
+#[command(
     after_help = "Exit codes:\n  0  complete coverage, no errors\n  1  error diagnostics, or partial/failed coverage\n  2  could not write the output file\n  3  empty coverage: nothing was checked"
 )]
 pub struct Cli {
@@ -27,6 +30,28 @@ pub enum Commands {
     Profiles(ProfilesArgs),
     /// Start JSON-RPC server mode
     Server(ServerArgs),
+    /// Print bundled agent skills (usage guides matched to this version)
+    Skills(SkillsArgs),
+}
+
+#[derive(Parser)]
+pub struct SkillsArgs {
+    #[command(subcommand)]
+    pub action: Option<SkillsAction>,
+}
+
+#[derive(Subcommand)]
+pub enum SkillsAction {
+    /// List available skills (default)
+    List,
+    /// Print a skill's markdown to stdout
+    Get {
+        /// Skill name (see `schemalint skills list`)
+        name: String,
+        /// Append the full command reference (long help of every subcommand)
+        #[arg(long)]
+        full: bool,
+    },
 }
 
 #[derive(Parser)]
@@ -63,6 +88,9 @@ pub struct ProfilesArgs {}
 pub struct ServerArgs {}
 
 #[derive(Parser)]
+#[command(
+    after_help = "Example (run from the repo root):\n  schemalint check-python --profile openai --package my_app.models"
+)]
 pub struct CheckPythonArgs {
     /// Python package names to discover Pydantic models from (repeatable)
     #[arg(short = 'P', long = "package")]
@@ -100,6 +128,9 @@ pub struct CheckPythonArgs {
 }
 
 #[derive(Parser)]
+#[command(
+    after_help = "Example (monorepo, run from the repo root):\n  schemalint check-node --profile openai --source packages/shared/contracts/src"
+)]
 pub struct CheckNodeArgs {
     /// TypeScript source globs to discover Zod schemas from (repeatable)
     #[arg(short = 'S', long = "source")]

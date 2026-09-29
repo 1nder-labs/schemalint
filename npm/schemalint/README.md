@@ -111,6 +111,15 @@ schemalint exits non-zero on errors, so it fails the build before a broken schem
 Ingestion and JSON-RPC caches are bounded and process-local. SchemaLint does
 not persist source schemas or normalized schema data to disk.
 
+## For AI agents
+
+Coding agents (Claude Code, Codex, Cursor, ...) should start with the usage guide that ships inside the binary, so it always matches the installed version:
+
+```bash
+schemalint skills get core          # workflow, monorepo usage, exit codes, common fixes
+schemalint skills get core --full   # plus the full command reference
+```
+
 ## Documentation
 
 Full guide, profile reference, and CI recipes: **https://1nder-labs.github.io/schemalint**

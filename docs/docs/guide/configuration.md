@@ -13,6 +13,18 @@ OPTIONS:
   -o, --output <OUTPUT>      Write output to a file instead of stdout
 ```
 
+## For AI agents
+
+Agents should read the bundled, version-matched usage guide before running the CLI:
+
+```bash
+schemalint skills get core          # core loop, monorepo usage, exit codes, common fixes
+schemalint skills get core --full   # plus the full command reference
+schemalint skills list              # list bundled skills
+```
+
+`schemalint --help` points to the same guide at the top of its output.
+
 ## Python (pyproject.toml)
 
 ```toml
