@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0](https://github.com/1nder-labs/schemalint/compare/v1.2.2...v1.3.0) (2026-09-29)
+
+
+### Features
+
+* **cli:** agent-friendly help and bundled skills ([f2be262](https://github.com/1nder-labs/schemalint/commit/f2be262a78698bce2b045f48e2b1dd58781cd0b3))
+* **diagnostics:** name the failing schema and suggest keyword rewrites ([e9b186f](https://github.com/1nder-labs/schemalint/commit/e9b186f569114cd12532c3f85e0d24a7c4500d1a))
+* **node:** trace schemas through wrapper chains ([#22](https://github.com/1nder-labs/schemalint/issues/22)) ([7fca21e](https://github.com/1nder-labs/schemalint/commit/7fca21ef3fe6dd6f05c39b8f693aaddf262cf210))
+
+
+### Bug Fixes
+
+* **cli:** exit 3 on empty coverage, fall back to package.json provider in check-node ([3fcff77](https://github.com/1nder-labs/schemalint/commit/3fcff77f3d872ad8fbae9d353f1ef3072350a634))
+* **node:** discover Zod schemas across monorepos, barrels, aliases and symlinks ([7b2a0be](https://github.com/1nder-labs/schemalint/commit/7b2a0be5208c165b20a7db3afd6a7fb332e8b50f))
+
+
+### Performance Improvements
+
+* **node:** pre-filter carrier call sites, enable V8 compile cache ([#23](https://github.com/1nder-labs/schemalint/issues/23)) ([08f8e5f](https://github.com/1nder-labs/schemalint/commit/08f8e5f8be51d37262c6669e134dc1e380989b35))
+
 ## [1.2.2](https://github.com/1nder-labs/schemalint/compare/v1.2.1...v1.2.2) (2026-08-21)
 
 
