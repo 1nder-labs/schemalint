@@ -182,3 +182,42 @@ test('a same-size rewrite with a restored mtime still fails the cache check', as
   fs.utimesSync(binaryPath, atime, mtime);
   assert.equal(await readVerifiedCache(binaryPath, sentinel, hash), false);
 });
+
+test('a binary replaced while it is being hashed never gets a fast-path key', async () => {
+  const integrity = require('../integrity.cjs');
+  const ensurePath = require.resolve('../ensure-binary.cjs');
+  const original = integrity.sha256File;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'schemalint-hashrace-'));
+  const source = path.join(dir, ARCHIVE);
+  fs.writeFileSync(source, 'trusted archive');
+  const hash = await original(source);
+  const binaryPath = path.join(dir, 'cache', TARGET, 'schemalint');
+  let replaced = false;
+  integrity.sha256File = async (file) => {
+    const digest = await original(file);
+    if (file === binaryPath && !replaced) {
+      replaced = true;
+      fs.writeFileSync(file, 'binary-B');
+    }
+    return digest;
+  };
+  delete require.cache[ensurePath];
+  try {
+    const fresh = require(ensurePath);
+    await fresh.ensureBinary({
+      target: TARGET,
+      platform: 'linux',
+      binaryPath,
+      manifest: manifest(hash),
+      download: async (_url, destination) => fs.copyFileSync(source, destination),
+      extract: (_archive, destination) => {
+        fs.writeFileSync(path.join(destination, 'schemalint'), 'binary-A');
+      },
+    });
+    assert(replaced);
+    assert.equal(await fresh.readVerifiedCache(binaryPath, `${binaryPath}.verified`, hash), false);
+  } finally {
+    integrity.sha256File = original;
+    delete require.cache[ensurePath];
+  }
+});
