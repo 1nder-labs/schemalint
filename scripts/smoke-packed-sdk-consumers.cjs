@@ -113,20 +113,28 @@ function assertDiscovery(response) {
   }
 }
 
-function assertCli(root, helper) {
+function assertCli(root, helper, models) {
   // package.json lists both SDK families, which selects both profiles.
   const result = spawnSync(schemalintBinary, ['check-node', '-S', 'sdk.ts', '-f', 'json'], {
     cwd: root, encoding: 'utf8', timeout: 60_000,
     env: { ...process.env, SCHEMALINT_ZOD_HELPER: helper },
   });
+  const ctx = `${result.stdout}${result.stderr}`;
+  assert([0, 1].includes(result.status), `unexpected exit ${result.status}\n${ctx}`);
   const output = JSON.parse(result.stdout);
-  const profiles = JSON.stringify(output.profiles);
-  assert(/openai/i.test(profiles) && /anthropic/i.test(profiles), `profiles: ${profiles}`);
-  const failures = (output.report && output.report.failures) || [];
-  assert.deepEqual(
-    failures.filter((f) => /ambiguous/i.test(`${f.kind} ${f.message}`)), [],
-    'a target failed as provider-ambiguous'
-  );
+  assert.equal(result.status, output.summary.errors > 0 ? 1 : 0, `exit/diagnostics mismatch\n${ctx}`);
+  assert.equal(output.profiles.length, 2, `profiles: ${output.profiles}`);
+  assert(output.profiles.some((p) => p.startsWith('openai')), 'missing openai profile');
+  assert(output.profiles.some((p) => p.startsWith('anthropic')), 'missing anthropic profile');
+  const { coverage, failures, targets } = output.report;
+  assert.equal(coverage.status, 'complete', ctx);
+  assert.equal(coverage.checked, models.length, ctx);
+  assert.deepEqual(failures, []);
+  for (const model of models) {
+    const target = targets.find((t) => t.name === model.name && t.status === 'checked');
+    assert(target, `schema ${model.name} was not checked`);
+    assert.deepEqual([...target.effective_profiles].sort(), [...output.profiles].sort());
+  }
 }
 
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -153,8 +161,9 @@ try {
     root, 'node_modules', '@1nder-labs', 'schemalint', 'bin', 'schemalint-zod.js'
   );
   assert(fs.existsSync(helper), 'packed sidecar is missing from installed package');
-  assertDiscovery(discover(root, helper));
-  if (schemalintBinary) assertCli(root, helper);
+  const response = discover(root, helper);
+  assertDiscovery(response);
+  if (schemalintBinary) assertCli(root, helper, response.models);
   console.log(`installed SDK consumer passed: ${row}`);
 } finally {
   fs.rmSync(root, { recursive: true, force: true });

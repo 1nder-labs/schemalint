@@ -14,12 +14,14 @@ export interface SchemaRoot {
 /**
  * Every Zod object schema `sourceFiles` can build without running a
  * function — declared or inline, exported or not, at module scope or inside a
- * function body — plus the schemas they re-export from other files.
+ * function body — plus the schemas they export, followed through re-exports
+ * and aliases to where each is built.
  *
  * No SDK, wrapper, or spelling is tracked: whatever a schema is later handed
  * to, its value is built here. A schema that uses a parameter, a local, or
  * `this` depends on run-time input, so it cannot be checked statically and is
- * skipped. A schema nested in another is linted as part of its root.
+ * skipped, though a buildable schema inside it is still found. A schema nested
+ * in a buildable one is linted as part of its root.
  */
 export declare function findSchemaRoots(sourceFiles: readonly ts.SourceFile[], checker: ts.TypeChecker, tsModule: typeof ts): SchemaRoot[];
 //# sourceMappingURL=schema_roots.d.ts.map
