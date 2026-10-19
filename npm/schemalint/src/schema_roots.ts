@@ -56,8 +56,10 @@ export function findSchemaRoots(
       tsModule.forEachChild(node, visit);
     };
     tsModule.forEachChild(sourceFile, visit);
+    // A block-scoped `var` can be exported but not sliced; the walk above
+    // already found it as an expression.
     for (const decl of exportedSchemas(sourceFile, checker, tsModule)) {
-      add(declared(decl, tsModule));
+      if (topLevel(decl, tsModule)) add(declared(decl, tsModule));
     }
   }
   return [...roots.values()];
@@ -230,13 +232,7 @@ function rootOf(
   tsModule: typeof ts
 ): SchemaRoot {
   let outer: ts.Node = call;
-  while (
-    tsModule.isParenthesizedExpression(outer.parent) ||
-    tsModule.isAsExpression(outer.parent) ||
-    tsModule.isSatisfiesExpression(outer.parent)
-  ) {
-    outer = outer.parent;
-  }
+  while (isOuterExpression(outer.parent, tsModule)) outer = outer.parent;
   const parent = outer.parent;
   const declaration =
     tsModule.isVariableDeclaration(parent) &&
@@ -290,8 +286,9 @@ function exportedSchemas(
   const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
   if (!moduleSymbol) return [];
   const resolve = (symbol: ts.Symbol): ts.VariableDeclaration | undefined => {
-    // ponytail: alias chains are a few hops; 8 also stops an alias cycle.
-    for (let hop = 0; hop < 8; hop++) {
+    const seen = new Set<ts.Symbol>();
+    while (!seen.has(symbol)) {
+      seen.add(symbol);
       const target =
         symbol.flags & tsModule.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
       const decl = target.valueDeclaration;
@@ -304,13 +301,7 @@ function exportedSchemas(
         return undefined;
       }
       let initializer = decl.initializer;
-      while (
-        tsModule.isParenthesizedExpression(initializer) ||
-        tsModule.isAsExpression(initializer) ||
-        tsModule.isSatisfiesExpression(initializer)
-      ) {
-        initializer = initializer.expression;
-      }
+      while (isOuterExpression(initializer, tsModule)) initializer = initializer.expression;
       if (!tsModule.isIdentifier(initializer)) return decl;
       const next = checker.getSymbolAtLocation(initializer);
       if (!next) return undefined;
@@ -329,6 +320,23 @@ function exportedSchemas(
       ? [decl]
       : [];
   });
+}
+
+/** A wrapper that leaves an expression's value as it is: `( )`, `as`, `satisfies`, `!`. */
+function isOuterExpression(
+  node: ts.Node,
+  tsModule: typeof ts
+): node is
+  | ts.ParenthesizedExpression
+  | ts.AsExpression
+  | ts.SatisfiesExpression
+  | ts.NonNullExpression {
+  return (
+    tsModule.isParenthesizedExpression(node) ||
+    tsModule.isAsExpression(node) ||
+    tsModule.isSatisfiesExpression(node) ||
+    tsModule.isNonNullExpression(node)
+  );
 }
 
 function sourceMapOf(

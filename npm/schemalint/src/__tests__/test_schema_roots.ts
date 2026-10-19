@@ -73,4 +73,25 @@ describe('every Zod object schema a named file builds without run-time input', (
     expect(result.failures).toEqual([]);
     expect(fields(result)).toEqual([['blockScoped'], ['outer']]);
   });
+
+  it('follows an alias chain of any length from a barrel', async () => {
+    const result = await discoverZodSchemas('review-hops-barrel.ts');
+
+    expect(result.failures).toEqual([]);
+    expect(fields(result)).toEqual([['hops']]);
+  });
+
+  it('reports an exported block-scoped schema once, with no failed duplicate', async () => {
+    const result = await discoverZodSchemas('review-block-export.ts');
+
+    expect(result.failures).toEqual([]);
+    expect(fields(result)).toEqual([['blockExported']]);
+  });
+
+  it('follows a non-null alias, so the schema is reported once', async () => {
+    const result = await discoverZodSchemas('review-nonnull-alias.ts');
+
+    expect(result.failures).toEqual([]);
+    expect(fields(result)).toEqual([['nonNull']]);
+  });
 });
