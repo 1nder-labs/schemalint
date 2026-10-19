@@ -24,6 +24,12 @@ npm install -D @1nder-labs/schemalint
 # or with bun:  bun add -d @1nder-labs/schemalint
 ```
 
+The install script puts the verified native binary at the `schemalint` entry,
+so the command starts in about 2 ms on macOS and Linux. pnpm and bun block that
+script by default; the command still works through a Node launcher (about
+40 ms per run). Allow it with `pnpm add -g --allow-build=@1nder-labs/schemalint`,
+`pnpm approve-builds` in a project, or `bun add --trust`.
+
 ## Quick start
 
 ```bash
