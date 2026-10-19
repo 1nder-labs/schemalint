@@ -22,5 +22,13 @@ async function main() {
 
 main().catch((error) => {
   console.error(`schemalint: ${error.message}`);
+  console.error(
+    'schemalint: the native binary is fetched from GitHub on first run when the\n'
+      + 'install script was blocked. Allow it and reinstall to skip this step:\n'
+      + '  npm:  npm install @1nder-labs/schemalint (scripts run by default)\n'
+      + '  pnpm: pnpm add --allow-build=@1nder-labs/schemalint @1nder-labs/schemalint\n'
+      + '        (or run `pnpm approve-builds`)\n'
+      + '  bun:  bun add --trust @1nder-labs/schemalint'
+  );
   process.exit(1);
 });

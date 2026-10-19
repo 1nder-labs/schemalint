@@ -30,7 +30,7 @@
   },
   "type": "module",
   "bin": {
-    "schemalint": "./index.cjs"
+    "schemalint": "./bin/schemalint"
   },
   "files": [
     "index.cjs",
@@ -65,7 +65,8 @@
     "generate:native-manifest": "node scripts/generate-native-manifest.cjs",
     "prepack": "node scripts/validate-native-manifest.cjs --release",
     "test": "vitest run && npm run test:launcher",
-    "test:launcher": "node --test launcher/__tests__/*.test.cjs"
+    "test:launcher": "node --test launcher/__tests__/*.test.cjs",
+    "postinstall": "node launcher/install.cjs"
   },
   "publishConfig": {
     "access": "public"

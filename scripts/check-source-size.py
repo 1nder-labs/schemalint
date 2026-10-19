@@ -19,7 +19,7 @@ SOURCE_ROOTS = (
     ("npm/schemalint/launcher", {".cjs"}),
     ("npm/schemalint/scripts", {".cjs"}),
 )
-SOURCE_FILES = ("npm/schemalint/index.cjs",)
+SOURCE_FILES = ("npm/schemalint/index.cjs", "npm/schemalint/bin/schemalint")
 
 
 def production_sources():
