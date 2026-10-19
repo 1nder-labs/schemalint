@@ -51,3 +51,13 @@ test('packed npm inventory contains immutable manifest and focused launcher only
   assert(files.includes('launcher/ensure-binary.cjs'));
   assert(!files.some((file) => file.includes('__tests__')));
 });
+
+test('bin entry is an extensionless node script Yarn keeps on disk', () => {
+  const packageDir = path.resolve(__dirname, '../..');
+  const metadata = require('../../package.json');
+  // pnpm picks the shim runtime from the file, Yarn PnP cannot run ESM from a zip.
+  assert.equal(metadata.bin.schemalint, './bin/schemalint');
+  assert.equal(metadata.preferUnplugged, true);
+  const entry = fs.readFileSync(path.join(packageDir, 'bin', 'schemalint'), 'utf8');
+  assert(entry.startsWith('#!/usr/bin/env node\n'));
+});
