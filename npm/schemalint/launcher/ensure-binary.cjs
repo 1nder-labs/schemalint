@@ -5,8 +5,6 @@ const fs = require('fs');
 const path = require('path');
 
 const config = require('./config.cjs');
-const { downloadWithRetry } = require('./download.cjs');
-const { extractArchive, selectExtractedBinary } = require('./extract.cjs');
 const {
   SHA256_PATTERN,
   loadManifest,
@@ -95,10 +93,19 @@ async function readVerifiedCache(binaryPath, sentinelPath, archiveHash) {
     return false;
   }
   try {
+    if (sentinel.stat && sentinel.stat === statKey(binaryPath)) return true;
     return await sha256File(binaryPath) === sentinel.binarySha256;
   } catch {
     return false;
   }
+}
+
+// Size, inode and change time of the hashed file. Any write, chmod, rename or
+// copy moves ctime, and only root can set it back, so an unchanged key means
+// the bytes are the ones that were hashed; otherwise the full hash runs.
+function statKey(file) {
+  const stat = fs.statSync(file, { bigint: true });
+  return `${stat.size}:${stat.ino}:${stat.ctimeNs}`;
 }
 
 function cleanCache(binaryPath, sentinelPath) {
@@ -142,8 +149,9 @@ async function ensureBinary(overrides = {}) {
     const archivePath = path.join(workDir, archiveName);
     const archiveUrl =
       `https://github.com/${config.REPO}/releases/download/v${config.VERSION}/${archiveName}`;
-    const download = overrides.download || downloadWithRetry;
-    const extract = overrides.extract || extractArchive;
+    // Required only on a cache miss: loading https costs every warm run.
+    const download = overrides.download || require('./download.cjs').downloadWithRetry;
+    const extract = overrides.extract || require('./extract.cjs').extractArchive;
 
     try {
       await download(archiveUrl, archivePath);
@@ -152,14 +160,18 @@ async function ensureBinary(overrides = {}) {
       try { fs.unlinkSync(archivePath); } catch {}
 
       const binaryName = platform === 'win32' ? 'schemalint.exe' : 'schemalint';
-      const extractedBinary = selectExtractedBinary(workDir, binaryName);
+      const extractedBinary = require('./extract.cjs').selectExtractedBinary(workDir, binaryName);
       if (platform !== 'win32') fs.chmodSync(extractedBinary, 0o755);
       fs.renameSync(extractedBinary, binaryPath);
 
       const binarySha256 = await sha256File(binaryPath);
       fs.writeFileSync(
         sentinelPath,
-        JSON.stringify({ archiveSha256: expectedArchiveHash, binarySha256 })
+        JSON.stringify({
+          archiveSha256: expectedArchiveHash,
+          binarySha256,
+          stat: statKey(binaryPath),
+        })
       );
       return binaryPath;
     } catch (error) {
