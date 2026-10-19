@@ -183,7 +183,7 @@ test('a same-size rewrite with a restored mtime still fails the cache check', as
   assert.equal(await readVerifiedCache(binaryPath, sentinel, hash), false);
 });
 
-test('a binary replaced while it is being hashed never gets a fast-path key', async () => {
+test('a binary replaced while it is being hashed is never run or cached', async () => {
   const integrity = require('../integrity.cjs');
   const ensurePath = require.resolve('../ensure-binary.cjs');
   const original = integrity.sha256File;
@@ -204,7 +204,7 @@ test('a binary replaced while it is being hashed never gets a fast-path key', as
   delete require.cache[ensurePath];
   try {
     const fresh = require(ensurePath);
-    await fresh.ensureBinary({
+    const install = fresh.ensureBinary({
       target: TARGET,
       platform: 'linux',
       binaryPath,
@@ -214,8 +214,10 @@ test('a binary replaced while it is being hashed never gets a fast-path key', as
         fs.writeFileSync(path.join(destination, 'schemalint'), 'binary-A');
       },
     });
+    await assert.rejects(install, /changed while it was hashed/);
     assert(replaced);
-    assert.equal(await fresh.readVerifiedCache(binaryPath, `${binaryPath}.verified`, hash), false);
+    assert.equal(fs.existsSync(binaryPath), false);
+    assert.equal(fs.existsSync(`${binaryPath}.verified`), false);
   } finally {
     integrity.sha256File = original;
     delete require.cache[ensurePath];
