@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
-// CLI / JSON-RPC parity for automatic mixed-provider ownership
+// CLI / JSON-RPC parity for default-profile selection
 // ---------------------------------------------------------------------------
 
 #[test]
-fn check_node_rpc_matches_cli_for_mixed_provider_targets() {
+fn check_node_rpc_matches_cli_for_multiple_targets() {
     let tmp = TempDir::new().unwrap();
     setup_ts_project(
         tmp.path(),
@@ -67,17 +67,6 @@ betaZodTool({
     assert_eq!(rpc_output["diagnostics"], cli["diagnostics"]);
     assert_eq!(cli["report"]["coverage"]["status"], "complete");
     assert_eq!(cli["report"]["targets"].as_array().unwrap().len(), 2);
-    assert!(cli["report"]["targets"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|target| target["provider"]["provider"] == "openai"));
-    assert!(cli["report"]["targets"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|target| target["provider"]["provider"] == "anthropic"));
-
     let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 901});
     let _ = send_request(&mut child, &shutdown.to_string());
     assert!(child.wait().unwrap().success());

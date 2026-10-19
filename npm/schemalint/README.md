@@ -73,37 +73,23 @@ npm run lint:schemas
 
 Exit `0` means every discovered in-scope target was evaluated and checked and
 there were no error diagnostics. Import/evaluation/conversion
-failures, unresolved required SDK metadata, and partial batches exit `1`; empty
+failures, and partial batches exit `1`; empty
 discovery (nothing checked) exits `3`.
 `--continue-on-discovery-error` collects later targets but never hides partial
 coverage. JSON output uses schema version `1.1` and reports the authoritative
 status in `report.coverage`.
 
-## SDK and runtime compatibility
-
-SchemaLint matches canonical, aliased, and namespace imports by their exact
-module/export surface; it does not guess from a package version string. The
-registry-tarball endpoints below were verified on 2026-07-09 and are retained
-in `src/__tests__/fixtures/sdk-version-matrix.json` so future updates are
-explicit rather than silently redefining "current".
-
-| SDK surface | Verified versions | Recognized schema call |
-| --- | --- | --- |
-| AI SDK | Floor `ai@6.0.0`; current `ai@7.0.19` | `Output.object({ schema })`, `Output.array({ element })`, `dynamicTool({ inputSchema })` |
-| AI SDK legacy | Deprecated in AI SDK 6; retained by SchemaLint 1.x | `generateObject({ schema })`, `streamObject({ schema })`, `tool({ inputSchema \| parameters })` |
-| OpenAI JavaScript SDK | `zodTextFormat` floor `openai@4.87.0`; current `6.46.0` | `zodTextFormat(schema, name)` from `openai/helpers/zod` |
-| OpenAI JavaScript SDK | `zodResponseFormat` floor `openai@4.55.0`; current `6.46.0` | `zodResponseFormat(schema, name)` from `openai/helpers/zod` |
-| OpenAI JavaScript SDK legacy | `zodFunction` floor `openai@4.55.0`; retained by SchemaLint 1.x | `zodFunction({ name, parameters })` from `openai/helpers/zod` |
-| Anthropic TypeScript SDK | `zodOutputFormat` floor `0.72.0`; current `0.110.0` | `zodOutputFormat(schema)` from `@anthropic-ai/sdk/helpers/zod` |
-| Anthropic TypeScript SDK legacy | `betaZodTool` floor `0.63.0`; retained by SchemaLint 1.x | `betaZodTool({ name, inputSchema })` from `@anthropic-ai/sdk/helpers/beta/zod` |
-
-Legacy rows are deprecated in SchemaLint and will be removed in SchemaLint 2.0.
+## Runtime compatibility
 
 The runtime supports Node 18, 20, and 22 and bundles its TypeScript loader.
 Zod `>=3.20` is supported across v3, v4 from `4.0.1` through current `4.4.3`, and
 `zod/mini`; no global `tsx`, TypeScript, or repository dev dependency is used.
-Generic AI SDK targets are provider-ambiguous, so select the intended profile
-explicitly when package/source evidence cannot do so.
+
+`check-node` lints every Zod object schema the files in `--source` can build
+without running a function, whether exported or not. Schemas built from
+run-time input are skipped, and a schema Zod cannot convert to JSON Schema is
+reported as a warning. Without `--profile`, providers come from `package.json`
+dependencies (`openai`, `@anthropic-ai/sdk`, or both), defaulting to OpenAI.
 
 ## Providers
 

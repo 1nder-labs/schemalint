@@ -126,11 +126,6 @@ basis = "Official SDK transformation operates on declared object properties."
 sources = [{ title = "Anthropic SDK transformation", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#how-sdk-transformation-works" }]
 
 [[evidence]]
-key = "S-envelope-name"
-status = "inferred"
-basis = "Schemalint applies Anthropic's documented tool-name character and length constraints to Structured Outputs request names."
-
-[[evidence]]
 key = "S-object-root"
 status = "documented"
 sources = [{ title = "Anthropic JSON Schema limitations", url = "https://platform.claude.com/docs/en/build-with-claude/structured-outputs#json-schema-limitations" }]

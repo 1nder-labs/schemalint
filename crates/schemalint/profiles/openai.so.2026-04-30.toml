@@ -201,11 +201,6 @@ status = "inferred"
 basis = "The root schema is documented as an object; a root enum is therefore outside the subset."
 sources = [{ title = "OpenAI root object", url = "https://developers.openai.com/api/docs/guides/structured-outputs#root-objects-must-not-be-anyof-and-must-be-an-object" }]
 
-[[evidence]]
-key = "S-envelope-name"
-status = "inferred"
-basis = "Schemalint applies the documented function-name character and length constraints to Structured Outputs request names."
-
 # Explicitly unsupported keyword rules.
 [[evidence]]
 key = "K-allOf"

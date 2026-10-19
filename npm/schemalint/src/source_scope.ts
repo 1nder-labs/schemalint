@@ -7,13 +7,7 @@ export interface SourceScope {
   /** The glob actually matched against project files. */
   pattern: string;
   isMatch: (relativePath: string) => boolean;
-  /**
-   * The source named a literal file or directory rather than a glob. The
-   * user pointed at these files, so every exported schema in them is in
-   * scope, not only the ones traced to a provider call.
-   */
-  explicit: boolean;
-  /** Real path of the literal file or directory when `explicit`. */
+  /** Real path of the literal file or directory the source names, if it names one. */
   target?: { kind: 'file' | 'directory'; absolute: string };
 }
 
@@ -31,17 +25,15 @@ export function resolveSourceScope(
 ): SourceScope {
   // On disk decides: no real file is named `*.ts`, while a real directory
   // can be named `(marketing)`, so a glob-syntax check would misread it.
-  const explicit = existingKind(source, projectRoot);
+  const kind = existingKind(source, projectRoot);
   const trimmed = source.replace(/\/+$/, '');
-  const pattern =
-    explicit === 'directory' ? `${trimmed}/**/*.${SOURCE_EXTENSIONS}` : source;
+  const pattern = kind === 'directory' ? `${trimmed}/**/*.${SOURCE_EXTENSIONS}` : source;
   return {
     pattern,
     isMatch: matcher(pattern, { dot: true }) as (input: string) => boolean,
-    explicit: explicit !== false,
-    ...(explicit && {
+    ...(kind && {
       target: {
-        kind: explicit,
+        kind,
         absolute: realpathSync(path.resolve(projectRoot, source)),
       },
     }),

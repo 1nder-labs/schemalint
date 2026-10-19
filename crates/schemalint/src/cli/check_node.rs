@@ -4,13 +4,9 @@ use std::path::Path;
 use crate::cli::args::{CheckNodeArgs, OutputFormat};
 use crate::cli::discovery_policy::discover_batch;
 use crate::cli::node_config;
-use crate::cli::node_policy::{
-    automatic_profile_ids, automatic_target_inputs, needs_provider_fallback,
-    provider_of_profile_ids,
-};
 use crate::cli::pipeline::{
     build_report, build_rulesets, emit_failure, emit_output, evaluate_targets,
-    explicit_model_inputs, EnvelopePolicy,
+    explicit_model_inputs,
 };
 
 use super::load_profiles_from_ids;
@@ -58,7 +54,7 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
         args.sources.clone()
     };
 
-    let mut profile_args: Vec<String> = if args.profiles.is_empty() {
+    let profile_args: Vec<String> = if args.profiles.is_empty() {
         node_config
             .as_ref()
             .map(|c| c.profiles.clone())
@@ -155,35 +151,12 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     }
 
     // -------------------------------------------------------------------
-    // 5. Resolve automatic profiles from per-usage ownership. Ambiguous
-    //    targets are retained and become typed pipeline failures below.
+    // 5. One profile rule for every model: explicit profiles, else the
+    //    package.json-detected providers (defaulting to openai).
     // -------------------------------------------------------------------
-    if profile_args.is_empty() {
-        profile_args = automatic_profile_ids(&discovery.models);
-        if !profile_args.is_empty() {
-            eprintln!(
-                "info: auto-selected per-target profile(s): {}",
-                profile_args.join(", ")
-            );
-        }
-    }
-    // Models whose provider the source cannot settle fall back to the
-    // package.json-detected profile(s), which themselves default to openai.
-    let mut fallback_provider = None;
-    if explicit_profiles.is_none() && needs_provider_fallback(&discovery.models) {
-        let fallback_ids = super::default_profile_ids(config_path);
-        fallback_provider = provider_of_profile_ids(&fallback_ids);
-        for id in fallback_ids {
-            if !profile_args.contains(&id) {
-                profile_args.push(id);
-            }
-        }
-    }
-    let uses_explicit_profiles = explicit_profiles.is_some();
     let profiles = match explicit_profiles {
         Some(profiles) => profiles,
-        None if profile_args.is_empty() => Vec::new(),
-        None => match load_profiles_from_ids(&profile_args) {
+        None => match load_profiles_from_ids(&super::default_profile_ids(config_path)) {
             Ok(profiles) => profiles,
             Err(e) => {
                 return emit_failure(
@@ -220,15 +193,7 @@ pub(super) fn run_check_node(args: CheckNodeArgs) -> i32 {
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
-    let inputs = if uses_explicit_profiles {
-        explicit_model_inputs(
-            &discovery.models,
-            &profile_rulesets,
-            EnvelopePolicy::Validate,
-        )
-    } else {
-        automatic_target_inputs(&discovery.models, &profile_rulesets, fallback_provider)
-    };
+    let inputs = explicit_model_inputs(&discovery.models, &profile_rulesets);
     let results = evaluate_targets(inputs, &profile_rulesets);
 
     // -------------------------------------------------------------------

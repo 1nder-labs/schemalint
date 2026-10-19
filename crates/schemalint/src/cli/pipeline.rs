@@ -13,8 +13,8 @@ mod evaluate;
 #[cfg(test)]
 use evaluate::attach_diagnostic_sources;
 pub(crate) use evaluate::{
-    check_rulesets, evaluate_targets, explicit_model_inputs, model_target_input, raw_check_result,
-    raw_target_input, EnvelopePolicy, TargetEvaluation, TargetInput,
+    check_rulesets, evaluate_targets, explicit_model_inputs, raw_check_result, raw_target_input,
+    TargetEvaluation, TargetInput,
 };
 
 pub(crate) struct AggregateResults {

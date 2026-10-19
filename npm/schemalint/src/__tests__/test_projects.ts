@@ -43,7 +43,7 @@ describe('discoverZodSchemas across a monorepo', () => {
     const result = await discoverZodSchemas(contracts);
 
     expect(result.failures).toEqual([]);
-    expect(names(result)).toEqual(['A', 'B1', 'B2', 'Wrapped']);
+    expect(names(result)).toEqual(['A', 'B1', 'B2', 'Inner']);
   });
 
   it('synthesizes a default program for files with no tsconfig above them', async () => {
@@ -76,16 +76,16 @@ describe('discoverZodSchemas across a monorepo', () => {
     expect(names(result)).toEqual(['A']);
   });
 
-  it('discovers an exported alias of a local z.object schema', async () => {
+  it('reports an exported alias once, under the schema it aliases', async () => {
     const byFile = await discoverZodSchemas(`${contracts}/alias.ts`);
 
     expect(byFile.failures).toEqual([]);
-    expect(names(byFile)).toEqual(['Wrapped']);
+    expect(names(byFile)).toEqual(['Inner']);
     expect(byFile.models[0].schema).toHaveProperty('properties.x');
     expect(byFile.models[0].source_map).toHaveProperty('/properties/x');
 
     const byDir = await discoverZodSchemas(contracts);
-    expect(byDir.models.filter((m) => m.name === 'Wrapped')).toHaveLength(1);
+    expect(byDir.models.filter((m) => m.name === 'Inner')).toHaveLength(1);
   });
 
   it('walks a glob only from its static base', async () => {

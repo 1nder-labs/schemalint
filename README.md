@@ -85,7 +85,7 @@ schemalint check-python     # Pydantic → check-python
 
 Exit `0` is a completeness guarantee: every discovered in-scope target was
 evaluated and checked, and no error diagnostic was produced. Import
-failures, schema-conversion failures, unresolved required SDK metadata, and
+failures, schema-conversion failures, and
 partially checked batches exit `1`. A run that discovers nothing (no matches)
 exits `3` and its human output starts with `checked 0 schemas: nothing was
 discovered`; `--continue-on-discovery-error` keeps

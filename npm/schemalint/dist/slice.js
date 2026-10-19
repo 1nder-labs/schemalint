@@ -19,6 +19,13 @@ import { pathToFileURL } from 'node:url';
  * upgrade, not attempted here.
  */
 export function buildSlicedModule(sourceFile, seedExpr, exportName, tsModule, compilerOptions) {
+    return buildSlicedModuleBatch(sourceFile, [{ seed: seedExpr, exportName }], tsModule, compilerOptions);
+}
+/**
+ * Like `buildSlicedModule` for several seeds of one file: the module keeps the
+ * union of their closures and ends with one `export const` line per seed.
+ */
+export function buildSlicedModuleBatch(sourceFile, seeds, tsModule, compilerOptions) {
     const declByName = indexDeclarations(sourceFile, tsModule);
     const referenced = new Set();
     const kept = new Set();
@@ -31,7 +38,8 @@ export function buildSlicedModule(sourceFile, seedExpr, exportName, tsModule, co
             queue.push(name);
         }
     };
-    enqueue(identifierNames(seedExpr, tsModule));
+    for (const { seed } of seeds)
+        enqueue(identifierNames(seed, tsModule));
     while (queue.length > 0) {
         // Non-null: only names just pushed by `enqueue` land here, and the loop
         // condition already checked `queue.length > 0`.
@@ -54,7 +62,9 @@ export function buildSlicedModule(sourceFile, seedExpr, exportName, tsModule, co
         if (kept.has(stmt))
             parts.push(stmt.getText(sourceFile));
     }
-    parts.push(`export const ${exportName} = ${seedExpr.getText(sourceFile)};`);
+    for (const { seed, exportName } of seeds) {
+        parts.push(`export const ${exportName} = ${seed.getText(sourceFile)};`);
+    }
     return parts.join('\n\n');
 }
 /**

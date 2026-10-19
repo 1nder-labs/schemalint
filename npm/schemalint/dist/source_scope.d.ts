@@ -3,13 +3,7 @@ export interface SourceScope {
     /** The glob actually matched against project files. */
     pattern: string;
     isMatch: (relativePath: string) => boolean;
-    /**
-     * The source named a literal file or directory rather than a glob. The
-     * user pointed at these files, so every exported schema in them is in
-     * scope, not only the ones traced to a provider call.
-     */
-    explicit: boolean;
-    /** Real path of the literal file or directory when `explicit`. */
+    /** Real path of the literal file or directory the source names, if it names one. */
     target?: {
         kind: 'file' | 'directory';
         absolute: string;

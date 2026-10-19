@@ -78,7 +78,7 @@ export const Bad = z.object({ website: z.string().url() });
 }
 
 #[test]
-fn server_check_node_omitted_profiles_uses_per_target_provider() {
+fn server_check_node_omitted_profiles_uses_default_profile() {
     let tmp = TempDir::new().unwrap();
     setup_ts_project(
         tmp.path(),
@@ -111,7 +111,6 @@ zodResponseFormat(Bad, "response");
     let result = &response["result"];
     assert_eq!(result["success"], false, "{result}");
     assert_eq!(result["report"]["coverage"]["status"], "complete");
-    assert_eq!(result["report"]["targets"][0]["provider"]["provider"], "openai");
     assert_eq!(
         result["report"]["targets"][0]["effective_profiles"][0],
         "openai.so.2026-04-30"

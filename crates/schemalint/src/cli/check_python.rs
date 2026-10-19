@@ -5,7 +5,7 @@ use crate::cli::args::{CheckPythonArgs, OutputFormat};
 use crate::cli::discovery_policy::discover_batch;
 use crate::cli::pipeline::{
     build_report, build_rulesets, emit_failure, emit_output, evaluate_targets,
-    explicit_model_inputs, EnvelopePolicy,
+    explicit_model_inputs,
 };
 use crate::cli::pyproject;
 
@@ -165,8 +165,7 @@ pub(super) fn run_check_python(args: CheckPythonArgs) -> i32 {
     // -------------------------------------------------------------------
     // 6. Normalize and check schemas
     // -------------------------------------------------------------------
-    let inputs =
-        explicit_model_inputs(&discovery.models, &profile_rulesets, EnvelopePolicy::Ignore);
+    let inputs = explicit_model_inputs(&discovery.models, &profile_rulesets);
     let results = evaluate_targets(inputs, &profile_rulesets);
 
     // -------------------------------------------------------------------

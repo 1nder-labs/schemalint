@@ -50,11 +50,18 @@ schemalint check-python --profile openai --package my_app.models
 - `check-node` sources are relative to the current directory. Each file is
   evaluated against its nearest `tsconfig.json`; `export *` barrels, aliases
   and symlinks are followed.
-- A glob (`src/**/*.ts`) lints schemas traced to a provider call site
-  (`openai/helpers/zod`, `@anthropic-ai/sdk/helpers/zod`, `ai`); if none of the
-  files import a provider SDK, every exported `z.object` is linted. A file or
-  directory path additionally lints every exported `z.object` in it. To lint a
-  schema module directly, pass its path, not a glob.
+- Globs, files and directories all follow one rule: every Zod object schema
+  the files can build without running a function is linted, whether declared or
+  inline, exported or not, at module scope or inside a function body. Barrel
+  re-exports are followed, and a schema reached twice is reported once. Narrow
+  the scope with `--source` and `--exclude`.
+- Schemas built from run-time input (they use a parameter, a local variable or
+  `this`) are skipped. A schema Zod cannot convert to JSON Schema (`Date`,
+  transforms, custom types) is reported as a warning and skipped.
+- `check-node` uses `--profile` if given; otherwise it reads `package.json`
+  dependencies (`openai`/`@ai-sdk/openai` -> openai, `@anthropic-ai/sdk`/
+  `@ai-sdk/anthropic` -> anthropic, both -> both), defaulting to openai. Every
+  schema is checked against every selected profile.
 - Without `--source`/`--package`, `check-node`/`check-python` read
   `[tool.schemalint]` in `pyproject.toml` or `"schemalint"` in `package.json`
   (`{"profiles": [...], "include": [...]}`). Pass `--config <file>` to point at
@@ -74,13 +81,11 @@ schemalint check-python --profile openai --package my_app.models
 
 Also accepts a path to a custom TOML profile (`check`/`check-node`/`check-python`).
 
-If `--profile` is omitted: `check-node` infers the provider from the SDK each
-schema is passed to, then from package.json dependencies; `check` looks at
+If `--profile` is omitted: `check-node` selects providers from package.json
+dependencies (both providers present selects both); `check` looks at
 package.json near the schema path. If nothing is detected it falls back to
-OpenAI and prints an `info:` line on stderr saying so. Mixed providers with no
-signal produce `provider is ambiguous ... pass --profile explicitly`. When you
-know the target provider, always pass `--profile`; use both to be safe for
-either. Profiles differ (Anthropic forbids numeric/length keywords but does
+OpenAI and prints an `info:` line on stderr saying so. When you know the target
+provider, always pass `--profile`; use both to be safe for either. Profiles differ (Anthropic forbids numeric/length keywords but does
 not require every property in `required`), so a schema clean under one can
 fail the other.
 
@@ -145,7 +150,6 @@ docs: `https://1nder-labs.github.io/schemalint/rules/<category>/<name>`):
 | `-S-recursive-schema`, `-S-external-refs` | Inline or flatten; remove `$ref` cycles and non-local refs |
 | `-S-max-depth`, `-S-max-total-properties`, `-S-max-enum-values`, `-S-string-length-budget`, `-S-enum-string-length-budget` | Split the schema or shrink it; these are provider size limits |
 | `-S-unknown-keyword` | Remove vendor/unknown keywords (e.g. `x-*`) from the sent schema |
-| `-S-envelope-name` | The tool/response-format name must satisfy the provider's name rules; rename it |
 
 If a rule is not listed, open the `seeUrl` from the diagnostic or run
 `schemalint check --format json` and read `hint` and `providerEvidence`.
@@ -156,8 +160,7 @@ cache to clear.
 
 - `tsx or npx not found`: `npm install -g tsx` (or install Node with npx). Use `--node-path` to point at a specific runner.
 - `Cannot find module 'zod'` (or another import) with coverage `failed`: install the project's dependencies first (`npm i`/`pnpm i`) so the schema's imports resolve.
-- Exit `3` / `0 schemas`: the source matched nothing or no schema was traced. Check that the path is relative to the current directory (run from the repo root), that the extension is `.ts/.tsx/.mts/.cts`, that the file is not excluded by `tsconfig.json` `exclude`/`outDir` or by `--exclude`, and that the schema is exported. If files import a provider SDK but nothing was traced, pass the schema module's path (not a glob) to lint its exports directly.
-- `provider is ambiguous ... pass --profile explicitly`: add `--profile openai` or `--profile anthropic`.
+- Exit `3` / `0 schemas`: the source matched nothing or no Zod object schema was found. Check that the path is relative to the current directory (run from the repo root), that the extension is `.ts/.tsx/.mts/.cts`, that the file is not excluded by `tsconfig.json` `exclude`/`outDir` or by `--exclude`, and that the schema does not depend on a parameter, local variable or `this` (those are skipped).
 - `no sources specified`: pass `--source`/`--package` or configure `package.json` / `pyproject.toml`.
 - Python import errors: use `--python-path <venv>/bin/python` so the package's dependencies resolve; `--package` takes a dotted module name.
 - Unknown extra output on stderr (`info:`/`warning:` lines) is diagnostic chatter; the result is in stdout and the exit code.

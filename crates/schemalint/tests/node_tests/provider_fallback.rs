@@ -58,20 +58,6 @@ fn provider_falls_back_to_openai_without_deps() {
     );
 }
 
-/// Both providers in package.json and no source signal stays ambiguous.
-#[test]
-fn provider_stays_ambiguous_when_package_json_lists_both() {
-    let (output, out) = run_plain(Some(
-        r#"{"dependencies":{"zod":"^3","openai":"^4","@anthropic-ai/sdk":"^0.30.0"}}"#,
-    ));
-    assert_eq!(output.status.code(), Some(1));
-    assert_eq!(out["report"]["coverage"]["status"], "partial");
-    assert!(out["report"]["failures"][0]["message"]
-        .as_str()
-        .unwrap()
-        .contains("provider is ambiguous"));
-}
-
 /// Nothing discovered: exit 3, and the human report opens with a line that
 /// cannot be mistaken for a pass.
 #[test]

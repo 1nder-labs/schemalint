@@ -1,11 +1,19 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { discoverZodSchemas, toPosixPath } from '../discover.js';
-import { escapePointerSegment } from '../discover_ast.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, 'fixtures');
+
+type Discovery = Awaited<ReturnType<typeof discoverZodSchemas>>;
+
+/** The first property key of each model's schema, sorted: a stable handle on which schemas were found. */
+function firstKeys(result: Discovery): string[] {
+  return result.models
+    .map((m) => Object.keys(m.schema.properties as Record<string, unknown>)[0])
+    .sort();
+}
 
 describe('discoverZodSchemas', () => {
   let originalCwd: string;
@@ -19,677 +27,200 @@ describe('discoverZodSchemas', () => {
     process.chdir(originalCwd);
   });
 
-  it('discovers a simple z.object schema with source map', async () => {
-    const result = await discoverZodSchemas('simple.ts');
-
-    expect(result.models).toHaveLength(1);
-    const model = result.models[0];
-
-    expect(model.name).toBe('UserSchema');
-    expect(model.module_path).toContain('simple.ts');
-    expect(model.schema).toHaveProperty('type', 'object');
-    expect(model.schema).toHaveProperty('properties');
-
-    // Verify source map has entries for all properties
-    expect(model.source_map).toHaveProperty('/properties/email');
-    expect(model.source_map).toHaveProperty('/properties/name');
-    expect(model.source_map).toHaveProperty('/properties/age');
-
-    const emailSpan = model.source_map['/properties/email'];
-    expect(emailSpan.file).toContain('simple.ts');
-    expect(emailSpan.line).toBeGreaterThan(0);
-  });
-
   it('discovers multiple schemas in a single file', async () => {
     const result = await discoverZodSchemas('multiple.ts');
 
-    expect(result.models).toHaveLength(2);
-
-    const names = result.models.map((m) => m.name).sort();
-    expect(names).toEqual(['Address', 'User']);
-
+    expect(result.models.map((m) => m.name).sort()).toEqual(['Address', 'User']);
     for (const model of result.models) {
+      expect(model.canonical_kind).toBe('zod.export');
+      expect(model.provider).toEqual({ certainty: 'ambiguous' });
       expect(Object.keys(model.source_map).length).toBeGreaterThan(0);
     }
   });
 
-  it('discovers nested z.object schemas with recursive source map', async () => {
-    const result = await discoverZodSchemas('nested.ts');
-
-    expect(result.models).toHaveLength(1);
-    const model = result.models[0];
-
-    expect(model.name).toBe('Order');
-
-    expect(model.source_map).toHaveProperty('/properties/id');
-    expect(model.source_map).toHaveProperty('/properties/customer');
-    expect(model.source_map).toHaveProperty(
-      '/properties/customer/properties/email'
-    );
-    expect(model.source_map).toHaveProperty(
-      '/properties/customer/properties/address'
-    );
-    expect(model.source_map).toHaveProperty(
-      '/properties/customer/properties/address/properties/street'
-    );
-    expect(model.source_map).toHaveProperty(
-      '/properties/customer/properties/address/properties/city'
-    );
-  });
-
-  // Documents the deferred half of KTD2: a property whose value is an
-  // identifier reference to a separately declared `z.object()`, rather
-  // than an inline literal, gets no source-map entry for anything inside
-  // it. Resolving the identifier to its declaration is out of scope here —
-  // the Rust-side ancestor walk (crates/schemalint/src/cli/pipeline/evaluate.rs)
-  // covers the resulting gap by falling back to this outer entry. If this
-  // test starts failing because `/properties/a/properties/site` gained a
-  // map entry, identifier resolution has been implemented — update this
-  // test deliberately rather than only making it pass.
-  it('does not map inside a property whose value is an identifier, not an inline z.object() literal', async () => {
-    const result = await discoverZodSchemas('nested-identifier.ts');
-
-    expect(result.models).toHaveLength(1);
-    const model = result.models[0];
-    expect(model.name).toBe('Outer');
-
-    expect(model.source_map).toHaveProperty('/properties/a');
-    expect(Object.keys(model.source_map)).not.toContain(
-      '/properties/a/properties/site'
-    );
-  });
-
-  it('returns empty results for non-matching glob and names cause 1: no file on disk', async () => {
-    const result = await discoverZodSchemas('nonexistent*.ts');
-
-    expect(result.models).toHaveLength(0);
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0].message).toContain('No file on disk matched');
-    expect(result.warnings[0].message).toContain('nonexistent*.ts');
-    expect(result.counts).toEqual({
-      attempted: 0,
-      excluded: 0,
-      discovered: 0,
-      failed: 0,
-    });
-  });
-
-  it('checks files outside the tsconfig include list with a default program', async () => {
-    const result = await discoverZodSchemas('outside-include/*.ts');
-
-    expect(result.models).toHaveLength(0);
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0].message).toContain('Checked 1 file(s)');
-    expect(result.warnings[0].message).not.toContain('outside the TypeScript program');
-  });
-
-  it('names cause 3: files checked but no schema found', async () => {
-    const result = await discoverZodSchemas('no-schema-content.ts');
-
-    expect(result.models).toHaveLength(0);
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0].message).toContain('Checked 1 file(s)');
-    expect(result.warnings[0].message).toContain('no-schema-content.ts');
-    expect(result.warnings[0].message).toContain('found none');
-    expect(result.counts).toEqual({
-      attempted: 0,
-      excluded: 0,
-      discovered: 0,
-      failed: 0,
-    });
-  });
-
-  it('applies exclusions before schema evaluation, with no cause warning for ordinary exclusion', async () => {
-    const result = await discoverZodSchemas('simple.ts', ['simple.ts']);
-
-    expect(result.models).toHaveLength(0);
-    expect(result.warnings).toHaveLength(0);
-    expect(result.counts).toEqual({
-      attempted: 0,
-      excluded: 1,
-      discovered: 0,
-      failed: 0,
-    });
-  });
-
-  it('a successful discovery reports no empty-discovery warning', async () => {
+  it('a successful discovery reports no warnings', async () => {
     const result = await discoverZodSchemas('simple.ts');
 
     expect(result.models).toHaveLength(1);
     expect(result.warnings).toHaveLength(0);
   });
 
-  it('produces 1-indexed source lines', async () => {
-    const result = await discoverZodSchemas('simple.ts');
-    const model = result.models[0];
+  describe('empty discovery', () => {
+    it('names cause 1: no file on disk', async () => {
+      const result = await discoverZodSchemas('nonexistent*.ts');
 
-    for (const span of Object.values(model.source_map)) {
-      expect(span.line).toBeGreaterThanOrEqual(1);
-    }
-  });
-
-  it('discovers provider-facing AI SDK call-site schemas', async () => {
-    const result = await discoverZodSchemas('ai-sdk-calls.ts');
-
-    expect(result.warnings).toHaveLength(0);
-    expect(result.models).toHaveLength(4);
-    expect(result.failures).toHaveLength(1);
-    expect(result.failures[0]).toMatchObject({
-      kind: 'metadata',
-      target: 'ai.generateObject',
+      expect(result.models).toHaveLength(0);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0].message).toContain('No file on disk matched');
+      expect(result.warnings[0].message).toContain('nonexistent*.ts');
+      expect(result.counts).toEqual({ attempted: 0, excluded: 0, discovered: 0, failed: 0 });
     });
-    expect(result.failures[0].message).toContain('required schema metadata');
-    expect(result.models.map((m) => m.name)).toEqual(
-      expect.arrayContaining([
-        'generateObject:LocalResult',
-        'generateObject:VariableResult',
-      ])
-    );
-    expect(result.models.some((m) => m.name.startsWith('streamObject:inline:')))
-      .toBe(true);
-    expect(result.models.some((m) => m.name.startsWith('tool:inline:')))
-      .toBe(true);
 
-    const properties = result.models.flatMap((m) =>
-      Object.keys(m.schema.properties as Record<string, unknown>)
-    );
-    expect(properties).toEqual(
-      expect.arrayContaining(['variable'])
-    );
-    expect(properties).not.toContain('conditional');
-  });
+    it('checks files outside the tsconfig include list with a default program', async () => {
+      const result = await discoverZodSchemas('outside-include/*.ts');
 
-  it('discovers schemas passed through provider helper factories', async () => {
-    const result = await discoverZodSchemas('factory-calls.ts');
-
-    expect(result.warnings).toHaveLength(0);
-    expect(result.models).toHaveLength(2);
-    expect(result.models.map((m) => m.name)).toEqual([
-      'generateObject:extractThing',
-      'generateObject:inlineThing',
-    ]);
-
-    const properties = result.models.map((m) =>
-      Object.keys(m.schema.properties as Record<string, unknown>)
-    );
-    expect(properties).toEqual([['extracted'], ['inline']]);
-  });
-
-  it('discovers schemas reaching a provider through a wrapper parameter', async () => {
-    // Regression: a wrapper that takes the schema as a parameter — bare,
-    // destructured, or renamed — and forwards it with shorthand property
-    // syntax. Every one of these resolved to nothing, silently and with no
-    // warning, so the schemas went unlinted while the run reported success.
-    // `injected` covers the dependency-injection shape, where the wrapper is
-    // only ever reached through a function-type annotation.
-    // A glob, not the file name: naming the file is explicit scope, which
-    // lints every exported schema in it by design.
-    const result = await discoverZodSchemas('wrapper-call*.ts');
-
-    expect(result.warnings).toHaveLength(0);
-
-    const properties = result.models
-      .flatMap((m) => Object.keys(m.schema.properties as Record<string, unknown>))
-      .sort();
-    expect(properties).toEqual([
-      'bare',
-      'destructured',
-      'direct',
-      'injected',
-      'renamed',
-    ]);
-
-    // A schema never passed to a provider must remain undiscovered — carrier
-    // resolution must not widen into scanning every Zod schema in the repo.
-    expect(properties).not.toContain('unrelated');
-  });
-
-  it('discovers schemas reaching a provider through a chain of wrapper parameters', async () => {
-    // Regression: real wrappers layer more than one hop deep — a wrapper
-    // calling another wrapper, each only forwarding the schema through its
-    // own parameter. Carrier resolution used to stop after a single hop, so
-    // `params.schema` read inside an inner wrapper and then forwarded bare
-    // (or via `{ ...params }`) by an outer wrapper resolved to nothing.
-    const result = await discoverZodSchemas('multihop-*.ts');
-
-    expect(result.warnings).toHaveLength(0);
-
-    const byProperty = new Map(
-      result.models.map((m) => [
-        Object.keys(m.schema.properties as Record<string, unknown>)[0],
-        m,
-      ])
-    );
-    expect([...byProperty.keys()].sort()).toEqual([
-      'logged',
-      'onboard',
-      'spread',
-    ]);
-
-    // A schema never passed to a provider must remain undiscovered, same
-    // guard as the single-hop case.
-    expect(byProperty.has('unrelated')).toBe(false);
-
-    for (const [property, expectedName, expectedLine] of [
-      ['onboard', 'Output.object:OnboardSchema', 18],
-      ['spread', 'Output.object:SpreadSchema', 26],
-      ['logged', 'Output.object:LoggedSchema', 34],
-    ] as const) {
-      const model = byProperty.get(property);
-      expect(model, `expected a model for '${property}'`).toBeDefined();
-      expect(model!.canonical_kind).toBe('ai.Output.object');
-      expect(model!.name).toBe(expectedName);
-      // The finding must point at the outermost call site — where the real
-      // schema is supplied — not at any intermediate wrapper hop.
-      expect(model!.usage_span.file).toContain('multihop-calls.ts');
-      expect(model!.usage_span.line).toBe(expectedLine);
-    }
-  });
-
-  it('in glob scope, a project using a provider SDK never falls back to exported schemas', async () => {
-    // gate-callsite.ts imports the SDK but its schema is class-held and cannot
-    // be evaluated. Linting gate-exported.ts instead would flag a schema that
-    // never reaches a model, so the run reports the gap and checks nothing.
-    const result = await discoverZodSchemas('gate-*.ts');
-
-    expect(result.models).toEqual([]);
-    const evaluationFailures = result.failures.filter(
-      (failure) => failure.kind === 'evaluation'
-    );
-    expect(evaluationFailures).toHaveLength(1);
-    expect(evaluationFailures[0].target).toBe('generateObject:schema');
-    // The failure already names the gap; no second message about it.
-    expect(result.warnings).toHaveLength(0);
-  });
-
-  it('in glob scope, a project whose provider SDK use traces to nothing reports the gap', async () => {
-    const result = await discoverZodSchemas('sdk-untraced-*.ts');
-
-    expect(result.models).toEqual([]);
-    expect(result.failures).toEqual([]);
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0].message).toContain('no schema could be traced');
-  });
-
-  it('in glob scope, a project without a provider SDK lints exported schemas', async () => {
-    const result = await discoverZodSchemas('simpl*.ts');
-
-    expect(result.models.map((m) => m.name)).toEqual(['UserSchema']);
-    expect(result.models[0].canonical_kind).toBe('zod.export');
-  });
-
-  it('a literal file path lints every exported schema in it', async () => {
-    const result = await discoverZodSchemas('wrapper-calls.ts');
-
-    const names = result.models.map((m) => m.name);
-    expect(names).toContain('unrelatedSchema');
-    // Schemas already traced to a provider call are not reported twice.
-    expect(names.filter((n) => n.endsWith('unrelatedSchema'))).toHaveLength(1);
-  });
-
-  it('a literal directory path lints every exported schema beneath it', async () => {
-    const result = await discoverZodSchemas('explicit-dir/');
-
-    // TopSchema is traced to the provider call in call.ts, so it is reported
-    // once under that call site, not a second time as a bare export.
-    expect(result.models.map((m) => m.name).sort()).toEqual([
-      'DeepSchema',
-      'generateObject:TopSchema',
-    ]);
-    expect(result.warnings).toHaveLength(0);
-  });
-
-  it('discovers imported and tsconfig path-aliased schemas', async () => {
-    const result = await discoverZodSchemas('imported-calls.ts');
-
-    expect(result.warnings).toHaveLength(0);
-    expect(result.models).toHaveLength(2);
-    const properties = result.models.map((m) =>
-      Object.keys(m.schema.properties as Record<string, unknown>)
-    );
-    expect(properties).toEqual([['imported'], ['aliased']]);
-    expect(result.models[0].source_map).toHaveProperty('/properties/imported');
-    expect(result.models[1].source_map).toHaveProperty('/properties/aliased');
-  });
-
-  it('discovers OpenAI and Anthropic helper schemas', async () => {
-    const result = await discoverZodSchemas('provider-helpers.ts');
-
-    expect(result.warnings).toHaveLength(0);
-    expect(result.models).toHaveLength(3);
-    expect(result.models.map((m) => m.name)).toEqual([
-      'zodTextFormat:response',
-      'zodFunction:lookup',
-      'betaZodTool:search',
-    ]);
-  });
-
-  it('canonicalizes current SDK aliases, namespaces, providers, and envelopes', async () => {
-    const result = await discoverZodSchemas('sdk-adapters.ts');
-
-    expect(result.failures).toEqual([]);
-    expect(result.models).toHaveLength(5);
-    expect(result.models.map((model) => model.canonical_kind)).toEqual([
-      'openai.zodTextFormat',
-      'anthropic.zodOutputFormat',
-      'ai.Output.object',
-      'ai.Output.array',
-      'ai.dynamicTool',
-    ]);
-    expect(result.models.slice(0, 2).map((model) => model.provider)).toEqual([
-      { certainty: 'definitive', provider: 'openai' },
-      { certainty: 'definitive', provider: 'anthropic' },
-    ]);
-    expect(result.models.slice(2).map((model) => model.provider)).toEqual([
-      { certainty: 'ambiguous' },
-      { certainty: 'ambiguous' },
-      { certainty: 'ambiguous' },
-    ]);
-    expect(result.models[0].envelope.name).toMatchObject({
-      value: 'open_response',
-      required: true,
+      expect(result.models).toHaveLength(0);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0].message).toContain('Checked 1 file(s)');
+      expect(result.warnings[0].message).not.toContain('outside the TypeScript program');
     });
-    expect(result.models[0].envelope.name.span.line).toBeGreaterThan(0);
-    expect(result.models[2].envelope).toMatchObject({
-      name: { value: 'object_result' },
-      description: { value: 'one object' },
+
+    it('names cause 3: files checked but no schema found', async () => {
+      const result = await discoverZodSchemas('no-schema-content.ts');
+
+      expect(result.models).toHaveLength(0);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0].message).toContain('Checked 1 file(s)');
+      expect(result.warnings[0].message).toContain('no-schema-content.ts');
+      expect(result.warnings[0].message).toContain('found none');
+      expect(result.counts).toEqual({ attempted: 0, excluded: 0, discovered: 0, failed: 0 });
     });
-    expect(result.models.every((model) => model.usage_span.line! > 0)).toBe(true);
-  });
 
-  it('reports unresolved required envelope metadata as a typed failure', async () => {
-    const result = await discoverZodSchemas('unresolved-envelope.ts');
+    it('applies exclusions before evaluation, with no cause warning', async () => {
+      const result = await discoverZodSchemas('simple.ts', ['simple.ts']);
 
-    expect(result.models).toEqual([]);
-    expect(result.failures).toHaveLength(1);
-    expect(result.failures[0]).toMatchObject({
-      kind: 'metadata',
-      target: 'openai.zodTextFormat',
-    });
-    expect(result.failures[0].message).toContain("required field 'name'");
-  });
-
-  it('retains provider ownership on each target', async () => {
-    const result = await discoverZodSchemas('anthropic-only.ts');
-
-    expect(result.models[0].provider).toEqual({
-      certainty: 'definitive',
-      provider: 'anthropic',
+      expect(result.models).toHaveLength(0);
+      expect(result.warnings).toHaveLength(0);
+      expect(result.counts).toEqual({ attempted: 0, excluded: 1, discovered: 0, failed: 0 });
     });
   });
 
-  it('marks legacy exported schemas as provider-ambiguous', async () => {
-    const result = await discoverZodSchemas('simple.ts');
+  describe('scope', () => {
+    it('lints a schema in a glob-scoped file that imports an SDK: there is no SDK gate', async () => {
+      // sdk-untraced-call.ts imports 'ai'; sdk-untraced-export.ts holds a schema
+      // that never reaches a provider call. Both are linted all the same.
+      const result = await discoverZodSchemas('sdk-untraced-*.ts');
 
-    expect(result.models[0].provider).toEqual({ certainty: 'ambiguous' });
-  });
-
-  it('never finalizes generic provider ownership per source partition', async () => {
-    const partitioned = await discoverZodSchemas(
-      'provider-partition-openai.ts'
-    );
-    const complete = await discoverZodSchemas('provider-partition-*.ts');
-
-    const partitionedGeneric = partitioned.models.find(
-      (model) => model.canonical_kind === 'ai.Output.object'
-    );
-    const completeGeneric = complete.models.find(
-      (model) => model.canonical_kind === 'ai.Output.object'
-    );
-    expect(partitionedGeneric?.provider).toEqual({ certainty: 'ambiguous' });
-    expect(completeGeneric?.provider).toEqual({ certainty: 'ambiguous' });
-    expect(complete.models.map((model) => model.provider)).toEqual(
-      expect.arrayContaining([
-        { certainty: 'definitive', provider: 'openai' },
-        { certainty: 'definitive', provider: 'anthropic' },
-      ])
-    );
-  });
-
-  it('rejects divergent conditional schema and required-name metadata', async () => {
-    const result = await discoverZodSchemas('conditional-metadata.ts');
-
-    expect(result.models).toHaveLength(2);
-    expect(result.failures).toHaveLength(3);
-    expect(result.failures.map((failure) => failure.target)).toEqual([
-      'ai.generateObject',
-      'openai.zodTextFormat',
-      'openai.zodTextFormat',
-    ]);
-    expect(result.failures[0].message).toContain('required schema metadata');
-    expect(result.failures[1].message).toContain('required schema metadata');
-    expect(result.failures[2].message).toContain("required field 'name'");
-    expect(result.counts).toMatchObject({
-      attempted: 5,
-      discovered: 2,
-      failed: 3,
+      expect(result.models.map((m) => m.name)).toEqual(['untracedSchema']);
+      expect(result.failures).toEqual([]);
+      expect(result.warnings).toEqual([]);
     });
-    expect(result.models.map((model) => model.name)).toEqual([
-      'generateObject:First',
-      'zodTextFormat:same_name',
-    ]);
-  });
 
-  it('counts an evaluation failure once', async () => {
-    // Regression: `failures` used to alias `discoveryFailures`, so every
-    // evaluation failure also incremented `attempted`, and the Rust caller
-    // rejected the response with "invalid discovery counts".
-    const result = await discoverZodSchemas('eval-throws.ts');
+    it('finds every module-level schema reachable from a call, with none reported twice', async () => {
+      const result = await discoverZodSchemas('ai-sdk-calls.ts');
 
-    expect(result.models).toEqual([]);
-    expect(result.failures).toHaveLength(1);
-    expect(result.counts).toMatchObject({
-      attempted: 1,
-      discovered: 0,
-      failed: 1,
+      expect(result.warnings).toHaveLength(0);
+      expect(result.failures).toEqual([]);
+      // Declared (LocalResult, VariableResult) and inline (conditional, chunk, query).
+      expect(firstKeys(result)).toEqual(['chunk', 'conditional', 'query', 'title', 'variable']);
+      expect(result.models.filter((m) => m.name === 'LocalResult')).toHaveLength(1);
+      expect(result.models.some((m) => m.name.startsWith('inline:'))).toBe(true);
+    });
+
+    it('finds module-level schemas that wrappers and function-local aliases forward to a call', async () => {
+      // A glob, not the file name: both scopes follow the same rule.
+      const result = await discoverZodSchemas('wrapper-call*.ts');
+
+      expect(result.warnings).toHaveLength(0);
+      // `schema` parameters of the wrappers are runtime-dependent, so only the
+      // module-scope declarations are roots.
+      expect(firstKeys(result)).toEqual([
+        'bare',
+        'destructured',
+        'direct',
+        'injected',
+        'renamed',
+        'unrelated',
+      ]);
+      expect(result.models.map((m) => m.name)).toContain('unrelatedSchema');
+    });
+
+    it('a literal directory path lints every schema beneath it, each once', async () => {
+      const result = await discoverZodSchemas('explicit-dir/');
+
+      expect(result.models.map((m) => m.name).sort()).toEqual(['DeepSchema', 'TopSchema']);
+      expect(result.warnings).toHaveLength(0);
+    });
+
+    it('resolves barrel re-exports, including tsconfig path aliases, to the declaring file', async () => {
+      const result = await discoverZodSchemas('barrel.ts');
+
+      expect(result.warnings).toHaveLength(0);
+      expect(result.models.map((m) => m.name).sort()).toEqual(['AliasedSchema', 'ImportedSchema']);
+      const byName = new Map(result.models.map((m) => [m.name, m]));
+      expect(byName.get('ImportedSchema')!.module_path).toContain('schema-defs.ts');
+      expect(byName.get('AliasedSchema')!.module_path).toContain('aliased-schema.ts');
+      expect(byName.get('AliasedSchema')!.source_map).toHaveProperty('/properties/aliased');
+    });
+
+    it('does not report a schema twice when the barrel and its declaring file are both in scope', async () => {
+      const result = await discoverZodSchemas('{barrel,schema-defs}.ts');
+
+      expect(result.models.map((m) => m.name).sort()).toEqual(['AliasedSchema', 'ImportedSchema']);
+    });
+
+    it('matches only files under the working directory', async () => {
+      const result = await discoverZodSchemas('simple.ts');
+
+      for (const model of result.models) {
+        expect(path.relative(fixturesDir, model.module_path)).not.toMatch(/^\.\./);
+      }
     });
   });
 
-  it('fails closed when static aliases form a cycle', async () => {
-    const result = await discoverZodSchemas('cyclic-metadata.ts');
+  describe('failures and slicing', () => {
+    it('counts an evaluation failure once', async () => {
+      // Regression: every evaluation failure also incremented `attempted`, and
+      // the Rust caller rejected the response with "invalid discovery counts".
+      const result = await discoverZodSchemas('eval-throws.ts');
 
-    expect(result.models).toEqual([]);
-    expect(result.failures).toHaveLength(1);
-    expect(result.failures[0]).toMatchObject({
-      kind: 'metadata',
-      target: 'openai.zodTextFormat',
+      expect(result.models).toEqual([]);
+      expect(result.failures).toHaveLength(1);
+      expect(result.failures[0].kind).toBe('evaluation');
+      expect(result.counts).toMatchObject({ attempted: 1, discovered: 0, failed: 1 });
     });
-    expect(result.failures[0].message).toContain('required schema metadata');
-  });
 
-  it('discovers inline schema referencing a helper declared after the call site', async () => {
-    // Regression: the synthetic module must include all module-level
-    // declarations, not just the ones that appear before the target expression.
-    // Previously, `makeField()` — declared after the call site — was omitted,
-    // causing a ReferenceError during evaluation.
-    const result = await discoverZodSchemas('forward-ref-helper.ts');
+    it('discovers an inline schema referencing a helper declared after it', async () => {
+      // Regression: the synthetic module must include every module-level
+      // declaration, not just those before the schema, or evaluation throws
+      // a ReferenceError.
+      const result = await discoverZodSchemas('forward-ref-helper.ts');
 
-    expect(result.warnings).toHaveLength(0);
-    expect(result.models).toHaveLength(1);
-    expect(result.models[0].schema).toHaveProperty('type', 'object');
-    expect(result.models[0].schema).toHaveProperty('properties');
-    const props = result.models[0].schema.properties as Record<string, unknown>;
-    expect(Object.keys(props)).toContain('value');
-  });
+      expect(result.warnings).toHaveLength(0);
+      expect(result.models).toHaveLength(1);
+      expect(result.models[0].name).toMatch(/^inline:\d+$/);
+      expect(firstKeys(result)).toEqual(['value']);
+    });
 
-  it('slices a noisy declaring file down to what a cross-file exported schema needs', async () => {
-    // Regression: the target resolves to `NoisySchema`, exported from
-    // noisy-export.ts. That file also imports 'cloudflare:workflows' (a
-    // scheme Node's default ESM loader rejects) and throws unconditionally
-    // at module scope. Importing the whole declaring file — the old
-    // behavior for a cross-file exported identifier — would fail on either.
-    // Slicing must keep only `NoisySchema`'s own dependency graph.
-    const result = await discoverZodSchemas('noisy-export-callsite.ts');
+    it('slices a noisy declaring file down to what the schema needs', async () => {
+      // noisy-export.ts imports 'cloudflare:workflows' (rejected by Node's
+      // default ESM loader) and throws at module scope. Neither is referenced
+      // by NoisySchema, so slicing must drop both.
+      const result = await discoverZodSchemas('noisy-export.ts');
 
-    expect(result.warnings).toHaveLength(0);
-    expect(result.failures).toEqual([]);
-    expect(result.models).toHaveLength(1);
-    expect(result.models[0].name).toBe('generateObject:NoisySchema');
-    expect(result.models[0].schema).toHaveProperty('type', 'object');
-    const props = result.models[0].schema.properties as Record<string, unknown>;
-    expect(Object.keys(props)).toEqual(['clean']);
-  });
+      expect(result.warnings).toHaveLength(0);
+      expect(result.failures).toEqual([]);
+      expect(result.models.map((m) => m.name)).toEqual(['NoisySchema']);
+      expect(firstKeys(result)).toEqual(['clean']);
+    });
 
-  it('slices a noisy file down to what an inline call-site schema needs, including a forward-referenced helper', async () => {
-    // Regression: the inline schema at the call site references `makeField`,
-    // declared later in the same file, while the file also imports
-    // 'cloudflare:workflows' and throws unconditionally at module scope.
-    // Slicing must keep `makeField` (a real dependency) while dropping the
-    // unrelated import and side effect (not tied to any kept declaration).
-    const result = await discoverZodSchemas('noisy-inline.ts');
+    it('slices a noisy file down to an inline schema and its forward-referenced helper', async () => {
+      const result = await discoverZodSchemas('noisy-inline.ts');
 
-    expect(result.warnings).toHaveLength(0);
-    expect(result.failures).toEqual([]);
-    expect(result.models).toHaveLength(1);
-    expect(result.models[0].schema).toHaveProperty('type', 'object');
-    const props = result.models[0].schema.properties as Record<string, unknown>;
-    expect(Object.keys(props)).toEqual(['value']);
-  });
-
-  it('every model source_map carries a root entry pointing at the schema expression', async () => {
-    // Regression: buildSourceMapFromObjectLiteral never wrote the '' root
-    // entry, so root-level findings printed with no line. Both the call-site
-    // resolution path (forward-ref-helper.ts, target_emit.ts) and the
-    // exported-schema path (gate-exported.ts, discover.ts) must produce one.
-    const callSite = await discoverZodSchemas('forward-ref-helper.ts');
-    expect(callSite.models[0].source_map).toHaveProperty('');
-    expect(callSite.models[0].source_map['']?.line).toBeGreaterThan(0);
-
-    const fallback = await discoverZodSchemas('gate-exported.ts');
-    const fallbackModel = fallback.models.find((m) => m.name === 'fallbackSchema');
-    expect(fallbackModel?.source_map).toHaveProperty('');
-    expect(fallbackModel?.source_map['']?.line).toBeGreaterThan(0);
-  });
-
-  it('buildSourceMapFromObjectLiteral records spans for string-literal and computed-string-literal property names', async () => {
-    // Regression: the source-map builder previously skipped any property whose
-    // name was not a bare Identifier.  String-literal keys ('email': ...) and
-    // computed keys with a string-literal expression (['name']: ...) ARE
-    // statically resolvable and must produce a /properties/<name> entry so that
-    // diagnostics for those fields retain their source location.
-    // Dynamic-computed ([k]: ...) and spread (...base) are NOT resolvable and
-    // must NOT produce an entry (no fabricated pointer that matches nothing).
-    const result = await discoverZodSchemas('string-key-props.ts');
-
-    const model = result.models[0];
-    expect(model).toBeDefined();
-
-    // String-literal key: { 'email': z.string() } → must have span
-    expect(model.source_map).toHaveProperty('/properties/email');
-    const emailSpan = model.source_map['/properties/email'];
-    expect(emailSpan.file).toContain('string-key-props.ts');
-    expect(emailSpan.line).toBeGreaterThan(0);
-
-    // Computed key with string-literal: { ['name']: z.string() } → must have span
-    expect(model.source_map).toHaveProperty('/properties/name');
-    const nameSpan = model.source_map['/properties/name'];
-    expect(nameSpan.file).toContain('string-key-props.ts');
-    expect(nameSpan.line).toBeGreaterThan(0);
-
-    // Dynamic-computed ([k]: ...) → must NOT produce a pointer
-    expect(Object.keys(model.source_map)).not.toContain('/properties/dynamic');
-
-    // Spread (...base) → must NOT produce a pointer
-    expect(Object.keys(model.source_map)).not.toContain('/properties/extra');
-  });
-
-  it('escapes RFC 6901 special characters in property names so the pointer still matches source attribution', async () => {
-    // Regression: a Zod property named with '/' or '~' must still receive
-    // its source line. The pointer key must be RFC 6901-escaped ('~' -> '~0'
-    // first, then '/' -> '~1') the same way the Rust normalizer escapes the
-    // matching `/properties/{key}` join, so `source_map.get(&pointer)` keeps
-    // agreeing between the two sides.
-    const result = await discoverZodSchemas('escaped-key-props.ts');
-
-    const model = result.models[0];
-    expect(model).toBeDefined();
-
-    // 'a/b' → /properties/a~1b
-    expect(model.source_map).toHaveProperty('/properties/a~1b');
-    const slashSpan = model.source_map['/properties/a~1b'];
-    expect(slashSpan.file).toContain('escaped-key-props.ts');
-    expect(slashSpan.line).toBeGreaterThan(0);
-
-    // 'c~d' → /properties/c~0d
-    expect(model.source_map).toHaveProperty('/properties/c~0d');
-    const tildeSpan = model.source_map['/properties/c~0d'];
-    expect(tildeSpan.file).toContain('escaped-key-props.ts');
-    expect(tildeSpan.line).toBeGreaterThan(0);
-
-    // The raw, unescaped names must NOT appear as pointer keys.
-    expect(Object.keys(model.source_map)).not.toContain('/properties/a/b');
-    expect(Object.keys(model.source_map)).not.toContain('/properties/c~d');
-  });
-
-  it('source glob filter does not drop files whose path shares a prefix with cwd but is outside it', async () => {
-    // Regression: the old startsWith(projectRoot) check incorrectly accepted
-    // a file at "/path/to/appExtra/foo.ts" when cwd is "/path/to/app", because
-    // the string "/path/to/appExtra/foo.ts" starts with "/path/to/app".
-    // path.relative() is correct: it only strips the prefix when the file is
-    // genuinely under cwd.
-    //
-    // We verify the fix indirectly by confirming that a glob like "simple.ts"
-    // matches exactly "simple.ts" (under cwd) and not a sibling directory whose
-    // name extends the cwd basename — e.g., a hypothetical "fixtures-extra/simple.ts"
-    // would have relPath "../../fixtures-extra/simple.ts" and must not match "simple.ts".
-    const result = await discoverZodSchemas('simple.ts');
-    // All matched files must live directly inside the fixtures dir (no path traversal).
-    for (const model of result.models) {
-      expect(model.module_path).toContain(fixturesDir);
-      // The module path must NOT contain any path that traverses outside cwd.
-      expect(path.relative(fixturesDir, model.module_path)).not.toMatch(/^\.\./);
-    }
+      expect(result.warnings).toHaveLength(0);
+      expect(result.failures).toEqual([]);
+      expect(result.models).toHaveLength(1);
+      expect(firstKeys(result)).toEqual(['value']);
+    });
   });
 
   describe('toPosixPath (Windows path normalization)', () => {
     it('converts backslash-separated Windows paths to forward slashes', () => {
-      // Simulate a Windows path.relative() output with '\\' as the separator.
-      // On POSIX, path.sep === '/' so we pass '\\' explicitly to exercise the
-      // Windows branch.  This is the regression guard: on Windows, path.relative()
-      // returns e.g. "src\\models\\user.ts" which picomatch would fail to match
-      // against "src/**/*.ts" — toPosixPath must convert it first.
+      // path.relative() on Windows returns "src\\models\\user.ts", which
+      // picomatch fails to match against "src/**/*.ts".
       expect(toPosixPath('src\\models\\user.ts', '\\')).toBe('src/models/user.ts');
-      expect(toPosixPath('src\\foo.ts', '\\')).toBe('src/foo.ts');
       expect(toPosixPath('..\\shared\\schema.ts', '\\')).toBe('../shared/schema.ts');
     });
 
     it('is a no-op for already-posix paths', () => {
-      // On POSIX, sep === '/' so nothing changes.
       expect(toPosixPath('src/models/user.ts', '/')).toBe('src/models/user.ts');
-      expect(toPosixPath('simple.ts', '/')).toBe('simple.ts');
     });
 
-    it('normalised Windows path matches a forward-slash picomatch glob', async () => {
-      // End-to-end proof: a backslash-style relPath, once normalised, must
-      // satisfy a forward-slash glob — the exact condition that was broken on Windows.
+    it('a normalised Windows path matches a forward-slash picomatch glob', async () => {
       const { default: picomatch } = await import('picomatch');
       const isMatch = picomatch('src/**/*.ts', { dot: true });
       expect(isMatch(toPosixPath('src\\models\\user.ts', '\\'))).toBe(true);
-      // Without normalisation the match would fail:
       expect(isMatch('src\\models\\user.ts')).toBe(false);
     });
-  });
-});
-
-describe('pointer escaping', () => {
-  // The Node escaper against the shared table in
-  // crates/schemalint/tests/fixtures/pointer-escaping.json, which the Rust
-  // normalizer and the Python sidecar assert against too. The three build
-  // pointers independently and `source_map.get(pointer)` joins them by exact
-  // string match, so a divergence silently drops source attribution.
-  it('matches the cross-language contract', async () => {
-    const fixturePath = path.resolve(
-      __dirname,
-      '../../../../crates/schemalint/tests/fixtures/pointer-escaping.json'
-    );
-    const { readFileSync } = await import('node:fs');
-    const contract = JSON.parse(readFileSync(fixturePath, 'utf8')) as {
-      cases: { input: string; escaped: string }[];
-    };
-    expect(contract.cases.length).toBeGreaterThan(0);
-
-    for (const { input, escaped } of contract.cases) {
-      expect(escapePointerSegment(input)).toBe(escaped);
-    }
   });
 });

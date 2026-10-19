@@ -70,7 +70,6 @@ fn built_in_evidence_exactly_covers_active_rules() {
             .copied()
             .chain(rules.dynamic_rules())
             .filter_map(|rule| rule.metadata())
-            .chain(std::iter::once(schemalint::rules::envelope::metadata()))
             .filter_map(|metadata| {
                 let code = metadata.code.replace("{prefix}", &profile.code_prefix);
                 RuleKey::from_code(&code, &profile.code_prefix)

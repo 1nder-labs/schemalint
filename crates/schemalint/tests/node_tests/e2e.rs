@@ -291,7 +291,7 @@ export const My = z.object({ site: z.string().url() });
 }
 
 #[test]
-fn e2e_intersection_not_discovered_gracefully() {
+fn e2e_intersection_lints_its_object_parts() {
     let tmp = TempDir::new().unwrap();
     setup_ts_project(
         tmp.path(),
@@ -307,8 +307,8 @@ export const Combo = z.intersection(Person, Employee);
         )],
     );
 
-    // z.intersection() is NOT discovered — an explicitly requested source
-    // that yields no checkable target is incomplete, not a clean run.
+    // The intersection is not an object schema, so it is not a target; the
+    // two object schemas it combines are, exported or not.
     let mut cmd = Command::cargo_bin("schemalint").unwrap();
     cmd.current_dir(tmp.path());
     let output = cmd
@@ -324,182 +324,63 @@ export const Combo = z.intersection(Person, Employee);
         .output()
         .unwrap();
 
-    assert!(
-        !output.status.success(),
-        "zero-target discovery must exit 1"
-    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let out: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(out["schema_version"], "1.3");
-    assert_eq!(out["report"]["coverage"]["status"], "empty");
-    assert_eq!(out["report"]["coverage"]["checked"], 0);
-}
-
-// ---------------------------------------------------------------------------
-// Per-target provider auto-selection tests
-//
-// Direct SDK adapters carry definitive ownership across the sidecar wire.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn e2e_openai_target_auto_selects_openai_profile() {
-    let tmp = TempDir::new().unwrap();
-    setup_ts_project(
-        tmp.path(),
-        &[(
-            "schema.ts",
-            r#"import { z } from "zod";
-import { zodFunction } from "openai/helpers/zod";
-export const Lookup = zodFunction({
-  name: "lookup",
-  parameters: z.object({ id: z.string() }),
-});
-"#,
-        )],
-    );
-
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    let output = cmd
-        .args(["check-node", "-S", "src/**/*.ts", "-f", "json"])
-        .output()
-        .unwrap();
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("auto-selected per-target profile(s)"),
-        "expected per-target selection log, got stderr:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("openai.so.2026-04-30"),
-        "expected profile name in auto-detect log, got stderr:\n{stderr}"
-    );
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let out: JsonOutput = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
-    assert!(
-        out.profiles.iter().any(|p| p == "openai.so.2026-04-30"),
-        "expected openai profile in output, got: {:?}",
-        out.profiles
-    );
-}
-
-#[test]
-fn e2e_anthropic_target_auto_selects_anthropic_profile() {
-    let tmp = TempDir::new().unwrap();
-    setup_ts_project(
-        tmp.path(),
-        &[(
-            "schema.ts",
-            r#"import { z } from "zod";
-import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
-export const Translate = betaZodTool({
-  name: "translate",
-  inputSchema: z.object({ text: z.string(), target_language: z.string() }),
-});
-"#,
-        )],
-    );
-
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    let output = cmd
-        .args(["check-node", "-S", "src/**/*.ts", "-f", "json"])
-        .output()
-        .unwrap();
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("auto-selected per-target profile(s)"),
-        "expected per-target selection log, got stderr:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("anthropic.so.2026-04-30"),
-        "expected profile name in auto-detect log, got stderr:\n{stderr}"
-    );
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let out: JsonOutput = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
-    assert!(
-        out.profiles.iter().any(|p| p == "anthropic.so.2026-04-30"),
-        "expected anthropic profile in output, got: {:?}",
-        out.profiles
-    );
-}
-
-#[test]
-fn e2e_provider_inference_is_independent_of_source_partitioning() {
-    let tmp = TempDir::new().unwrap();
-    setup_ts_project(
-        tmp.path(),
-        &[
-            (
-                "generic.ts",
-                r#"import { z } from "zod";
-import { Output } from "ai";
-const Generic = z.object({ value: z.string() });
-Output.object({ name: "generic", schema: Generic });
-"#,
-            ),
-            (
-                "openai.ts",
-                r#"import { z } from "zod";
-import { zodResponseFormat } from "openai/helpers/zod";
-const OpenAI = z.object({ value: z.string() });
-zodResponseFormat(OpenAI, "openai_response");
-"#,
-            ),
-            (
-                "anthropic.ts",
-                r#"import { z } from "zod";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-const Anthropic = z.object({ value: z.string() });
-zodOutputFormat(Anthropic);
-"#,
-            ),
-        ],
-    );
-
-    let mut cmd = Command::cargo_bin("schemalint").unwrap();
-    cmd.current_dir(tmp.path());
-    let output = cmd
-        .args([
-            "check-node",
-            "-S",
-            "src/generic.ts",
-            "-S",
-            "src/openai.ts",
-            "-S",
-            "src/anthropic.ts",
-            "-f",
-            "json",
-        ])
-        .output()
-        .unwrap();
-
-    assert!(!output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(report["report"]["coverage"]["status"], "partial");
-    assert_eq!(report["report"]["coverage"]["discovered"], 3);
-    assert_eq!(report["report"]["coverage"]["checked"], 2);
-    assert_eq!(report["report"]["coverage"]["failed"], 1);
-    assert!(report["report"]["failures"]
+    assert_eq!(out["report"]["coverage"]["checked"], 2);
+    let names: Vec<&str> = out["report"]["targets"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|failure| failure["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("provider is ambiguous"))));
-    let generic = report["report"]["targets"]
-        .as_array()
+        .map(|target| target["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Person", "Employee"]);
+}
+
+// ---------------------------------------------------------------------------
+// Profile selection: explicit --profile, else package.json-detected providers.
+// ---------------------------------------------------------------------------
+
+const PLAIN_ZOD: (&str, &str) = (
+    "schema.ts",
+    r#"import { z } from "zod";
+export const Plain = z.object({ name: z.string() });
+"#,
+);
+
+fn check_with_package_json(package_json: &str) -> (String, JsonOutput) {
+    let tmp = TempDir::new().unwrap();
+    setup_ts_project(tmp.path(), &[PLAIN_ZOD]);
+    fs::write(tmp.path().join("package.json"), package_json).unwrap();
+    let output = Command::cargo_bin("schemalint")
         .unwrap()
-        .iter()
-        .find(|target| target["canonical_kind"] == "ai.Output.object")
+        .current_dir(tmp.path())
+        .args(["check-node", "-S", "src/**/*.ts", "-f", "json"])
+        .output()
         .unwrap();
-    assert_eq!(generic["provider"]["certainty"], "ambiguous");
-    assert_eq!(generic["effective_profiles"], serde_json::json!([]));
-    assert_eq!(generic["status"], "failed");
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let out: JsonOutput = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("JSON parse failed: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
+    (stderr, out)
+}
+
+#[test]
+fn e2e_anthropic_dependency_selects_anthropic_profile() {
+    let (stderr, out) = check_with_package_json(
+        r#"{"dependencies":{"zod":"^3.23.0","@anthropic-ai/sdk":"^0.30.0"}}"#,
+    );
+    assert_eq!(out.profiles, vec!["anthropic.so.2026-04-30"], "{stderr}");
+    assert_eq!(out.summary.schemas_checked, 1, "{stderr}");
+}
+
+#[test]
+fn e2e_both_sdk_dependencies_check_against_both_profiles() {
+    let (stderr, out) = check_with_package_json(
+        r#"{"dependencies":{"zod":"^3","openai":"^4","@anthropic-ai/sdk":"^0.30.0"}}"#,
+    );
+    assert!(out.profiles.iter().any(|p| p == "openai.so.2026-04-30"));
+    assert!(out.profiles.iter().any(|p| p == "anthropic.so.2026-04-30"));
+    assert_eq!(out.summary.schemas_checked, 1, "{stderr}");
+    assert!(!stderr.contains("ambiguous"), "{stderr}");
 }

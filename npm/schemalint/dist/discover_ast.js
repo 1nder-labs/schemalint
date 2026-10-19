@@ -1,112 +1,24 @@
-/** Methods that keep a `z.object` schema an object schema when chained. */
-export const OBJECT_CHAIN_METHODS = new Set([
-    'extend',
-    'merge',
-    'pick',
-    'omit',
-]);
 /**
- * Find top-level `const` declarations that are `z.object({...})` calls.
- */
-export function findExportedSchemaCalls(sourceFile, tsModule) {
-    const results = [];
-    function walk(node) {
-        if (tsModule.isVariableStatement(node) &&
-            node.declarationList.declarations.length === 1) {
-            const decl = node.declarationList.declarations[0];
-            if (tsModule.isIdentifier(decl.name) &&
-                decl.initializer &&
-                hasExportModifier(node, tsModule)) {
-                const call = findZObjectCall(decl.initializer, tsModule);
-                if (call) {
-                    results.push({
-                        name: decl.name.text,
-                        objectArg: call,
-                        seedExpr: decl.name,
-                    });
-                }
-            }
-        }
-        // Also handle `export default z.object({...})`
-        if (tsModule.isExportAssignment(node) &&
-            !node.isExportEquals &&
-            tsModule.isCallExpression(node.expression)) {
-            const call = findZObjectCall(node.expression, tsModule);
-            if (call) {
-                results.push({
-                    name: 'default',
-                    objectArg: call,
-                    seedExpr: node.expression,
-                });
-            }
-        }
-        tsModule.forEachChild(node, walk);
-    }
-    tsModule.forEachChild(sourceFile, walk);
-    return results;
-}
-export function hasExportModifier(node, tsModule) {
-    if (!tsModule.canHaveModifiers(node))
-        return false;
-    const modifiers = tsModule.getModifiers(node);
-    if (!modifiers)
-        return false;
-    for (const mod of modifiers) {
-        if (mod.kind === tsModule.SyntaxKind.ExportKeyword)
-            return true;
-    }
-    return false;
-}
-/**
- * Given a node, if it is `z.object({...})`, return the ObjectLiteralExpression argument.
- * Handles chaining: `z.object({...}).extend({...})` — returns the initial object.
+ * The object literal a Zod object schema is built from: the first argument of
+ * the innermost call in its chain (`z.object({...}).extend(...)`,
+ * `z.strictObject({...}).describe('x')`). Matched by shape, not by name.
  */
 export function findZObjectCall(node, tsModule) {
-    // Unwrap parenthesized expressions
-    while (tsModule.isParenthesizedExpression(node)) {
-        node = node.expression;
-    }
-    // Handle `export default z.object({...})` wrapped in another call expression
-    // e.g., z.object({...}).extend({...})
-    if (tsModule.isCallExpression(node) &&
-        tsModule.isPropertyAccessExpression(node.expression)) {
-        // Check if the inner node is a z.object() call
-        const innerNode = node.expression.expression;
-        if (tsModule.isCallExpression(innerNode) &&
-            isZObjectCallExpression(innerNode, tsModule)) {
-            const prop = innerNode.arguments[0];
-            if (prop && tsModule.isObjectLiteralExpression(prop)) {
-                return prop;
-            }
+    let current = node;
+    for (;;) {
+        while (tsModule.isParenthesizedExpression(current))
+            current = current.expression;
+        if (!tsModule.isCallExpression(current))
+            return null;
+        const callee = current.expression;
+        if (tsModule.isPropertyAccessExpression(callee) &&
+            tsModule.isCallExpression(callee.expression)) {
+            current = callee.expression;
+            continue;
         }
-        // Check for .extend() / .merge() / .pick() / .omit() chaining on z.object()
-        if (tsModule.isIdentifier(node.expression.name)) {
-            if (OBJECT_CHAIN_METHODS.has(node.expression.name.text)) {
-                return findZObjectCall(node.expression.expression, tsModule);
-            }
-        }
+        const arg = current.arguments[0];
+        return arg && tsModule.isObjectLiteralExpression(arg) ? arg : null;
     }
-    // Direct z.object() call
-    if (tsModule.isCallExpression(node) &&
-        isZObjectCallExpression(node, tsModule)) {
-        const arg = node.arguments[0];
-        if (arg && tsModule.isObjectLiteralExpression(arg)) {
-            return arg;
-        }
-    }
-    return null;
-}
-/**
- * Check if a CallExpression is `z.object(...)`.
- */
-function isZObjectCallExpression(node, tsModule) {
-    const expr = node.expression;
-    if (!tsModule.isPropertyAccessExpression(expr))
-        return false;
-    return (tsModule.isIdentifier(expr.expression) &&
-        expr.expression.text === 'z' &&
-        tsModule.isIdentifier(expr.name) &&
-        expr.name.text === 'object');
 }
 /**
  * Escape a single JSON Pointer (RFC 6901) segment.

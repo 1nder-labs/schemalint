@@ -11,7 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -29,51 +29,124 @@ export async function evaluateSchema(
   exportName: string
 ): Promise<Record<string, unknown>> {
   return withStdoutRedirect(async () => {
+    return convertExport(await importModule(filePath), exportName, filePath);
+  });
+}
+
+function convertExport(
+  mod: Record<string, unknown>,
+  exportName: string,
+  filePath: string
+): Record<string, unknown> {
+  const schema = mod[exportName];
+  if (!schema) {
+    throw new Error(
+      `Export '${exportName}' not found in module '${filePath}'. ` +
+        `Available exports: ${Object.keys(mod).join(', ') || '(none)'}`
+    );
+  }
+  return zodToJsonSchema(schema, filePath);
+}
+
+/**
+ * One temp root for a whole run. Each distinct `node_modules` is symlinked
+ * once into its own subdirectory, so synthetic modules written there resolve
+ * packages the way the declaring file would.
+ */
+export interface EvalWorkspace {
+  /** A fresh `.ts` path in a directory that resolves `baseFilePath`'s packages. */
+  newModulePath(baseFilePath: string): Promise<string>;
+  dispose(): Promise<void>;
+}
+
+export async function createEvalWorkspace(): Promise<EvalWorkspace> {
+  const root = await mkdtemp(join(tmpdir(), 'schemalint-zod-'));
+  const dirs = new Map<string, Promise<string>>();
+  return {
+    newModulePath: async (baseFilePath) => {
+      const nodeModules = findNearestNodeModules(baseFilePath) ?? '';
+      let dir = dirs.get(nodeModules);
+      if (!dir) {
+        const target = join(root, String(dirs.size));
+        dir = mkdir(target).then(async () => {
+          if (nodeModules) await linkNodeModules(target, nodeModules);
+          return target;
+        });
+        dirs.set(nodeModules, dir);
+      }
+      return join(await dir, `${randomUUID()}.ts`);
+    },
+    dispose: () => rm(root, { recursive: true, force: true }),
+  };
+}
+
+export type ExportOutcome =
+  | { ok: true; schema: Record<string, unknown> }
+  | { ok: false; error: unknown };
+
+/**
+ * Evaluate several exports of one synthetic module with a single write and
+ * import. Each export converts on its own, so one conversion error stays with
+ * its export. A throw while importing the module affects every export, so it
+ * rejects instead; callers retry the exports individually.
+ */
+export async function evaluateSyntheticExports(
+  source: string,
+  exportNames: readonly string[],
+  baseFilePath: string,
+  workspace: EvalWorkspace
+): Promise<ExportOutcome[]> {
+  const filePath = await workspace.newModulePath(baseFilePath);
+  await writeFile(filePath, source, 'utf8');
+  return withStdoutRedirect(async () => {
     const mod = await importModule(filePath);
-    const schema = mod[exportName];
-
-    if (!schema) {
-      throw new Error(
-        `Export '${exportName}' not found in module '${filePath}'. ` +
-          `Available exports: ${Object.keys(mod).join(', ') || '(none)'}`
-      );
-    }
-
-    return zodToJsonSchema(schema, filePath);
+    return exportNames.map((name): ExportOutcome => {
+      try {
+        return { ok: true, schema: convertExport(mod, name, filePath) };
+      } catch (error) {
+        return { ok: false, error };
+      }
+    });
   });
 }
 
 export async function evaluateSyntheticSchema(
   source: string,
   exportName: string,
-  baseFilePath: string
+  baseFilePath: string,
+  sharedWorkspace?: EvalWorkspace
 ): Promise<Record<string, unknown>> {
-  const dir = await mkdtemp(join(tmpdir(), 'schemalint-zod-'));
-  const filePath = join(dir, `${randomUUID()}.ts`);
+  const workspace = sharedWorkspace ?? (await createEvalWorkspace());
   try {
-    await linkNodeModules(dir, baseFilePath);
+    const filePath = await workspace.newModulePath(baseFilePath);
     await writeFile(filePath, source, 'utf8');
     return await evaluateSchema(filePath, exportName);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    if (!sharedWorkspace) await workspace.dispose();
   }
 }
 
-async function withStdoutRedirect<T>(
+let redirectDepth = 0;
+let originalStdoutWrite: typeof process.stdout.write | undefined;
+
+/**
+ * Redirect stdout to stderr during evaluation so user-code console.log()
+ * calls don't corrupt the JSON-RPC protocol channel. Reentrant and safe for
+ * overlapping calls: stdout is restored when the last one finishes.
+ */
+export async function withStdoutRedirect<T>(
   fn: () => Promise<T>
 ): Promise<T> {
-  // Redirect stdout to stderr during evaluation so user-code console.log()
-  // calls don't corrupt the JSON-RPC protocol channel.
-  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = process.stderr.write.bind(
-    process.stderr
-  ) as typeof process.stdout.write;
-
+  if (redirectDepth++ === 0) {
+    originalStdoutWrite = process.stdout.write;
+    process.stdout.write = process.stderr.write.bind(
+      process.stderr
+    ) as typeof process.stdout.write;
+  }
   try {
     return await fn();
   } finally {
-    // Restore stdout
-    process.stdout.write = originalStdoutWrite;
+    if (--redirectDepth === 0) process.stdout.write = originalStdoutWrite!;
   }
 }
 
@@ -84,10 +157,7 @@ async function importModule(filePath: string): Promise<Record<string, unknown>> 
   return (await import(importPath)) as Record<string, unknown>;
 }
 
-async function linkNodeModules(dir: string, baseFilePath: string): Promise<void> {
-  const nodeModules = findNearestNodeModules(baseFilePath);
-  if (!nodeModules) return;
-
+async function linkNodeModules(dir: string, nodeModules: string): Promise<void> {
   try {
     await symlink(nodeModules, join(dir, 'node_modules'), 'dir');
   } catch (err) {
@@ -127,10 +197,18 @@ function zodToJsonSchema(
   // Zod 4 and Zod Mini share the stable `_zod` core marker. Conversion is a
   // package-level API, so resolve it from the user's project, not this helper.
   if ('_zod' in schema) {
+    // `zod/v4/core` is Zod's permanent path to the v4 engine: from 3.25 (where
+    // the package root is still v3) through every 4.x, for classic and mini.
     const userRequire = createRequire(pathToFileURL(sourceFile));
-    const zod = userRequire('zod') as {
-      toJSONSchema?: (value: unknown) => unknown;
-    };
+    const zod = ['zod/v4/core', 'zod']
+      .map((id) => {
+        try {
+          return userRequire(id) as { toJSONSchema?: (value: unknown) => unknown };
+        } catch {
+          return {};
+        }
+      })
+      .find((candidate) => typeof candidate.toJSONSchema === 'function') ?? {};
     if (typeof zod.toJSONSchema !== 'function') {
       throw new Error(
         "Zod v4 schema detected, but its package does not export toJSONSchema"

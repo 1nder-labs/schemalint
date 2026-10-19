@@ -6,10 +6,7 @@
     "baseUrl": ".",
     "paths": {
       "#schemas": ["./aliased-schema.ts"],
-      "ai": ["./ai-shim.ts"],
-      "openai/helpers/zod": ["./openai-zod-shim.ts"],
-      "@anthropic-ai/sdk/helpers/zod": ["./anthropic-zod-shim.ts"],
-      "@anthropic-ai/sdk/helpers/beta/zod": ["./anthropic-zod-shim.ts"]
+      "ai": ["./ai-shim.ts"]
     },
     "strict": true,
     "esModuleInterop": true,
