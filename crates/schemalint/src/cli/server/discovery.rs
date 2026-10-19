@@ -44,7 +44,10 @@ pub(super) fn handle_node(params: Value, state: &mut ServerState) -> Value {
     );
     let profile_ids = match &prepared.profile_ids {
         Some(profile_ids) => profile_ids.clone(),
-        None => crate::cli::default_profile_ids(Path::new(".")),
+        None => match configured_or_default_profile_ids() {
+            Ok(profile_ids) => profile_ids,
+            Err(error) => return json!({"success": false, "error": error}),
+        },
     };
     let profiles = match load_profiles(&profile_ids, &mut state.profiles) {
         Ok(profiles) => profiles,
@@ -56,6 +59,20 @@ pub(super) fn handle_node(params: Value, state: &mut ServerState) -> Value {
     };
     let inputs = explicit_model_inputs(&discovery.models, &rules);
     finish(discovery, &prepared, &profiles, &rules, start, inputs)
+}
+
+/// Resolve omitted profiles exactly like `check-node`: the `"schemalint"`
+/// profiles in `package.json`, else the package.json-detected providers.
+fn configured_or_default_profile_ids() -> Result<Vec<String>, String> {
+    let config_path = Path::new("package.json");
+    let configured = crate::cli::node_config::load_node_config(config_path)?
+        .map(|config| config.profiles)
+        .unwrap_or_default();
+    Ok(if configured.is_empty() {
+        crate::cli::default_profile_ids(config_path)
+    } else {
+        configured
+    })
 }
 
 pub(super) fn handle_python(params: Value, state: &mut ServerState) -> Value {

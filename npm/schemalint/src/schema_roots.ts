@@ -22,12 +22,14 @@ export interface SchemaRoot {
 /**
  * Every Zod object schema `sourceFiles` can build without running a
  * function — declared or inline, exported or not, at module scope or inside a
- * function body — plus the schemas they re-export from other files.
+ * function body — plus the schemas they export, followed through re-exports
+ * and aliases to where each is built.
  *
  * No SDK, wrapper, or spelling is tracked: whatever a schema is later handed
  * to, its value is built here. A schema that uses a parameter, a local, or
  * `this` depends on run-time input, so it cannot be checked statically and is
- * skipped. A schema nested in another is linted as part of its root.
+ * skipped, though a buildable schema inside it is still found. A schema nested
+ * in a buildable one is linted as part of its root.
  */
 export function findSchemaRoots(
   sourceFiles: readonly ts.SourceFile[],
@@ -46,13 +48,15 @@ export function findSchemaRoots(
         mayBuild(node) &&
         isZodObject(node, checker)
       ) {
-        if (buildable(node, checker, tsModule)) add(rootOf(node, sourceFile, tsModule));
-        return;
+        if (buildable(node, checker, tsModule)) {
+          add(rootOf(node, sourceFile, tsModule));
+          return;
+        }
       }
       tsModule.forEachChild(node, visit);
     };
     tsModule.forEachChild(sourceFile, visit);
-    for (const decl of reExported(sourceFile, checker, tsModule)) {
+    for (const decl of exportedSchemas(sourceFile, checker, tsModule)) {
       add(declared(decl, tsModule));
     }
   }
@@ -109,9 +113,18 @@ function zodBuilderCheck(
   const decide = (symbol: ts.Symbol, at: ts.Node): boolean => {
     const target =
       symbol.flags & tsModule.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
-    const files = (target.declarations ?? []).map((decl) => decl.getSourceFile());
+    const declarations = target.declarations ?? [];
+    const files = declarations.map((decl) => decl.getSourceFile());
     if (files.some((file) => ZOD_PACKAGE.test(file.fileName))) return true;
-    if (!files.some(declaredBesideZod)) return false;
+    // A value derived from an imported schema (`Middle = Base.pick(...)`) is
+    // declared where zod is never imported: follow its initializer instead.
+    const derived = declarations.some(
+      (decl) =>
+        tsModule.isVariableDeclaration(decl) &&
+        decl.initializer !== undefined &&
+        headCanBuild(decl.initializer)
+    );
+    if (!derived && !files.some(declaredBesideZod)) return false;
     const type = checker.getTypeOfSymbolAtLocation(symbol, at);
     return (
       isZodValue(type, checker) ||
@@ -120,12 +133,17 @@ function zodBuilderCheck(
         .some((signature) => isZodValue(signature.getReturnType(), checker))
     );
   };
-  return (call) => {
-    let head: ts.Expression = call.expression;
+  function headCanBuild(expression: ts.Expression): boolean {
+    let head = expression;
     for (;;) {
-      if (tsModule.isPropertyAccessExpression(head) || tsModule.isCallExpression(head)) {
-        head = head.expression;
-      } else if (tsModule.isParenthesizedExpression(head) || tsModule.isNonNullExpression(head)) {
+      if (
+        tsModule.isPropertyAccessExpression(head) ||
+        tsModule.isCallExpression(head) ||
+        tsModule.isParenthesizedExpression(head) ||
+        tsModule.isNonNullExpression(head) ||
+        tsModule.isAsExpression(head) ||
+        tsModule.isSatisfiesExpression(head)
+      ) {
         head = head.expression;
       } else {
         break;
@@ -136,11 +154,13 @@ function zodBuilderCheck(
     if (!symbol) return false;
     let verdict = verdicts.get(symbol);
     if (verdict === undefined) {
+      verdicts.set(symbol, false); // a cycle of aliases builds nothing
       verdict = decide(symbol, head);
       verdicts.set(symbol, verdict);
     }
     return verdict;
-  };
+  }
+  return (call) => headCanBuild(call.expression);
 }
 
 /** Every name `root` uses is imported, declared at module level, or declared inside `root`. */
@@ -157,7 +177,7 @@ function buildable(root: ts.Node, checker: ts.TypeChecker, tsModule: typeof ts):
         ? checker.getShorthandAssignmentValueSymbol(node.parent)
         : checker.getSymbolAtLocation(node);
       const decl = symbol?.declarations?.[0];
-      if (decl && !contains(root, decl) && insideFunction(decl, tsModule)) ok = false;
+      if (decl && !contains(root, decl) && !topLevel(decl, tsModule)) ok = false;
     }
     tsModule.forEachChild(node, visit);
   };
@@ -181,11 +201,27 @@ function contains(root: ts.Node, node: ts.Node): boolean {
   );
 }
 
-function insideFunction(node: ts.Node, tsModule: typeof ts): boolean {
-  for (let current = node.parent; current; current = current.parent) {
-    if (tsModule.isFunctionLike(current) || tsModule.isClassLike(current)) return true;
+/**
+ * Declared where the sliced module can reach it: an import, a top-level
+ * statement, or an ambient declaration. Anything in a function, class, block,
+ * or loop exists only at run time (and is not kept by the slicer).
+ */
+function topLevel(node: ts.Node, tsModule: typeof ts): boolean {
+  if (node.getSourceFile().isDeclarationFile) return true;
+  for (let current = node.parent; current && !tsModule.isSourceFile(current); current = current.parent) {
+    if (
+      tsModule.isBlock(current) ||
+      tsModule.isModuleBlock(current) ||
+      tsModule.isCaseBlock(current) ||
+      tsModule.isCatchClause(current) ||
+      tsModule.isIterationStatement(current, false) ||
+      tsModule.isFunctionLike(current) ||
+      tsModule.isClassLike(current)
+    ) {
+      return false;
+    }
   }
-  return false;
+  return true;
 }
 
 function rootOf(
@@ -210,7 +246,7 @@ function rootOf(
       : undefined;
   // A module-level name seeds the slice by its declaration, so the schema is
   // reported once however many files reach it.
-  if (declaration && !insideFunction(declaration, tsModule)) {
+  if (declaration && topLevel(declaration, tsModule)) {
     return declared(declaration, tsModule);
   }
 
@@ -241,27 +277,57 @@ function declared(decl: ts.VariableDeclaration, tsModule: typeof ts): SchemaRoot
   };
 }
 
-/** Schemas a barrel file re-exports (`export * from`, `export { X } from`) from another file. */
-function reExported(
+/**
+ * The declarations behind a file's exported schemas, followed through
+ * re-exports (`export { X } from`) and value aliases (`export const B = A`)
+ * to where each schema is built, so an alias is reported once, as its source.
+ */
+function exportedSchemas(
   sourceFile: ts.SourceFile,
   checker: ts.TypeChecker,
   tsModule: typeof ts
 ): ts.VariableDeclaration[] {
   const moduleSymbol = checker.getSymbolAtLocation(sourceFile);
   if (!moduleSymbol) return [];
-  return checker.getExportsOfModule(moduleSymbol).flatMap((exported) => {
-    const symbol =
-      exported.flags & tsModule.SymbolFlags.Alias
-        ? checker.getAliasedSymbol(exported)
-        : exported;
-    const decl = symbol.valueDeclaration;
-    if (!decl || !tsModule.isVariableDeclaration(decl) || !tsModule.isIdentifier(decl.name)) {
-      return [];
+  const resolve = (symbol: ts.Symbol): ts.VariableDeclaration | undefined => {
+    // ponytail: alias chains are a few hops; 8 also stops an alias cycle.
+    for (let hop = 0; hop < 8; hop++) {
+      const target =
+        symbol.flags & tsModule.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+      const decl = target.valueDeclaration;
+      if (
+        !decl ||
+        !tsModule.isVariableDeclaration(decl) ||
+        !tsModule.isIdentifier(decl.name) ||
+        !decl.initializer
+      ) {
+        return undefined;
+      }
+      let initializer = decl.initializer;
+      while (
+        tsModule.isParenthesizedExpression(initializer) ||
+        tsModule.isAsExpression(initializer) ||
+        tsModule.isSatisfiesExpression(initializer)
+      ) {
+        initializer = initializer.expression;
+      }
+      if (!tsModule.isIdentifier(initializer)) return decl;
+      const next = checker.getSymbolAtLocation(initializer);
+      if (!next) return undefined;
+      symbol = next;
     }
-    const file = decl.getSourceFile();
-    const foreign =
-      file !== sourceFile && !file.isDeclarationFile && !file.fileName.includes('node_modules');
-    return foreign && isZodObject(decl.name, checker) ? [decl] : [];
+    return undefined;
+  };
+  return checker.getExportsOfModule(moduleSymbol).flatMap((exported) => {
+    const decl = resolve(exported);
+    const file = decl?.getSourceFile();
+    return decl &&
+      file &&
+      !file.isDeclarationFile &&
+      !file.fileName.includes('node_modules') &&
+      isZodObject(decl.name, checker)
+      ? [decl]
+      : [];
   });
 }
 
