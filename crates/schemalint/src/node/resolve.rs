@@ -62,9 +62,23 @@ pub(super) fn resolve_compiled_helper_path() -> Option<PathBuf> {
             return Some(path);
         }
     }
+    // The npm postinstall puts this binary at `bin/schemalint` in the package,
+    // beside the sidecar, so a package-manager link runs it with no Node wrapper.
+    if let Some(path) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| sibling_helper(&exe))
+    {
+        return Some(path);
+    }
     let ws_root = workspace_root().ok()?;
     let bin_path = ws_root.join("npm/schemalint/bin/schemalint-zod.js");
     bin_path.exists().then_some(bin_path)
+}
+
+/// `schemalint-zod.js` next to the real (symlink-resolved) executable.
+fn sibling_helper(exe: &Path) -> Option<PathBuf> {
+    let path = exe.canonicalize().ok()?.parent()?.join("schemalint-zod.js");
+    path.is_file().then_some(path)
 }
 
 fn workspace_root() -> Result<PathBuf, NodeError> {
@@ -79,4 +93,25 @@ fn workspace_root() -> Result<PathBuf, NodeError> {
                 manifest_dir.display()
             ))
         })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::sibling_helper;
+
+    #[test]
+    fn sibling_helper_follows_a_global_bin_symlink_into_the_package() {
+        let root = tempfile::tempdir().unwrap();
+        let bin = root.path().join("pkg/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("schemalint"), "").unwrap();
+        std::fs::write(bin.join("schemalint-zod.js"), "").unwrap();
+        let link = root.path().join("schemalint");
+        std::os::unix::fs::symlink(bin.join("schemalint"), &link).unwrap();
+
+        let found = sibling_helper(&link).unwrap();
+        assert_eq!(found, bin.canonicalize().unwrap().join("schemalint-zod.js"));
+        std::fs::remove_file(bin.join("schemalint-zod.js")).unwrap();
+        assert_eq!(sibling_helper(&link), None);
+    }
 }
