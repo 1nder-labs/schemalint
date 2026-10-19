@@ -727,7 +727,8 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: false
 
-  # Smoke-test npm wrapper auto-download (requires GitHub Release to exist)
+  # Smoke-test the npm install: postinstall download + native bin entry
+  # (requires GitHub Release to exist)
   smoke-npm:
     needs:
       - create-github-release
@@ -766,6 +767,14 @@ jobs:
         shell: bash
         run: |
           schemalint --version
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            # The postinstall must have replaced the Node launcher with the binary.
+            entry=$(node -p 'require("fs").realpathSync(process.argv[1])' "$(command -v schemalint)")
+            if [ "$(head -c 2 "$entry")" = '#!' ]; then
+              echo "::error::$entry is still the Node launcher; the postinstall did not install the native binary"
+              exit 1
+            fi
+          fi
           echo '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false}' > test-schema.json
           schemalint check test-schema.json --profile openai.so.2026-04-30
 
