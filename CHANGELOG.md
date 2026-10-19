@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0](https://github.com/1nder-labs/schemalint/compare/v1.4.0...v2.0.0) (2026-10-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **node:** check-node lints every buildable Zod object schema in the scoped files instead of only SDK-traced (glob) or exported (file or directory) ones, so more schemas are checked. Targets are named after their declaration or `inline:<line>`, provider is always ambiguous, the -S-envelope-name rule is gone, and a project listing both OpenAI and Anthropic SDKs is checked against both profiles.
+
+### Features
+
+* **node:** lint every Zod object schema the code builds, with no SDK list ([b40117a](https://github.com/1nder-labs/schemalint/commit/b40117a482c9c45107a13c3b9b1d485bd3b276a2))
+
+
+### Bug Fixes
+
+* **node:** close the gaps the discovery review found ([6357a18](https://github.com/1nder-labs/schemalint/commit/6357a18f28ff6b4e66812dc72cd198a26b0db35d))
+* **node:** follow every alias, keep block exports and server config honest ([44a039a](https://github.com/1nder-labs/schemalint/commit/44a039a760a34d4e524b4967bb6666dface696e8))
+
 ## [1.4.0](https://github.com/1nder-labs/schemalint/compare/v1.3.2...v1.4.0) (2026-10-19)
 
 
