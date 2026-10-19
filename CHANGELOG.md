@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0](https://github.com/1nder-labs/schemalint/compare/v1.3.2...v1.4.0) (2026-10-19)
+
+
+### Features
+
+* **node:** find the Zod sidecar beside the running executable ([36c0b5f](https://github.com/1nder-labs/schemalint/commit/36c0b5f74dd98ffb933072f3894eab1162ae789c))
+
+
+### Bug Fixes
+
+* **npm:** keep the package unplugged under Yarn PnP ([0122a19](https://github.com/1nder-labs/schemalint/commit/0122a198c61bf7279d018db67d548a31435d2825))
+* **npm:** never record a fast-path key for bytes that were not hashed ([4117dfe](https://github.com/1nder-labs/schemalint/commit/4117dfe754a0f2117ad74457f5f640adf0e496c8))
+* **npm:** reject a cached binary that changes while it is hashed ([9382bd7](https://github.com/1nder-labs/schemalint/commit/9382bd7a578884fb4ce796b8e821f48099a16fd5))
+
+
+### Performance Improvements
+
+* **npm:** run the native binary straight from the bin entry ([08a81e6](https://github.com/1nder-labs/schemalint/commit/08a81e663ae094bf5e513b3be02afc2dbf14f67f))
+* **npm:** skip re-hashing an unchanged cached binary in the launcher ([03e84ba](https://github.com/1nder-labs/schemalint/commit/03e84ba2ac1bbf2ca0e77d15746a22ca3cbdb90d))
+
 ## [1.3.2](https://github.com/1nder-labs/schemalint/compare/v1.3.1...v1.3.2) (2026-09-29)
 
 
