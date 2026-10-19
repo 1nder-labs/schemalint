@@ -164,10 +164,9 @@ async function ensureBinary(overrides = {}) {
       if (platform !== 'win32') fs.chmodSync(extractedBinary, 0o755);
       fs.renameSync(extractedBinary, binaryPath);
 
-      // The key is saved only if the file did not change while it was hashed.
-      const statBefore = statKey(binaryPath);
+      const stat = statKey(binaryPath);
       const binarySha256 = await sha256File(binaryPath);
-      const stat = statKey(binaryPath) === statBefore ? statBefore : undefined;
+      if (statKey(binaryPath) !== stat) throw new Error('binary changed while it was hashed');
       fs.writeFileSync(
         sentinelPath,
         JSON.stringify({ archiveSha256: expectedArchiveHash, binarySha256, stat })
