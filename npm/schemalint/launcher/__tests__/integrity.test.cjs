@@ -157,3 +157,28 @@ test('manifest rejects version mismatch, missing target, and malformed digest', 
   assert.throws(() => targetDigest(manifest('0'.repeat(64)), 'missing', ARCHIVE), /no digest/);
   assert.throws(() => targetDigest(manifest('wrong'), TARGET, ARCHIVE), /invalid SHA-256/);
 });
+
+test('a same-size rewrite with a restored mtime still fails the cache check', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'schemalint-statkey-'));
+  const source = path.join(dir, ARCHIVE);
+  fs.writeFileSync(source, 'trusted archive');
+  const hash = await sha256File(source);
+  const binaryPath = path.join(dir, 'cache', TARGET, 'schemalint');
+  await ensureBinary({
+    target: TARGET,
+    platform: 'linux',
+    binaryPath,
+    manifest: manifest(hash),
+    download: async (_url, destination) => fs.copyFileSync(source, destination),
+    extract: (_archive, destination) => {
+      fs.writeFileSync(path.join(destination, 'schemalint'), 'binary-A');
+    },
+  });
+  const sentinel = `${binaryPath}.verified`;
+  assert.equal(await readVerifiedCache(binaryPath, sentinel, hash), true);
+
+  const { atime, mtime } = fs.statSync(binaryPath);
+  fs.writeFileSync(binaryPath, 'binary-B');
+  fs.utimesSync(binaryPath, atime, mtime);
+  assert.equal(await readVerifiedCache(binaryPath, sentinel, hash), false);
+});

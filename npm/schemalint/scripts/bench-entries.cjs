@@ -101,14 +101,21 @@ function preparePackage() {
   const pack = run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', ROOT], { cwd: pkg });
   if (pack.status !== 0) throw new Error(pack.stderr);
 
-  const cached = path.join(ROOT, 'cache', VERSION, target, 'schemalint');
-  fs.mkdirSync(path.dirname(cached), { recursive: true });
-  fs.copyFileSync(BINARY, cached);
-  fs.writeFileSync(`${cached}.verified`, JSON.stringify({
-    archiveSha256: sha256(archive),
-    binarySha256: sha256(cached),
-  }));
-  return path.join(ROOT, JSON.parse(pack.stdout)[0].filename);
+  return {
+    tarball: path.join(ROOT, JSON.parse(pack.stdout)[0].filename),
+    manifest: JSON.parse(fs.readFileSync(path.join(pkg, 'native-manifest.json'), 'utf8')),
+    archive,
+  };
+}
+
+// Fill the cache through the launcher's own install path, as a first run would.
+async function seedCache({ manifest, archive }) {
+  const { ensureBinary } = require('../launcher/ensure-binary.cjs');
+  await ensureBinary({
+    manifest,
+    binaryPath: path.join(ROOT, 'cache', VERSION, config.getTarget(), 'schemalint'),
+    download: async (_url, destination) => fs.copyFileSync(archive, destination),
+  });
 }
 
 function guardEnvironment() {
@@ -187,9 +194,11 @@ function entryKind(entry) {
   }
 }
 
-function main() {
+async function main() {
   const realLinks = realGlobalLinks();
-  const tarball = preparePackage();
+  const prepared = preparePackage();
+  await seedCache(prepared);
+  const { tarball } = prepared;
   const { guard, sentinelLink } = guardEnvironment();
   const fixture = path.join(ROOT, 'fixture');
   fs.mkdirSync(path.join(fixture, 'src'), { recursive: true });
@@ -260,4 +269,7 @@ function main() {
   process.exitCode = Object.values(report.gates).every((gate) => gate !== false) ? 0 : 1;
 }
 
-main();
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
