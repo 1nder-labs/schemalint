@@ -264,7 +264,8 @@ jobs:
   python-wheel:
     name: Wheel (${{ matrix.python }}, ${{ matrix.pydantic_label }})
     needs: python-wheel-build
-    runs-on: ubuntu-latest
+    # ponytail: ubuntu-26.04 ships no Python 3.9 build; move off 24.04 when the 3.9 floor goes.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
