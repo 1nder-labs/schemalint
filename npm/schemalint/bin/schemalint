@@ -1,0 +1,6 @@
+#!/usr/bin/env node
+// Fallback launcher. On macOS and Linux the postinstall replaces this file
+// with the native binary itself, so package-manager links skip Node entirely.
+// Extensionless so pnpm's shim follows the file's contents, not its name;
+// import() because this package is "type": "module".
+import('../index.cjs');
