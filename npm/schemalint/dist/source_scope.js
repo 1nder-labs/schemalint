@@ -9,16 +9,15 @@ const SOURCE_EXTENSIONS = '{ts,tsx,mts,cts}';
 export function resolveSourceScope(source, matcher, projectRoot) {
     // On disk decides: no real file is named `*.ts`, while a real directory
     // can be named `(marketing)`, so a glob-syntax check would misread it.
-    const explicit = existingKind(source, projectRoot);
+    const kind = existingKind(source, projectRoot);
     const trimmed = source.replace(/\/+$/, '');
-    const pattern = explicit === 'directory' ? `${trimmed}/**/*.${SOURCE_EXTENSIONS}` : source;
+    const pattern = kind === 'directory' ? `${trimmed}/**/*.${SOURCE_EXTENSIONS}` : source;
     return {
         pattern,
         isMatch: matcher(pattern, { dot: true }),
-        explicit: explicit !== false,
-        ...(explicit && {
+        ...(kind && {
             target: {
-                kind: explicit,
+                kind,
                 absolute: realpathSync(path.resolve(projectRoot, source)),
             },
         }),

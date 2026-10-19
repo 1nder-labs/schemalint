@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -23,38 +23,89 @@ const localRequire = createRequire(import.meta.url);
  */
 export async function evaluateSchema(filePath, exportName) {
     return withStdoutRedirect(async () => {
-        const mod = await importModule(filePath);
-        const schema = mod[exportName];
-        if (!schema) {
-            throw new Error(`Export '${exportName}' not found in module '${filePath}'. ` +
-                `Available exports: ${Object.keys(mod).join(', ') || '(none)'}`);
-        }
-        return zodToJsonSchema(schema, filePath);
+        return convertExport(await importModule(filePath), exportName, filePath);
     });
 }
-export async function evaluateSyntheticSchema(source, exportName, baseFilePath) {
-    const dir = await mkdtemp(join(tmpdir(), 'schemalint-zod-'));
-    const filePath = join(dir, `${randomUUID()}.ts`);
+function convertExport(mod, exportName, filePath) {
+    const schema = mod[exportName];
+    if (!schema) {
+        throw new Error(`Export '${exportName}' not found in module '${filePath}'. ` +
+            `Available exports: ${Object.keys(mod).join(', ') || '(none)'}`);
+    }
+    return zodToJsonSchema(schema, filePath);
+}
+export async function createEvalWorkspace() {
+    const root = await mkdtemp(join(tmpdir(), 'schemalint-zod-'));
+    const dirs = new Map();
+    return {
+        newModulePath: async (baseFilePath) => {
+            const nodeModules = findNearestNodeModules(baseFilePath) ?? '';
+            let dir = dirs.get(nodeModules);
+            if (!dir) {
+                const target = join(root, String(dirs.size));
+                dir = mkdir(target).then(async () => {
+                    if (nodeModules)
+                        await linkNodeModules(target, nodeModules);
+                    return target;
+                });
+                dirs.set(nodeModules, dir);
+            }
+            return join(await dir, `${randomUUID()}.ts`);
+        },
+        dispose: () => rm(root, { recursive: true, force: true }),
+    };
+}
+/**
+ * Evaluate several exports of one synthetic module with a single write and
+ * import. Each export converts on its own, so one conversion error stays with
+ * its export. A throw while importing the module affects every export, so it
+ * rejects instead; callers retry the exports individually.
+ */
+export async function evaluateSyntheticExports(source, exportNames, baseFilePath, workspace) {
+    const filePath = await workspace.newModulePath(baseFilePath);
+    await writeFile(filePath, source, 'utf8');
+    return withStdoutRedirect(async () => {
+        const mod = await importModule(filePath);
+        return exportNames.map((name) => {
+            try {
+                return { ok: true, schema: convertExport(mod, name, filePath) };
+            }
+            catch (error) {
+                return { ok: false, error };
+            }
+        });
+    });
+}
+export async function evaluateSyntheticSchema(source, exportName, baseFilePath, sharedWorkspace) {
+    const workspace = sharedWorkspace ?? (await createEvalWorkspace());
     try {
-        await linkNodeModules(dir, baseFilePath);
+        const filePath = await workspace.newModulePath(baseFilePath);
         await writeFile(filePath, source, 'utf8');
         return await evaluateSchema(filePath, exportName);
     }
     finally {
-        await rm(dir, { recursive: true, force: true });
+        if (!sharedWorkspace)
+            await workspace.dispose();
     }
 }
-async function withStdoutRedirect(fn) {
-    // Redirect stdout to stderr during evaluation so user-code console.log()
-    // calls don't corrupt the JSON-RPC protocol channel.
-    const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-    process.stdout.write = process.stderr.write.bind(process.stderr);
+let redirectDepth = 0;
+let originalStdoutWrite;
+/**
+ * Redirect stdout to stderr during evaluation so user-code console.log()
+ * calls don't corrupt the JSON-RPC protocol channel. Reentrant and safe for
+ * overlapping calls: stdout is restored when the last one finishes.
+ */
+export async function withStdoutRedirect(fn) {
+    if (redirectDepth++ === 0) {
+        originalStdoutWrite = process.stdout.write;
+        process.stdout.write = process.stderr.write.bind(process.stderr);
+    }
     try {
         return await fn();
     }
     finally {
-        // Restore stdout
-        process.stdout.write = originalStdoutWrite;
+        if (--redirectDepth === 0)
+            process.stdout.write = originalStdoutWrite;
     }
 }
 async function importModule(filePath) {
@@ -63,10 +114,7 @@ async function importModule(filePath) {
         : pathToFileURL(filePath).href;
     return (await import(importPath));
 }
-async function linkNodeModules(dir, baseFilePath) {
-    const nodeModules = findNearestNodeModules(baseFilePath);
-    if (!nodeModules)
-        return;
+async function linkNodeModules(dir, nodeModules) {
     try {
         await symlink(nodeModules, join(dir, 'node_modules'), 'dir');
     }
@@ -102,8 +150,19 @@ function zodToJsonSchema(schema, sourceFile) {
     // Zod 4 and Zod Mini share the stable `_zod` core marker. Conversion is a
     // package-level API, so resolve it from the user's project, not this helper.
     if ('_zod' in schema) {
+        // `zod/v4/core` is Zod's permanent path to the v4 engine: from 3.25 (where
+        // the package root is still v3) through every 4.x, for classic and mini.
         const userRequire = createRequire(pathToFileURL(sourceFile));
-        const zod = userRequire('zod');
+        const zod = ['zod/v4/core', 'zod']
+            .map((id) => {
+            try {
+                return userRequire(id);
+            }
+            catch {
+                return {};
+            }
+        })
+            .find((candidate) => typeof candidate.toJSONSchema === 'function') ?? {};
         if (typeof zod.toJSONSchema !== 'function') {
             throw new Error("Zod v4 schema detected, but its package does not export toJSONSchema");
         }

@@ -19,7 +19,6 @@ This page lists all lint rules grouped by category.
 | [else](./keyword/else.md) | keyword | Forbid | `OAI-K-else` | `ANT-K-else` |
 | [empty-object](./semantic/empty-object.md) | semantic | Warn | `OAI-S-empty-object` | `ANT-S-empty-object` |
 | [enum-string-length-budget](./structural/enum-string-length-budget.md) | structural | Forbid | `OAI-S-enum-string-length-budget` | `—` |
-| [envelope-name](./structural/envelope-name.md) | structural | Forbid | `OAI-S-envelope-name` | `ANT-S-envelope-name` |
 | [exclusiveMaximum](./keyword/exclusiveMaximum.md) | keyword | Forbid | `—` | `ANT-K-exclusiveMaximum` |
 | [exclusiveMinimum](./keyword/exclusiveMinimum.md) | keyword | Forbid | `—` | `ANT-K-exclusiveMinimum` |
 | [external-refs](./structural/external-refs.md) | structural | Forbid | `OAI-S-external-refs` | `ANT-S-external-refs` |

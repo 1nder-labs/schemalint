@@ -40,11 +40,7 @@ fn main() {
     let mut deduped: BTreeMap<String, DedupedRule> = BTreeMap::new();
 
     // Collect static rules from linkme slice.
-    for metadata in RULES
-        .iter()
-        .filter_map(|rule| rule.metadata())
-        .chain(std::iter::once(schemalint::rules::envelope::metadata()))
-    {
+    for metadata in RULES.iter().filter_map(|rule| rule.metadata()) {
         let entry = DedupedRule {
             name: metadata.name.clone(),
             description: metadata.description.clone(),

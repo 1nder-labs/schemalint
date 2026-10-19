@@ -53,7 +53,6 @@ mod check_node;
 mod check_python;
 mod discovery_policy;
 mod glob;
-mod node_policy;
 mod pipeline;
 mod profiles_cmd;
 mod report;

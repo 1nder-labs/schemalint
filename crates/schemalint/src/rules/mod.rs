@@ -1,6 +1,5 @@
 pub mod class_a;
 pub mod class_b;
-pub mod envelope;
 pub mod metadata;
 pub mod registry;
 pub mod semantic;

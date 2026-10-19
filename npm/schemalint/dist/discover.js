@@ -1,6 +1,10 @@
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
-import { evaluateSyntheticSchema } from './evaluate.js';
+import { createEvalWorkspace, evaluateSyntheticExports, evaluateSyntheticSchema, withStdoutRedirect, } from './evaluate.js';
+import { groupByProject, listScopeFiles } from './projects.js';
+import { findSchemaRoots } from './schema_roots.js';
+import { buildSlicedModule, buildSlicedModuleBatch, safeName } from './slice.js';
+import { resolveSourceScope } from './source_scope.js';
 /**
  * Normalize a file-system path to forward slashes.
  *
@@ -15,86 +19,95 @@ import { evaluateSyntheticSchema } from './evaluate.js';
 export function toPosixPath(p, sep = path.sep) {
     return sep === '/' ? p : p.split(sep).join('/');
 }
-import { exportedSchemaTargets } from './exported_targets.js';
-import { groupByProject, listScopeFiles, } from './projects.js';
-import { resolveSourceScope } from './source_scope.js';
-import { findSchemaTargets } from './targets.js';
+// ponytail: Zod 4's own wording for a type with no JSON Schema form (Date,
+// transforms, custom types). Zod 3's converter never throws it.
+const UNREPRESENTABLE = 'cannot be represented in JSON Schema';
 /**
- * Name the cause of an empty discovery result: the source scope matched no
- * TypeScript file on disk.
+ * Slice every root of one declaring file into a single module and evaluate it
+ * with one import. If the batch cannot be built or imported (one seed's
+ * closure throwing at module level poisons the rest), evaluate each root on its
+ * own so every result matches the per-root outcome.
  */
-function emptyDiscoveryWarning(sourceGlob) {
-    return {
-        model: '',
-        message: `No file on disk matched source glob '${sourceGlob}'.`,
-    };
-}
-/** Import each target and convert it to JSON Schema, recording per-target failures. */
-async function evaluateTargets(locations, failures) {
-    const models = [];
-    for (const loc of locations) {
-        try {
-            const schemaJson = await evaluateSyntheticSchema(loc.syntheticSource, loc.exportName, loc.filePath);
-            models.push({
-                name: loc.name,
-                module_path: loc.filePath,
-                schema: schemaJson,
-                source_map: loc.sourceMap,
-                canonical_kind: loc.canonicalKind,
-                provider: loc.provider,
-                envelope: loc.envelope,
-                usage_span: loc.usageSpan,
-            });
+async function evaluateFile(fileRoots, compilerOptions, tsModule, workspace) {
+    const filePath = fileRoots[0].sourceFile.fileName;
+    const exportNameOf = (root, index) => `__schemalint_target_${safeName(root.name)}${index === undefined ? '' : `_${index}`}`;
+    try {
+        const exportNames = fileRoots.map((root, i) => exportNameOf(root, i));
+        const source = buildSlicedModuleBatch(fileRoots[0].sourceFile, fileRoots.map((root, i) => ({ seed: root.seed, exportName: exportNames[i] })), tsModule, compilerOptions);
+        const results = await evaluateSyntheticExports(source, exportNames, filePath, workspace);
+        return results.map((r) => (r.ok ? { schema: r.schema } : { error: r.error }));
+    }
+    catch {
+        const outcomes = [];
+        for (const root of fileRoots) {
+            const exportName = exportNameOf(root);
+            try {
+                const source = buildSlicedModule(root.sourceFile, root.seed, exportName, tsModule, compilerOptions);
+                outcomes.push({
+                    schema: await evaluateSyntheticSchema(source, exportName, filePath, workspace),
+                });
+            }
+            catch (error) {
+                outcomes.push({ error });
+            }
         }
-        catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            failures.push({
-                kind: 'evaluation',
-                target: loc.name,
-                message: `Failed to evaluate schema '${loc.name}' in ${loc.filePath}: ${message}`,
-            });
-        }
+        return outcomes;
     }
-    return models;
 }
-/** Build one program for a tsconfig group and discover its schemas. */
-async function discoverInProject(group, scope, tsModule, acc) {
-    const program = tsModule.createProgram(group.files, group.compilerOptions);
-    const fileSet = new Set(group.files);
-    const selectedSourceFiles = program.getSourceFiles().filter((sourceFile) => !sourceFile.isDeclarationFile &&
-        !sourceFile.fileName.includes('node_modules') &&
-        fileSet.has(sourceFile.fileName));
-    // Step 1: schemas traced to a provider call site — AI SDK, OpenAI helpers,
-    // Anthropic helpers — through any number of wrapper functions.
-    const callsiteDiscovery = findSchemaTargets(program, fileSet, tsModule, group.compilerOptions);
-    const traced = callsiteDiscovery.targets.filter((target) => !target.declaration || !acc.reported.has(target.declaration));
-    for (const target of traced) {
-        if (target.declaration)
-            acc.reported.add(target.declaration);
+/** Slice each schema out of its declaring file and convert it to JSON Schema. */
+async function evaluateRoots(roots, compilerOptions, tsModule) {
+    const out = { models: [], failures: [], skipped: [] };
+    const byFile = new Map();
+    roots.forEach((root, i) => {
+        const indexes = byFile.get(root.sourceFile);
+        if (indexes)
+            indexes.push(i);
+        else
+            byFile.set(root.sourceFile, [i]);
+    });
+    const outcomes = new Array(roots.length);
+    const workspace = await createEvalWorkspace();
+    try {
+        await withStdoutRedirect(async () => {
+            // Sequential: measured, importing files 8 at a time was not faster.
+            for (const indexes of byFile.values()) {
+                const results = await evaluateFile(indexes.map((i) => roots[i]), compilerOptions, tsModule, workspace);
+                indexes.forEach((rootIndex, k) => (outcomes[rootIndex] = results[k]));
+            }
+        });
     }
-    acc.locations += traced.length;
-    acc.discoveryFailures += callsiteDiscovery.failures.length;
-    acc.failures.push(...callsiteDiscovery.failures);
-    acc.models.push(...(await evaluateTargets(traced, acc.failures)));
-    // Step 2: exported schemas. In explicit scope (the source named a file or
-    // directory) the user pointed at these files, so every exported schema in
-    // them is linted alongside the traced ones. In glob scope only traced
-    // schemas count, and exported schemas are a fallback solely for projects
-    // that use no known provider SDK at all: when the SDK is present but
-    // nothing traced, linting every export would flag schemas that never reach
-    // a model, so the run reports the gap instead.
-    if (scope.explicit || callsiteDiscovery.sdkFiles === 0) {
-        const tracedDeclarations = new Set(callsiteDiscovery.targets.map((target) => target.declaration));
-        const exported = exportedSchemaTargets(selectedSourceFiles, program.getTypeChecker(), tsModule, group.compilerOptions).filter((target) => !tracedDeclarations.has(target.declaration) &&
-            !acc.reported.has(target.declaration ?? ''));
-        for (const target of exported)
-            acc.reported.add(target.declaration ?? '');
-        acc.locations += exported.length;
-        acc.models.push(...(await evaluateTargets(exported, acc.failures)));
+    finally {
+        await workspace.dispose();
     }
-    else {
-        acc.sdkFiles += callsiteDiscovery.sdkFiles;
-    }
+    roots.forEach((root, i) => {
+        const filePath = root.sourceFile.fileName;
+        const outcome = outcomes[i];
+        if ('schema' in outcome) {
+            const line = root.sourceMap['']?.line ?? 1;
+            out.models.push({
+                name: root.name,
+                module_path: filePath,
+                schema: outcome.schema,
+                source_map: root.sourceMap,
+                canonical_kind: 'zod.export',
+                provider: { certainty: 'ambiguous' },
+                envelope: {},
+                usage_span: { file: filePath, line, col: 1 },
+            });
+            return;
+        }
+        const err = outcome.error;
+        const message = `Failed to evaluate schema '${root.name}' in ${filePath}: ${err instanceof Error ? err.message : String(err)}`;
+        // A schema Zod cannot express as JSON Schema cannot be sent to a model
+        // as structured output, so it is reported and left out of coverage.
+        if (message.includes(UNREPRESENTABLE)) {
+            out.skipped.push({ model: root.name, message: `Skipped: ${message}` });
+        }
+        else {
+            out.failures.push({ kind: 'evaluation', target: root.name, message });
+        }
+    });
+    return out;
 }
 /**
  * Discover Zod schemas by walking TypeScript ASTs.
@@ -102,11 +115,8 @@ async function discoverInProject(group, scope, tsModule, acc) {
  * 1. Lists the TypeScript files the source scope names, from disk.
  * 2. Groups them by nearest tsconfig.json and builds one program per group;
  *    files with no tsconfig above them share a default program.
- * 3. Walks each program's ASTs looking for schemas reaching a provider call
- *    or exported `z.object({...})` calls, following re-exports and aliases.
- * 4. Extracts property source locations for source map.
- * 5. Dynamically imports each schema and evaluates it at runtime.
- * 6. Converts schemas to JSON Schema via zod-to-json-schema or native.
+ * 3. Finds every Zod object schema those files build (see `findSchemaRoots`).
+ * 4. Slices each out of its declaring file and converts it to JSON Schema.
  */
 export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     const tsModule = await import('typescript');
@@ -121,89 +131,70 @@ export async function discoverZodSchemas(sourceGlob, exclusions = []) {
     // a symlinked working directory (macOS /tmp) still matches its own files.
     const projectRoot = realpathSync(process.cwd());
     const scope = resolveSourceScope(sourceGlob, picomatch, projectRoot);
-    let fileNames = listScopeFiles(scope, projectRoot, tsModule, picomatch);
-    const matchedFiles = fileNames.length;
+    const matched = listScopeFiles(scope, projectRoot, tsModule, picomatch);
     const excludeMatchers = exclusions.map((pattern) => picomatch(pattern, { dot: true }));
-    fileNames = fileNames.filter((file) => {
+    const fileNames = matched.filter((file) => {
         const relative = toPosixPath(path.relative(projectRoot, file));
         return !excludeMatchers.some((matches) => matches(relative));
     });
-    const excluded = matchedFiles - fileNames.length;
-    if (fileNames.length === 0) {
-        // Only diagnose a cause when the scope itself matched nothing. When
-        // files matched but were then all removed by --exclude, that is ordinary
-        // exclusion behavior, not a discovery problem.
-        return {
-            models: [],
-            warnings: matchedFiles === 0 ? [emptyDiscoveryWarning(scope.pattern)] : [],
-            failures: [],
-            counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
-        };
-    }
-    const acc = {
+    const excluded = matched.length - fileNames.length;
+    const empty = (warnings) => ({
         models: [],
+        warnings,
         failures: [],
-        discoveryFailures: 0,
-        locations: 0,
-        sdkFiles: 0,
-        reported: new Set(),
-    };
+        counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
+    });
+    if (fileNames.length === 0) {
+        // Files removed by --exclude are ordinary exclusion, not a discovery problem.
+        return empty(matched.length === 0
+            ? [{ model: '', message: `No file on disk matched source glob '${scope.pattern}'.` }]
+            : []);
+    }
     // A named file bypasses tsconfig include/exclude; a directory or glob does not.
     const groups = groupByProject(fileNames, tsModule, scope.target?.kind !== 'file');
     if (groups.length === 0) {
-        return {
-            models: [],
-            warnings: [
-                {
-                    model: '',
-                    message: `${fileNames.length} file(s) matched source glob '${sourceGlob}' ` +
-                        'but all are excluded by tsconfig.json. Name a file directly to check it.',
-                },
-            ],
-            failures: [],
-            counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
-        };
+        return empty([
+            {
+                model: '',
+                message: `${fileNames.length} file(s) matched source glob '${sourceGlob}' ` +
+                    'but all are excluded by tsconfig.json. Name a file directly to check it.',
+            },
+        ]);
     }
+    const seen = new Set();
+    const result = { models: [], failures: [], skipped: [] };
+    let attempted = 0;
     for (const group of groups) {
-        await discoverInProject(group, scope, tsModule, acc);
+        const program = tsModule.createProgram(group.files, group.compilerOptions);
+        const selected = new Set(group.files);
+        const sourceFiles = program
+            .getSourceFiles()
+            .filter((file) => !file.isDeclarationFile && selected.has(file.fileName));
+        const roots = findSchemaRoots(sourceFiles, program.getTypeChecker(), tsModule).filter((root) => !seen.has(root.key) && seen.add(root.key));
+        const evaluated = await evaluateRoots(roots, group.compilerOptions, tsModule);
+        attempted += roots.length - evaluated.skipped.length;
+        result.models.push(...evaluated.models);
+        result.failures.push(...evaluated.failures);
+        result.skipped.push(...evaluated.skipped);
     }
-    const warnings = [];
-    if (acc.locations === 0 && acc.sdkFiles > 0) {
-        // Traced-but-failed targets already surface as failures; this names the
-        // case where tracing itself found nothing.
-        warnings.push({
-            model: '',
-            message: `${acc.sdkFiles} file(s) matched by source glob ` +
-                `'${sourceGlob}' import a provider SDK, but no schema could be ` +
-                'traced to a provider call site, so nothing was checked. Name a ' +
-                'file or directory instead of a glob to lint every exported schema in it.',
-        });
-    }
-    if (acc.locations === 0 && acc.discoveryFailures === 0) {
-        return {
-            models: [],
-            warnings: warnings.length > 0
-                ? warnings
-                : [
-                    {
-                        model: '',
-                        message: `Checked ${fileNames.length} file(s) matched by source glob ` +
-                            `'${sourceGlob}' for Zod schemas but found none.`,
-                    },
-                ],
-            failures: [],
-            counts: { attempted: 0, excluded, discovered: 0, failed: 0 },
-        };
+    if (attempted === 0 && result.skipped.length === 0) {
+        return empty([
+            {
+                model: '',
+                message: `Checked ${fileNames.length} file(s) matched by source glob ` +
+                    `'${sourceGlob}' for Zod schemas but found none.`,
+            },
+        ]);
     }
     return {
-        models: acc.models,
-        warnings,
-        failures: acc.failures,
+        models: result.models,
+        warnings: result.skipped,
+        failures: result.failures,
         counts: {
-            attempted: acc.locations + acc.discoveryFailures,
+            attempted,
             excluded,
-            discovered: acc.models.length,
-            failed: acc.failures.length,
+            discovered: result.models.length,
+            failed: result.failures.length,
         },
     };
 }

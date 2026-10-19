@@ -19,6 +19,15 @@ import type * as ts from 'typescript';
  * upgrade, not attempted here.
  */
 export declare function buildSlicedModule(sourceFile: ts.SourceFile, seedExpr: ts.Expression, exportName: string, tsModule: typeof ts, compilerOptions: ts.CompilerOptions): string;
+export interface SliceSeed {
+    seed: ts.Expression;
+    exportName: string;
+}
+/**
+ * Like `buildSlicedModule` for several seeds of one file: the module keeps the
+ * union of their closures and ends with one `export const` line per seed.
+ */
+export declare function buildSlicedModuleBatch(sourceFile: ts.SourceFile, seeds: readonly SliceSeed[], tsModule: typeof ts, compilerOptions: ts.CompilerOptions): string;
 /**
  * Rewrite a local-module import's specifier to an absolute `file://` URL so
  * the synthetic module (written to a temp directory) can still resolve it.

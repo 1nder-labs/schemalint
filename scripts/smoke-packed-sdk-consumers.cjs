@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 
+// Installs the packed tarball next to real, pinned SDK versions and proves the
+// sidecar finds exactly the Zod object schemas the fixture builds, by type.
+
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { matrix } = require('./packed-sdk-fixtures.cjs');
 
 const tarball = process.argv[2] && path.resolve(process.argv[2]);
 const row = process.argv[3];
@@ -15,26 +17,59 @@ assert(tarball, 'usage: smoke-packed-sdk-consumers.cjs <package.tgz> <minimum|cu
 assert(['minimum', 'current'].includes(row), `unsupported SDK matrix row: ${row}`);
 if (row === 'current') assert(schemalintBinary, 'current row requires a schemalint binary');
 
-function spanFor(source, filePath, marker, token, lineOnly = false) {
-  const matches = source.split('\n').map((line, index) => ({ line, index }))
-    .filter(({ line }) => line.includes(marker));
-  assert.equal(matches.length, 1, `expected one line containing ${marker}`);
-  const col = matches[0].line.indexOf(token);
-  assert.notEqual(col, -1, `expected ${token} on line containing ${marker}`);
-  return {
-    file: filePath.replaceAll('\\', '/'),
-    line: matches[0].index + 1,
-    ...(lineOnly ? {} : { col: col + 1 }),
-  };
+// Oldest versions that ship every helper the fixture imports, and the latest
+// verified ones. Minimum pairs the oldest SDKs with Zod 3; current uses Zod 4.
+const PINS = {
+  minimum: ['ai@6.0.0', 'openai@4.87.0', '@anthropic-ai/sdk@0.72.0', 'zod@3.25.76'],
+  current: ['ai@7.0.19', 'openai@6.46.0', '@anthropic-ai/sdk@0.110.0', 'zod@4.4.3'],
+};
+const zodV4 = row === 'current';
+
+// Each schema's first property key is its identity in the assertions below.
+const FIXTURE = `import { z } from 'zod';
+import { generateObject, Output, tool } from 'ai';
+import { zodFunction, zodResponseFormat, zodTextFormat } from 'openai/helpers/zod';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { betaZodTool } from '@anthropic-ai/sdk/helpers/beta/zod';
+
+const AiConst = z.object({ ai_const: z.string() });
+export const aiOutput = Output.object({ schema: AiConst });
+
+export async function aiInlineInFunction(model: any) {
+  return generateObject({ model, schema: z.object({ ai_in_function: z.string() }), prompt: 'x' });
 }
 
-function expectedEnvelope(source, filePath, fields) {
-  return Object.fromEntries(Object.entries(fields).map(([name, spec]) => [name, {
-    required: spec.required,
-    span: spanFor(source, filePath, spec.lineMarker, spec.token),
-    value: spec.value,
-  }]));
+export const aiTool = tool({
+  description: 'x',
+  inputSchema: z.object({ ai_tool: z.string() }),
+  execute: async () => 'ok',
+});
+
+export const openaiResponse = zodResponseFormat(z.object({ oa_response: z.string() }), 'r');
+const OaText = z.object({ oa_text: z.string() });
+export const openaiText = zodTextFormat(OaText, 't');
+export const openaiFunction = zodFunction({ name: 'f', parameters: z.object({ oa_function: z.string() }) });
+
+export const anthropicOutput = zodOutputFormat(z.object({ an_output: z.string() }));
+export const anthropicTool = betaZodTool({
+  name: 't',
+  description: 'x',
+  inputSchema: z.object({ an_tool: z.string() }),
+  run: async () => 'ok',
+});
+
+// Built from a function parameter: nothing to evaluate without running it.
+export function fromParameter(shape: z.ZodRawShape) {
+  return zodOutputFormat(z.object(shape));
 }
+
+// Zod 4 cannot express a Date in JSON Schema; Zod 3 renders it as a string.
+export const WithDate = z.object({ date_field: z.date() });
+`;
+const EXPECTED_KEYS = [
+  'ai_const', 'ai_in_function', 'ai_tool', 'oa_response', 'oa_text', 'oa_function',
+  'an_output', 'an_tool', ...(zodV4 ? [] : ['date_field']),
+];
 
 function run(command, args, options) {
   const result = spawnSync(command, args, { encoding: 'utf8', timeout: 180_000, ...options });
@@ -43,9 +78,9 @@ function run(command, args, options) {
   return result;
 }
 
-function runSidecar(root, helper, fixture) {
+function discover(root, helper) {
   const input = [
-    JSON.stringify({ jsonrpc: '2.0', method: 'discover', params: { source: fixture.file }, id: 1 }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'discover', params: { source: 'sdk.ts' }, id: 1 }),
     JSON.stringify({ jsonrpc: '2.0', method: 'shutdown', id: 2 }),
     '',
   ].join('\n');
@@ -56,121 +91,71 @@ function runSidecar(root, helper, fixture) {
   return responses[0].result;
 }
 
-function assertSidecar(root, fixture, response) {
-  const filePath = path.join(root, fixture.file);
-  const expectedFailed = fixture.failure ? 1 : 0;
-  assert.deepEqual(response.counts, {
-    attempted: fixture.models.length + expectedFailed,
-    excluded: 0,
-    discovered: fixture.models.length,
-    failed: expectedFailed,
-  });
-  assert.deepEqual(response.warnings, []);
-  assert.equal(response.models.length, fixture.models.length);
-  response.models.forEach((actual, index) => {
-    const expected = fixture.models[index];
-    assert.equal(actual.canonical_kind, expected.kind, `${fixture.file} model ${index}`);
-    assert.deepEqual(actual.provider, expected.provider, `${fixture.file} provider ${index}`);
-    assert.deepEqual(
-      actual.envelope,
-      expectedEnvelope(fixture.source, filePath, expected.envelope),
-      `${fixture.file} envelope ${index}`
-    );
-  });
-  if (!fixture.failure) {
-    assert.deepEqual(response.failures, []);
-    return;
+function assertDiscovery(response) {
+  const keys = response.models.map((m) => Object.keys(m.schema.properties || {})[0]);
+  assert.deepEqual([...keys].sort(), [...EXPECTED_KEYS].sort(), 'discovered schemas differ');
+  for (const model of response.models) {
+    assert.equal(model.canonical_kind, 'zod.export');
+    assert.deepEqual(model.provider, { certainty: 'ambiguous' });
+    assert.deepEqual(model.envelope, {});
   }
-  const failureSpan = spanFor(
-    fixture.source, filePath, fixture.failure.lineMarker, fixture.failure.token
-  );
-  assert.deepEqual(response.failures, [{
-    kind: 'metadata',
-    target: fixture.failure.target,
-    message: `${fixture.failure.message || "required field 'name'"} is not statically resolvable at ${failureSpan.file}:${failureSpan.line}:${failureSpan.col}`,
-  }]);
+  assert.deepEqual(response.failures, []);
+  assert.deepEqual(response.counts, {
+    attempted: EXPECTED_KEYS.length, excluded: 0, discovered: EXPECTED_KEYS.length, failed: 0,
+  });
+  const skipped = response.warnings.map((w) => w.message);
+  if (zodV4) {
+    assert.equal(skipped.length, 1, `expected one Skipped warning: ${skipped}`);
+    assert(skipped[0].startsWith('Skipped:'), skipped[0]);
+    assert.equal(response.warnings[0].model, 'WithDate');
+  } else {
+    assert.deepEqual(skipped, []);
+  }
 }
 
-function assertCli(root, helper, fixture) {
-  const result = spawnSync(
-    schemalintBinary,
-    ['check-node', '--source', fixture.file, '--format', 'json'],
-    {
-      cwd: root,
-      encoding: 'utf8',
-      timeout: 60_000,
-      env: { ...process.env, SCHEMALINT_ZOD_HELPER: helper },
-    }
-  );
-  assert.equal(result.status, 1, result.stdout + result.stderr);
+function assertCli(root, helper) {
+  // package.json lists both SDK families, which selects both profiles.
+  const result = spawnSync(schemalintBinary, ['check-node', '-S', 'sdk.ts', '-f', 'json'], {
+    cwd: root, encoding: 'utf8', timeout: 60_000,
+    env: { ...process.env, SCHEMALINT_ZOD_HELPER: helper },
+  });
   const output = JSON.parse(result.stdout);
-  assert.deepEqual(output.report.coverage, fixture.cli.coverage);
-  assert.equal(output.report.success, false);
-  assert.equal(output.summary.errors, fixture.cli.errors);
-  assert.equal(output.summary.schemas_checked, fixture.cli.coverage.checked);
-  const expectedDiagnostics = fixture.cli.diagnostics.map((diagnostic) => ({
-    code: diagnostic.code,
-    profile: diagnostic.profile,
-    pointer: diagnostic.pointer,
-    source: spanFor(
-      fixture.source,
-      path.join(root, fixture.file),
-      diagnostic.lineMarker,
-      diagnostic.token,
-      diagnostic.lineOnly
-    ),
-  }));
-  const actualDiagnostics = output.diagnostics.map(
-    ({ code, profile, pointer, source }) => ({ code, profile, pointer, source })
+  const profiles = JSON.stringify(output.profiles);
+  assert(/openai/i.test(profiles) && /anthropic/i.test(profiles), `profiles: ${profiles}`);
+  const failures = (output.report && output.report.failures) || [];
+  assert.deepEqual(
+    failures.filter((f) => /ambiguous/i.test(`${f.kind} ${f.message}`)), [],
+    'a target failed as provider-ambiguous'
   );
-  const byLocation = (left, right) =>
-    `${left.code}:${left.source.line}:${left.source.col || 0}`.localeCompare(
-      `${right.code}:${right.source.line}:${right.source.col || 0}`
-    );
-  assert.deepEqual(actualDiagnostics.sort(byLocation), expectedDiagnostics.sort(byLocation));
-  const failureText = output.report.failures
-    .map((failure) => `${failure.target}: ${failure.message}`)
-    .join('\n');
-  assert.equal(output.report.failures.length, fixture.cli.failureKinds.length);
-  for (const kind of fixture.cli.failureKinds) {
-    assert(failureText.includes(kind), `missing retained failure for ${kind}`);
-  }
 }
 
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-for (const installation of matrix[row]) {
-  const root = fs.realpathSync(
-    fs.mkdtempSync(path.join(os.tmpdir(), `schemalint-sdk-${installation.label}-`))
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `schemalint-sdk-${row}-`)));
+try {
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    private: true, type: 'module',
+    dependencies: { openai: '*', '@anthropic-ai/sdk': '*' },
+  }));
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: {
+      target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext',
+      skipLibCheck: true, strict: true,
+    },
+    include: ['*.ts'],
+  }));
+  fs.writeFileSync(path.join(root, 'sdk.ts'), FIXTURE);
+  run(npm, [
+    'install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false',
+    tarball, ...PINS[row],
+  ], { cwd: root });
+  run(path.join(root, 'node_modules', '.bin', 'tsc'), ['--noEmit'], { cwd: root });
+  const helper = path.join(
+    root, 'node_modules', '@1nder-labs', 'schemalint', 'bin', 'schemalint-zod.js'
   );
-  try {
-    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
-    fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
-      compilerOptions: {
-        target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext',
-        skipLibCheck: true, strict: true,
-      },
-      include: ['*.ts'],
-    }));
-    for (const fixture of installation.fixtures) {
-      fs.writeFileSync(path.join(root, fixture.file), `${fixture.source}\n`);
-    }
-    run(npm, [
-      'install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false',
-      tarball, ...installation.packages,
-    ], { cwd: root });
-    const tsc = path.join(root, 'node_modules', '.bin', 'tsc');
-    run(tsc, ['--noEmit'], { cwd: root });
-    const helper = path.join(
-      root, 'node_modules', '@1nder-labs', 'schemalint', 'bin', 'schemalint-zod.js'
-    );
-    assert(fs.existsSync(helper), 'packed sidecar is missing from installed package');
-    for (const fixture of installation.fixtures) {
-      const response = runSidecar(root, helper, fixture);
-      assertSidecar(root, fixture, response);
-      if (fixture.cli) assertCli(root, helper, fixture);
-    }
-    console.log(`installed SDK consumer passed: ${installation.label}`);
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
+  assert(fs.existsSync(helper), 'packed sidecar is missing from installed package');
+  assertDiscovery(discover(root, helper));
+  if (schemalintBinary) assertCli(root, helper);
+  console.log(`installed SDK consumer passed: ${row}`);
+} finally {
+  fs.rmSync(root, { recursive: true, force: true });
 }

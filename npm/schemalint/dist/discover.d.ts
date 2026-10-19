@@ -10,19 +10,30 @@
  * POSIX machine — pass `'\\'` to simulate Windows `path.sep`.
  */
 export declare function toPosixPath(p: string, sep?: string): string;
-import type { EnvelopeField, ProviderResolution, TargetSpan } from './sdk_adapters.js';
 export interface SourceMapEntry {
     file: string;
     line?: number;
 }
+export interface TargetSpan {
+    file: string;
+    line: number;
+    col: number;
+}
+/**
+ * The wire shape the Rust CLI reads. `provider`, `envelope`, and
+ * `canonical_kind` are constant: discovery no longer knows which SDK a
+ * schema reaches, so the profile comes from `--profile` or package.json.
+ */
 export interface DiscoveredModel {
     name: string;
     module_path: string;
     schema: Record<string, unknown>;
     source_map: Record<string, SourceMapEntry>;
-    canonical_kind: string;
-    provider: ProviderResolution;
-    envelope: Record<string, EnvelopeField>;
+    canonical_kind: 'zod.export';
+    provider: {
+        certainty: 'ambiguous';
+    };
+    envelope: Record<string, never>;
     usage_span: TargetSpan;
 }
 export interface DiscoveryWarning {
@@ -30,7 +41,7 @@ export interface DiscoveryWarning {
     message: string;
 }
 export interface DiscoveryFailure {
-    kind: 'evaluation' | 'metadata';
+    kind: 'evaluation';
     target: string;
     message: string;
 }
@@ -52,11 +63,8 @@ export interface DiscoverResponse {
  * 1. Lists the TypeScript files the source scope names, from disk.
  * 2. Groups them by nearest tsconfig.json and builds one program per group;
  *    files with no tsconfig above them share a default program.
- * 3. Walks each program's ASTs looking for schemas reaching a provider call
- *    or exported `z.object({...})` calls, following re-exports and aliases.
- * 4. Extracts property source locations for source map.
- * 5. Dynamically imports each schema and evaluates it at runtime.
- * 6. Converts schemas to JSON Schema via zod-to-json-schema or native.
+ * 3. Finds every Zod object schema those files build (see `findSchemaRoots`).
+ * 4. Slices each out of its declaring file and converts it to JSON Schema.
  */
 export declare function discoverZodSchemas(sourceGlob: string, exclusions?: string[]): Promise<DiscoverResponse>;
 //# sourceMappingURL=discover.d.ts.map

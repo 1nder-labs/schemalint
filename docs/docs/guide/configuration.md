@@ -46,23 +46,31 @@ include = ["src/models/"]
 
 ## How Zod schemas are selected (`check-node`)
 
-Only schemas that reach a model are worth linting, so `check-node` traces
-each schema from a provider call site (`ai`, `openai/helpers/zod`,
-`@anthropic-ai/sdk/helpers/zod`) back to where it is defined, through any
-number of wrapper functions that forward it as a parameter, a destructured
-binding, or a spread object.
+`check-node` lints every Zod object schema the files in `--source` can build
+without running a function. It does not matter whether the schema is declared
+or inline, exported or not, at module scope or inside a function body, or how
+it is spelled (`z.object`, `z.strictObject`, `z.looseObject`, a namespace
+import, `zod/mini`, a factory call). Barrel re-exports are followed to the
+definition, and a schema reached twice is reported once.
 
-What a source entry names decides how much else is linted:
+Two kinds of schema are not checked:
 
-| Source | Scope |
-| --- | --- |
-| A glob (`src/**/*.ts`) | Schemas traced to a provider call site. If none of the matched files import a provider SDK, every exported `z.object` is linted instead. If they do but nothing could be traced, the run checks nothing and says so. |
-| A file or directory path (`src/models/`, `src/schemas.ts`) | Everything above, plus every exported `z.object` in those files. Use this to lint a schema module directly. |
+- Schemas built from run-time input (they use a parameter, a local variable, or
+  `this`) are skipped. No static tool can check them.
+- A schema Zod cannot convert to JSON Schema (`Date`, transforms, custom types)
+  is reported as a warning and skipped. It does not fail the run.
+
+Globs, files, and directories all follow the same rule. Use `--source` and
+`--exclude` to set the scope.
+
+Every schema is checked against every selected profile. Without `--profile`,
+providers come from `package.json` dependencies: `openai` or `@ai-sdk/openai`
+selects OpenAI, `@anthropic-ai/sdk` or `@ai-sdk/anthropic` selects Anthropic,
+and both together select both. With neither, OpenAI is used.
 
 Each schema is evaluated in isolation: from its own module, only the
 declarations and imports it depends on are loaded, so a module that also
 imports runtime-only bindings (`cloudflare:workers`, a database client, an
 HTTP app) evaluates cleanly. A local module the schema imports from is still
-loaded whole. Tracing and the SDK check see only the files the source entry
-selects, so a scope that leaves out the wrapper module finds only exports.
+loaded whole.
 

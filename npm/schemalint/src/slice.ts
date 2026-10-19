@@ -28,6 +28,29 @@ export function buildSlicedModule(
   tsModule: typeof ts,
   compilerOptions: ts.CompilerOptions
 ): string {
+  return buildSlicedModuleBatch(
+    sourceFile,
+    [{ seed: seedExpr, exportName }],
+    tsModule,
+    compilerOptions
+  );
+}
+
+export interface SliceSeed {
+  seed: ts.Expression;
+  exportName: string;
+}
+
+/**
+ * Like `buildSlicedModule` for several seeds of one file: the module keeps the
+ * union of their closures and ends with one `export const` line per seed.
+ */
+export function buildSlicedModuleBatch(
+  sourceFile: ts.SourceFile,
+  seeds: readonly SliceSeed[],
+  tsModule: typeof ts,
+  compilerOptions: ts.CompilerOptions
+): string {
   const declByName = indexDeclarations(sourceFile, tsModule);
   const referenced = new Set<string>();
   const kept = new Set<ts.Statement>();
@@ -40,7 +63,7 @@ export function buildSlicedModule(
       queue.push(name);
     }
   };
-  enqueue(identifierNames(seedExpr, tsModule));
+  for (const { seed } of seeds) enqueue(identifierNames(seed, tsModule));
 
   while (queue.length > 0) {
     // Non-null: only names just pushed by `enqueue` land here, and the loop
@@ -63,7 +86,9 @@ export function buildSlicedModule(
     }
     if (kept.has(stmt)) parts.push(stmt.getText(sourceFile));
   }
-  parts.push(`export const ${exportName} = ${seedExpr.getText(sourceFile)};`);
+  for (const { seed, exportName } of seeds) {
+    parts.push(`export const ${exportName} = ${seed.getText(sourceFile)};`);
+  }
   return parts.join('\n\n');
 }
 

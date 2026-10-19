@@ -1,13 +1,12 @@
+use std::path::Path;
 use std::time::Instant;
 
 use serde_json::{json, Value};
 
 use crate::cli::args::OutputFormat;
 use crate::cli::discovery_policy::{discover_batch, DiscoveryBatch};
-use crate::cli::node_policy::{automatic_profile_ids, automatic_target_inputs};
 use crate::cli::pipeline::{
-    build_report, evaluate_targets, explicit_model_inputs, render_output, EnvelopePolicy,
-    TargetInput,
+    build_report, evaluate_targets, explicit_model_inputs, render_output, TargetInput,
 };
 use crate::profile::Profile;
 use crate::rules::RuleSet;
@@ -43,10 +42,9 @@ pub(super) fn handle_node(params: Value, state: &mut ServerState) -> Value {
             result
         },
     );
-    let automatic = prepared.profile_ids.is_none();
     let profile_ids = match &prepared.profile_ids {
         Some(profile_ids) => profile_ids.clone(),
-        None => automatic_profile_ids(&discovery.models),
+        None => crate::cli::default_profile_ids(Path::new(".")),
     };
     let profiles = match load_profiles(&profile_ids, &mut state.profiles) {
         Ok(profiles) => profiles,
@@ -56,11 +54,7 @@ pub(super) fn handle_node(params: Value, state: &mut ServerState) -> Value {
         Ok(rules) => rules,
         Err(error) => return error,
     };
-    let inputs = if automatic {
-        automatic_target_inputs(&discovery.models, &rules, None)
-    } else {
-        explicit_model_inputs(&discovery.models, &rules, EnvelopePolicy::Validate)
-    };
+    let inputs = explicit_model_inputs(&discovery.models, &rules);
     finish(discovery, &prepared, &profiles, &rules, start, inputs)
 }
 
@@ -93,7 +87,7 @@ pub(super) fn handle_python(params: Value, state: &mut ServerState) -> Value {
             result
         },
     );
-    let inputs = explicit_model_inputs(&discovery.models, &rules, EnvelopePolicy::Ignore);
+    let inputs = explicit_model_inputs(&discovery.models, &rules);
     finish(discovery, &prepared, &profiles, &rules, start, inputs)
 }
 

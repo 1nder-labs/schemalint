@@ -34,13 +34,6 @@ compatibility layer. Anthropic documents that the compatibility layer ignores
 OpenAI `response_format`, and ignores `strict` for function calling; use the
 native Claude API for guaranteed schema conformance.
 
-For Zod source discovery, current native SDK syntax is
-`zodOutputFormat(schema)` from `@anthropic-ai/sdk/helpers/zod`. The retained
-beta tool helper is `betaZodTool({ name, inputSchema })` from
-`@anthropic-ai/sdk/helpers/beta/zod`; it is deprecated in SchemaLint and will be
-removed in SchemaLint 2.0. Canonical, aliased, and namespace imports are
-recognized.
-
 ## Reference
 
 [Anthropic Structured Outputs documentation](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)

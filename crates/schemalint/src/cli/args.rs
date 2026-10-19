@@ -132,14 +132,14 @@ pub struct CheckPythonArgs {
     after_help = "Example (monorepo, run from the repo root):\n  schemalint check-node --profile openai --source packages/shared/contracts/src"
 )]
 pub struct CheckNodeArgs {
-    /// TypeScript source globs to discover Zod schemas from (repeatable)
+    /// TypeScript globs, files or directories to lint for Zod object schemas (repeatable)
     #[arg(short = 'S', long = "source")]
     pub sources: Vec<String>,
 
     /// Built-in profile ID or TOML capability profile path (repeatable; overrides
     /// package.json). Accepts bare provider names ("openai", "anthropic") and
     /// "<provider>.so.latest" as aliases. Optional: if omitted, the provider is
-    /// auto-detected from source imports or package.json dependencies (falling
+    /// auto-detected from package.json dependencies (falling
     /// back to openai.so.2026-04-30). Run `schemalint profiles` to list all.
     #[arg(short, long = "profile")]
     pub profiles: Vec<PathBuf>,

@@ -4,16 +4,10 @@ use std::path::PathBuf;
 use rayon::prelude::*;
 
 use crate::cli::report::{TargetReport, TargetStatus};
-use crate::ingest::{DiscoveredModel, EnvelopeField, ProviderResolution};
+use crate::ingest::{DiscoveredModel, ProviderResolution};
 use crate::normalize::normalize;
 use crate::profile::Profile;
 use crate::rules::registry::{Diagnostic, RuleSet, SourceSpan};
-
-#[derive(Clone, Copy)]
-pub(crate) enum EnvelopePolicy {
-    Ignore,
-    Validate,
-}
 
 enum SchemaInput {
     File,
@@ -24,7 +18,6 @@ enum EvaluationPlan {
     Check {
         schema: SchemaInput,
         profile_indices: Vec<usize>,
-        envelope: EnvelopePolicy,
     },
     Fail(String),
 }
@@ -35,7 +28,6 @@ pub(super) struct TargetIdentity {
     canonical_kind: String,
     provider: ProviderResolution,
     effective_profiles: Vec<String>,
-    envelope: HashMap<String, EnvelopeField>,
     usage_span: Option<SourceSpan>,
 }
 
@@ -53,7 +45,6 @@ pub(crate) struct TargetEvaluation {
 pub(crate) fn explicit_model_inputs(
     models: &[DiscoveredModel],
     profile_rulesets: &[(&Profile, RuleSet)],
-    envelope: EnvelopePolicy,
 ) -> Vec<TargetInput> {
     let profile_indices: Vec<_> = (0..profile_rulesets.len()).collect();
     let effective_profiles = profile_names(profile_rulesets, &profile_indices);
@@ -65,18 +56,16 @@ pub(crate) fn explicit_model_inputs(
                 model.provider,
                 effective_profiles.clone(),
                 Ok(profile_indices.clone()),
-                envelope,
             )
         })
         .collect()
 }
 
-pub(crate) fn model_target_input(
+fn model_target_input(
     model: &DiscoveredModel,
     provider: ProviderResolution,
     effective_profiles: Vec<String>,
     profile_indices: Result<Vec<usize>, String>,
-    envelope: EnvelopePolicy,
 ) -> TargetInput {
     TargetInput {
         target: TargetIdentity {
@@ -85,7 +74,6 @@ pub(crate) fn model_target_input(
             canonical_kind: model.canonical_kind.clone(),
             provider,
             effective_profiles,
-            envelope: model.envelope.clone(),
             usage_span: model.usage_span.clone(),
         },
         source_map: model.source_map.clone(),
@@ -93,7 +81,6 @@ pub(crate) fn model_target_input(
             Ok(profile_indices) => EvaluationPlan::Check {
                 schema: SchemaInput::Value(model.schema.clone()),
                 profile_indices,
-                envelope,
             },
             Err(message) => EvaluationPlan::Fail(message),
         },
@@ -111,7 +98,6 @@ pub(crate) fn raw_target_input(
         plan: EvaluationPlan::Check {
             schema: SchemaInput::File,
             profile_indices: (0..profile_count).collect(),
-            envelope: EnvelopePolicy::Ignore,
         },
     }
 }
@@ -140,7 +126,6 @@ fn raw_identity(
         canonical_kind: "json-schema".into(),
         provider: Default::default(),
         effective_profiles: effective_profiles.to_vec(),
-        envelope: Default::default(),
         usage_span: Some(SourceSpan {
             file: display_path,
             line: None,
@@ -177,13 +162,11 @@ pub(crate) fn evaluate_targets(
                 EvaluationPlan::Check {
                     schema,
                     profile_indices,
-                    envelope,
                 } => evaluate_target(
                     &target,
                     &source_map,
                     schema,
                     profile_indices,
-                    envelope,
                     profile_rulesets,
                 ),
             };
@@ -197,7 +180,6 @@ fn evaluate_target(
     source_map: &HashMap<String, SourceSpan>,
     schema: SchemaInput,
     profile_indices: Vec<usize>,
-    envelope: EnvelopePolicy,
     profile_rulesets: &[(&Profile, RuleSet)],
 ) -> Result<Vec<Diagnostic>, String> {
     let value = match schema {
@@ -217,12 +199,6 @@ fn evaluate_target(
             ));
         };
         diagnostics.extend(ruleset.check_all(&normalized.arena, profile));
-        if matches!(envelope, EnvelopePolicy::Validate) {
-            diagnostics.extend(crate::rules::envelope::check_envelope_fields(
-                &target.envelope,
-                profile,
-            ));
-        }
     }
     attach_diagnostic_sources(&mut diagnostics, source_map);
     Ok(diagnostics)
@@ -297,7 +273,8 @@ impl TargetIdentity {
             canonical_kind: self.canonical_kind,
             provider: self.provider,
             effective_profiles: self.effective_profiles,
-            envelope: self.envelope.into_iter().collect(),
+            // Kept in the report for output compatibility; nothing populates it.
+            envelope: Default::default(),
             usage_span: self.usage_span,
             status,
         }

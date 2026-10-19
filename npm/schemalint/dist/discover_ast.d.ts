@@ -1,26 +1,9 @@
 import type * as ts from 'typescript';
 import type { SourceMapEntry } from './discover.js';
-export interface ExportedSchemaCall {
-    name: string;
-    objectArg: ts.ObjectLiteralExpression;
-    /**
-     * Slicing seed: the declaration's own name (named export, so the closure
-     * walk in `buildSlicedModule` naturally keeps its statement) or the full
-     * initializer expression (`export default`, which binds no name to seed
-     * from).
-     */
-    seedExpr: ts.Expression;
-}
-/** Methods that keep a `z.object` schema an object schema when chained. */
-export declare const OBJECT_CHAIN_METHODS: ReadonlySet<string>;
 /**
- * Find top-level `const` declarations that are `z.object({...})` calls.
- */
-export declare function findExportedSchemaCalls(sourceFile: ts.SourceFile, tsModule: typeof ts): ExportedSchemaCall[];
-export declare function hasExportModifier(node: ts.Node, tsModule: typeof ts): boolean;
-/**
- * Given a node, if it is `z.object({...})`, return the ObjectLiteralExpression argument.
- * Handles chaining: `z.object({...}).extend({...})` — returns the initial object.
+ * The object literal a Zod object schema is built from: the first argument of
+ * the innermost call in its chain (`z.object({...}).extend(...)`,
+ * `z.strictObject({...}).describe('x')`). Matched by shape, not by name.
  */
 export declare function findZObjectCall(node: ts.Node, tsModule: typeof ts): ts.ObjectLiteralExpression | null;
 /**
