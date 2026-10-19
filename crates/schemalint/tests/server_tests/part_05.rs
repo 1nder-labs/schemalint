@@ -123,3 +123,48 @@ export const Item = z.object({ id: z.string(), note: z.string().optional() });
     let _ = send_request(&mut child, &shutdown.to_string());
     assert!(child.wait().unwrap().success());
 }
+
+#[test]
+fn check_node_rpc_rejects_invalid_package_json_config_with_explicit_profiles() {
+    let tmp = TempDir::new().unwrap();
+    setup_ts_project(
+        tmp.path(),
+        &[(
+            "schema.ts",
+            r#"import { z } from "zod";
+export const Item = z.object({ id: z.string() });
+"#,
+        )],
+    );
+    std::fs::write(
+        tmp.path().join("package.json"),
+        r#"{"schemalint":{"profiles":42}}"#,
+    )
+    .unwrap();
+
+    let mut child = cmd()
+        .current_dir(tmp.path())
+        .arg("server")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("should spawn server");
+    let request = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "checkNode",
+        "params": {"sources": ["src/schema.ts"], "profiles": ["anthropic"], "format": "json"},
+        "id": 920
+    });
+    let response = send_request(&mut child, &request.to_string());
+    let result = &response["result"];
+    assert_eq!(result["success"], false, "{result}");
+    assert!(
+        result["error"].as_str().unwrap().contains("package.json"),
+        "{result}"
+    );
+
+    let shutdown = serde_json::json!({"jsonrpc": "2.0", "method": "shutdown", "id": 921});
+    let _ = send_request(&mut child, &shutdown.to_string());
+    assert!(child.wait().unwrap().success());
+}

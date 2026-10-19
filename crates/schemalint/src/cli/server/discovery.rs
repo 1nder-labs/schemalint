@@ -42,12 +42,9 @@ pub(super) fn handle_node(params: Value, state: &mut ServerState) -> Value {
             result
         },
     );
-    let profile_ids = match &prepared.profile_ids {
-        Some(profile_ids) => profile_ids.clone(),
-        None => match configured_or_default_profile_ids() {
-            Ok(profile_ids) => profile_ids,
-            Err(error) => return json!({"success": false, "error": error}),
-        },
+    let profile_ids = match resolve_profile_ids(prepared.profile_ids.as_deref()) {
+        Ok(profile_ids) => profile_ids,
+        Err(error) => return json!({"success": false, "error": error}),
     };
     let profiles = match load_profiles(&profile_ids, &mut state.profiles) {
         Ok(profiles) => profiles,
@@ -61,17 +58,18 @@ pub(super) fn handle_node(params: Value, state: &mut ServerState) -> Value {
     finish(discovery, &prepared, &profiles, &rules, start, inputs)
 }
 
-/// Resolve omitted profiles exactly like `check-node`: the `"schemalint"`
-/// profiles in `package.json`, else the package.json-detected providers.
-fn configured_or_default_profile_ids() -> Result<Vec<String>, String> {
+/// Resolve profiles exactly like `check-node`: always load and validate the
+/// `"schemalint"` config in `package.json`; explicit profiles win, else the
+/// configured profiles, else the package.json-detected providers.
+fn resolve_profile_ids(explicit: Option<&[String]>) -> Result<Vec<String>, String> {
     let config_path = Path::new("package.json");
     let configured = crate::cli::node_config::load_node_config(config_path)?
         .map(|config| config.profiles)
         .unwrap_or_default();
-    Ok(if configured.is_empty() {
-        crate::cli::default_profile_ids(config_path)
-    } else {
-        configured
+    Ok(match explicit {
+        Some(profile_ids) => profile_ids.to_vec(),
+        None if configured.is_empty() => crate::cli::default_profile_ids(config_path),
+        None => configured,
     })
 }
 

@@ -31,8 +31,11 @@ export function findSchemaRoots(sourceFiles, checker, tsModule) {
             tsModule.forEachChild(node, visit);
         };
         tsModule.forEachChild(sourceFile, visit);
+        // A block-scoped `var` can be exported but not sliced; the walk above
+        // already found it as an expression.
         for (const decl of exportedSchemas(sourceFile, checker, tsModule)) {
-            add(declared(decl, tsModule));
+            if (topLevel(decl, tsModule))
+                add(declared(decl, tsModule));
         }
     }
     return [...roots.values()];
@@ -178,11 +181,8 @@ function topLevel(node, tsModule) {
 }
 function rootOf(call, sourceFile, tsModule) {
     let outer = call;
-    while (tsModule.isParenthesizedExpression(outer.parent) ||
-        tsModule.isAsExpression(outer.parent) ||
-        tsModule.isSatisfiesExpression(outer.parent)) {
+    while (isOuterExpression(outer.parent, tsModule))
         outer = outer.parent;
-    }
     const parent = outer.parent;
     const declaration = tsModule.isVariableDeclaration(parent) &&
         parent.initializer === outer &&
@@ -229,8 +229,9 @@ function exportedSchemas(sourceFile, checker, tsModule) {
     if (!moduleSymbol)
         return [];
     const resolve = (symbol) => {
-        // ponytail: alias chains are a few hops; 8 also stops an alias cycle.
-        for (let hop = 0; hop < 8; hop++) {
+        const seen = new Set();
+        while (!seen.has(symbol)) {
+            seen.add(symbol);
             const target = symbol.flags & tsModule.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
             const decl = target.valueDeclaration;
             if (!decl ||
@@ -240,11 +241,8 @@ function exportedSchemas(sourceFile, checker, tsModule) {
                 return undefined;
             }
             let initializer = decl.initializer;
-            while (tsModule.isParenthesizedExpression(initializer) ||
-                tsModule.isAsExpression(initializer) ||
-                tsModule.isSatisfiesExpression(initializer)) {
+            while (isOuterExpression(initializer, tsModule))
                 initializer = initializer.expression;
-            }
             if (!tsModule.isIdentifier(initializer))
                 return decl;
             const next = checker.getSymbolAtLocation(initializer);
@@ -265,6 +263,13 @@ function exportedSchemas(sourceFile, checker, tsModule) {
             ? [decl]
             : [];
     });
+}
+/** A wrapper that leaves an expression's value as it is: `( )`, `as`, `satisfies`, `!`. */
+function isOuterExpression(node, tsModule) {
+    return (tsModule.isParenthesizedExpression(node) ||
+        tsModule.isAsExpression(node) ||
+        tsModule.isSatisfiesExpression(node) ||
+        tsModule.isNonNullExpression(node));
 }
 function sourceMapOf(expr, sourceFile, tsModule) {
     const objectArg = findZObjectCall(expr, tsModule);
