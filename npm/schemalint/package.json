@@ -32,6 +32,7 @@
   "bin": {
     "schemalint": "./bin/schemalint"
   },
+  "preferUnplugged": true,
   "files": [
     "index.cjs",
     "launcher/*.cjs",
